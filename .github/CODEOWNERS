@@ -8,64 +8,33 @@
 *                               @skyrict/core
 
 # ---------- Infrastructure / DevOps ----------
-docker-compose*.yml             @skyrict/platform
-Dockerfile*                     @skyrict/platform
-.github/                        @skyrict/platform
+infra/                          @skyrict/platform
 Makefile                        @skyrict/platform
 pyproject.toml                  @skyrict/platform
-*.toml                          @skyrict/platform
+package.json                    @skyrict/platform
+turbo.json                      @skyrict/platform
+pnpm-workspace.yaml             @skyrict/platform
+.github/                        @skyrict/platform
 
-# ---------- Core Platform ----------
+# ---------- Shared Python Libraries ----------
+libs/skyrict-common/            @skyrict/platform
+libs/skyrict-common/**          @skyrict/platform
+
+# ---------- Identity Service ----------
 services/identity/              @skyrict/platform
-services/gateway/               @skyrict/platform
-infrastructure/events/          @skyrict/platform
-infrastructure/scheduler/       @skyrict/platform
-infrastructure/observability/   @skyrict/platform
-
-# ---------- Finance ----------
-services/finance/               @skyrict/finance
-services/finance/**             @skyrict/finance
-
-# ---------- Inventory & Supply Chain ----------
-services/inventory/             @skyrict/supply-chain
-services/inventory/**           @skyrict/supply-chain
-services/procurement/           @skyrict/supply-chain
-services/procurement/**         @skyrict/supply-chain
-
-# ---------- Sales & CRM ----------
-services/sales/                 @skyrict/sales
-services/sales/**               @skyrict/sales
-
-# ---------- Manufacturing ----------
-services/manufacturing/         @skyrict/manufacturing
-services/manufacturing/**       @skyrict/manufacturing
-
-# ---------- HR ----------
-services/hr/                    @skyrict/hr
-services/hr/**                  @skyrict/hr
-
-# ---------- Intelligence Engine ----------
-services/intelligence/          @skyrict/intelligence
-services/intelligence/**        @skyrict/intelligence
-
-# ---------- AI / Agents ----------
-services/agents/                @skyrict/ai
-services/agents/**              @skyrict/ai
-ai/                             @skyrict/ai
-ai/**                           @skyrict/ai
-
-# ---------- Analytics ----------
-services/analytics/             @skyrict/analytics
-services/analytics/**           @skyrict/analytics
+services/identity/**            @skyrict/platform
 
 # ---------- Frontend ----------
-web/                            @skyrict/frontend
-web/**                          @skyrict/frontend
-
-# ---------- Data Layer ----------
-data/                           @skyrict/platform
-data/schemas/                   @skyrict/platform
-data/migrations/                @skyrict/platform
+apps/web/                       @skyrict/frontend
+apps/web/**                     @skyrict/frontend
+packages/ui/                    @skyrict/frontend
+packages/ui/**                  @skyrict/frontend
+packages/types/                 @skyrict/frontend
+packages/types/**               @skyrict/frontend
+packages/api-client/            @skyrict/frontend
+packages/api-client/**          @skyrict/frontend
+packages/auth/                  @skyrict/frontend
+packages/auth/**                @skyrict/frontend
 
 # ---------- Documentation ----------
 docs/                           @skyrict/docs

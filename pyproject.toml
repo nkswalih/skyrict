@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "skyrict"
 version = "0.1.0"
@@ -12,32 +8,12 @@ requires-python = ">=3.12"
 authors = [
     { name = "Skyrict Contributors" },
 ]
-keywords = ["erp", "ai", "market-intelligence", "business-operations", "fastapi"]
-classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Office/Business",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Typing :: Typed",
-]
 
-dependencies = [
-    "fastapi>=0.115,<1",
-    "uvicorn[standard]>=0.30,<1",
-    "pydantic>=2.7,<3",
-    "pydantic-settings>=2.3,<3",
-    "sqlalchemy[asyncio]>=2.0,<3",
-    "asyncpg>=0.30,<1",
-    "alembic>=1.14,<2",
-    "redis>=5.0,<6",
-    "celery[redis]>=5.4,<6",
-    "httpx>=0.27,<1",
-]
+[tool.uv.workspace]
+members = ["services/*", "libs/*"]
+exclude = ["services/_template"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.0,<9",
     "pytest-asyncio>=0.24,<1",
@@ -45,24 +21,17 @@ dev = [
     "ruff>=0.8,<1",
     "mypy>=1.13,<2",
     "pre-commit>=4.0,<5",
+    "flake8>=7.0,<8",
+    "black>=24.0,<25",
+    "isort>=6.0,<7",
+    "bandit>=1.7,<2",
+    "testcontainers[postgres]>=4.0,<5",
 ]
 
-[project.urls]
-Homepage = "https://github.com/skyrict/skyrict"
-Documentation = "https://github.com/skyrict/skyrict#readme"
-Repository = "https://github.com/skyrict/skyrict"
-Issues = "https://github.com/skyrict/skyrict/issues"
-Changelog = "https://github.com/skyrict/skyrict/releases"
-
-# ---------- Hatch ----------
-[tool.hatch.build.targets.wheel]
-packages = ["src/skyrict"]
-
-# ---------- Ruff ----------
+# ---------- Ruff (root-level defaults) ----------
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = [
@@ -84,14 +53,30 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["skyrict"]
+known-first-party = ["skyrict", "identity", "skyrict_common", "skyrict_testing", "skyrict_events"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 
-# ---------- Mypy ----------
+# ---------- Black (local formatting, CI uses ruff format) ----------
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+# ---------- isort (local import sorting, CI uses ruff I rule) ----------
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["skyrict", "identity", "skyrict_common", "skyrict_testing", "skyrict_events"]
+
+# ---------- Bandit (security scanner for CI) ----------
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", ".git", ".venvs", "**/__pycache__"]
+skips = ["B101", "B311", "B403", "B404", "B603"]
+
+# ---------- Mypy (root-level defaults) ----------
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -105,39 +90,6 @@ check_untyped_defs = true
 module = ["tests.*"]
 disallow_untyped_defs = false
 
-# ---------- Pytest ----------
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
-addopts = [
-    "-ra",
-    "--strict-markers",
-    "--tb=short",
-]
-markers = [
-    "unit: Unit tests (no external dependencies)",
-    "integration: Integration tests (may require Docker services)",
-    "e2e: End-to-end tests (require running application)",
-    "slow: Tests that take more than 5 seconds",
-]
-
-# ---------- Coverage ----------
-[tool.coverage.run]
-source = ["src/skyrict"]
-branch = true
-omit = ["tests/*"]
-
-[tool.coverage.report]
-precision = 2
-show_missing = true
-skip_covered = true
-fail_under = 0
-exclude_lines = [
-    "pragma: no cover",
-    "if TYPE_CHECKING:",
-    "if __name__ == .__main__.",
-    "raise NotImplementedError",
-]
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true

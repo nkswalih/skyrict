@@ -1,0 +1,6 @@
+# Skyrict — Pinned tool versions for asdf/mise
+# https://mise.jdx.dev/
+# https://asdf-vm.com/
+
+python 3.12.8
+nodejs 20.18.0

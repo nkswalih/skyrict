@@ -1,0 +1,144 @@
+# Service Template
+#
+# How to use:
+#   1. Copy this entire folder to services/{new-service-name}/
+#   2. Replace ALL occurrences of "{name}" with your service name (e.g., "core", "intelligence")
+#   3. Update pyproject.toml: name, description, dependencies
+#   4. Update core/config.py: add service-specific settings
+#   5. Delete this README.md
+#
+# Layering convention (enforced — do not deviate):
+#
+#   api/              FastAPI routes, dependency injection
+#   core/             Config, security, middleware, tenant context, exceptions, logging
+#   domain/           Pure Python entities and value objects (no framework deps)
+#   services/         Application/use-case layer (business logic)
+#   repositories/     DB access only (no business logic)
+#   models/           SQLAlchemy ORM models
+#   schemas/          Pydantic request/response DTOs
+#   events/           Kafka event producers/consumers
+#   db/               Async engine, session factory, RLS
+#
+# This layering exists for one reason: it makes the JWT middleware bug from
+# the identity review impossible to复发. When security.py is the ONE place
+# JWT verification happens, and every other layer goes through it, you can't
+# accidentally trust an unverified token in middleware.
+
+# ===========================================
+# Copy this section and replace {name}
+# ===========================================
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "{name}"
+version = "0.1.0"
+description = "{name} service — [describe what this service does]"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [
+    { name = "Skyrict Contributors" },
+]
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.30,<1",
+    "alembic>=1.14,<2",
+    "redis>=5.0,<6",
+    "python-jose[cryptography]>=3.3,<4",
+    "argon2-cffi>=23.1,<25",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27,<1",
+    "skyrict-common",
+    "skyrict-events",
+]
+
+[project.scripts]
+{name} = "{name}.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{name}"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (may require Docker services)",
+    "slow: Tests that take more than 5 seconds",
+]
+
+[tool.coverage.run]
+source = ["src/{name}"]
+branch = true
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = true
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "E501",   # line length (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["skyrict", "{name}", "skyrict_common", "skyrict_testing", "skyrict_events"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

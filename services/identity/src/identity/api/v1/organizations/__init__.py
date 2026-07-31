@@ -1,0 +1,1 @@
+"""Organizations endpoint package."""

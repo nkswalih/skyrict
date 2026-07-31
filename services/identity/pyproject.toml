@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "identity"
+version = "0.1.0"
+description = "Identity service — authentication, authorization, multi-tenancy, sessions, audit"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [
+    { name = "Skyrict Contributors" },
+]
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.30,<1",
+    "alembic>=1.14,<2",
+    "redis>=5.0,<6",
+    "python-jose[cryptography]>=3.3,<4",
+    "argon2-cffi>=23.1,<25",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27,<1",
+    "skyrict-common",
+    "email-validator>=2.3.0",
+    "aiosqlite>=0.22.1",
+]
+
+[project.scripts]
+identity = "identity.cli:app"
+
+[tool.uv.sources]
+skyrict-common = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/identity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (may require Docker services)",
+    "slow: Tests that take more than 5 seconds",
+]
+
+[tool.coverage.run]
+source = ["src/identity"]
+branch = true
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = true
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+]

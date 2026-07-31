@@ -1,0 +1,1 @@
+"""SSO endpoint package."""

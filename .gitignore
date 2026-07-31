@@ -1,6 +1,6 @@
 # ===========================================
 # Skyrict .gitignore
-# Python / FastAPI / Microservices / AI-ML
+# Monorepo: Python (uv) + Node.js (pnpm)
 # ===========================================
 
 # ---------- Python ----------
@@ -21,7 +21,6 @@ pip-delete-this-directory.txt
 venv/
 env/
 ENV/
-.python-version
 
 # Distribution / packaging
 dist/
@@ -32,15 +31,15 @@ eggs/
 wheels/
 MANIFEST
 
-# Installer logs
-pip-log.txt
-pip-install-log.txt
+# ---------- uv ----------
+.uv/
 
 # ---------- Testing ----------
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 coverage.xml
 *.cover
 *.py,cover
@@ -56,31 +55,22 @@ dmypy.json
 .pytype/
 
 # ---------- IDEs / Editors ----------
-# VS Code
 .vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
 !.vscode/launch.json
-
-# JetBrains
 .idea/
 *.iml
 *.iws
 *.ipr
 out/
-
-# Vim / Neovim
 *.swp
 *.swo
 *~
 .netrwhist
 tags
-
-# Sublime Text
 *.sublime-project
 *.sublime-workspace
-
-# Emacs
 \#*\#
 .#*
 *.elc
@@ -91,9 +81,7 @@ tags
 !.env.example
 !.env.test
 !.env.sample
-
-# Secrets — never commit
-*.pem
+.env*.local
 *.key
 *.crt
 *.p12
@@ -103,6 +91,12 @@ secrets.yml
 secrets.yaml
 credentials.json
 service-account*.json
+
+# RSA keys — NEVER commit key material; tests generate ephemeral keys
+*.pem
+
+# Local dev-only files
+.dev/
 
 # ---------- Docker ----------
 docker-compose.override.yml
@@ -115,19 +109,18 @@ node_modules/
 .output/
 out/
 .turbo/
-.pnp.*
+pnp.*
 .yarn/
-
-# Build artifacts
-web/app/.next/
-web/app/out/
-web/app/build/
-web/app/dist/
-web/embedded/dist/
 *.tsbuildinfo
 
+# ---------- Package manager logs ----------
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
 # ---------- AI / ML ----------
-# Model files
 *.pt
 *.pth
 *.onnx
@@ -141,15 +134,12 @@ mlruns/
 mlartifacts/
 wandb/
 lightning_logs/
-
-# Training outputs
 checkpoints/
 outputs/
 logs/
 *.ckpt
 
 # ---------- Infrastructure ----------
-# Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
@@ -162,27 +152,18 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-
-# Kubernetes
 kubeconfig
 kubeconfig.*
 !kubeconfig.example
 
 # ---------- Data / Cache ----------
-# Local databases
 *.db
 *.sqlite3
 *.sqlite
-
-# Redis dumps
 dump.rdb
 appendonly.aof
-
-# Kafka
 *.log
 *.index
-
-# Temporary files
 tmp/
 temp/
 *.tmp
@@ -190,7 +171,6 @@ temp/
 *.bak.*
 
 # ---------- OS ----------
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -202,34 +182,24 @@ Icon?
 .TemporaryItems
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
-
-# Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 *.lnk
-
-# Linux
 *~
 .directory
+
+# ---------- Python: Alembic ----------
+alembic/versions/__pycache__/
 
 # ---------- Documentation ----------
 site/
 docs/_build/
-*.log
-
-# ---------- Misc ----------
-*.bak
-*.orig
-*.rej
-core
-core.*
 nohup.out
 *.pid
 *.seed
 *.pid.lock
 
-
-# ------- private docs ----------
-docs/handbook
+# ---------- Private docs ----------
+docs/handbooks
