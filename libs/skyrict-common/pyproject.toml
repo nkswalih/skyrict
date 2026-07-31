@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "pydantic>=2.7,<3",
-    "structlog>=24.0,<25",
+    "structlog>=24.0,<27",
 ]
 
 [tool.hatch.build.targets.wheel]
