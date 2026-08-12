@@ -35,7 +35,8 @@ function ProvisioningScreen({ onComplete }: { onComplete: () => void }) {
     });
     const doneTimer = setTimeout(() => {
       setFinished(true);
-      onComplete();
+      const navTimer = setTimeout(onComplete, 1200);
+      timers.push(navTimer);
     }, INITIAL_DELAY_MS + provisionSteps.length * STEP_DURATION_MS + 400);
     timers.push(doneTimer);
     return () => timers.forEach(clearTimeout);

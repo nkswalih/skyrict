@@ -1,0 +1,140 @@
+name: CI — E2E Auth Suite
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "apps/web/**"
+      - "services/identity/**"
+      - "libs/skyrict-common/**"
+      - "pnpm-lock.yaml"
+      - "uv.lock"
+      - "pyproject.toml"
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "apps/web/**"
+      - "services/identity/**"
+      - "libs/skyrict-common/**"
+      - "pnpm-lock.yaml"
+      - "uv.lock"
+      - "pyproject.toml"
+
+concurrency:
+  group: ci-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Auth E2E (Playwright)
+    runs-on: ubuntu-latest
+    env:
+      IDENTITY_ENVIRONMENT: test
+      IDENTITY_DATABASE_URL: postgresql+asyncpg://skyrict:skyrict@127.0.0.1:5432/skyrict_identity
+      IDENTITY_REDIS_URL: redis://127.0.0.1:6379/0
+      IDENTITY_JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/.dev/keys/private.pem
+      IDENTITY_JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/.dev/keys/public.pem
+      IDENTITY_JWKS_ISSUER: https://auth.skyrict.io
+      IDENTITY_JWKS_AUDIENCE: api.skyrict.io
+      # Relaxed limits for a single shared runner IP: the hardening spec asserts
+      # the throttling mechanism with E2E_LOGIN_RATE_LIMIT, the rest of the suite
+      # just needs headroom (serial suites log in ~6x per account, ~9 signups/IP).
+      IDENTITY_RATE_LIMIT_LOGIN: 8
+      IDENTITY_RATE_LIMIT_LOGIN_IP: 200
+      IDENTITY_RATE_LIMIT_MFA_VERIFY: 200
+      IDENTITY_RATE_LIMIT_MFA_ENROLL: 200
+      IDENTITY_SIGNUP_START_RATE_LIMIT: 200
+      IDENTITY_SIGNUP_CODE_RATE_LIMIT: 200
+      IDENTITY_SIGNUP_VERIFY_RATE_LIMIT: 200
+      IDENTITY_SIGNUP_CHECK_RATE_LIMIT: 200
+      IDENTITY_SIGNUP_CAPTCHA_RATE_LIMIT: 200
+      E2E_LOGIN_RATE_LIMIT: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: skyrict
+          POSTGRES_PASSWORD: skyrict
+          POSTGRES_DB: skyrict_identity
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skyrict -d skyrict_identity"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-packages
+          pnpm install --frozen-lockfile
+
+      - name: Prepare JWT keys and MFA key
+        run: |
+          mkdir -p .dev/keys
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .dev/keys/private.pem
+          openssl rsa -pubout -in .dev/keys/private.pem -out .dev/keys/public.pem
+          uv run --directory services/identity python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > .dev/e2e-mfa.key
+
+      - name: Run migrations
+        run: |
+          export IDENTITY_MFA_ENCRYPTION_KEY="$(cat .dev/e2e-mfa.key | tr -d '\n')"
+          uv run --directory services/identity alembic upgrade head
+
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright auth suite
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: |
+          export IDENTITY_MFA_ENCRYPTION_KEY="$(cat ../../.dev/e2e-mfa.key | tr -d '\n')"
+          echo ">> Starting identity (TEST mode)…"
+          (uv run --directory ../../services/identity identity serve > /tmp/identity.log 2>&1 &)
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:8000/api/v1/ready > /dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:8000/api/v1/ready > /dev/null || { echo ">> identity failed to start"; cat /tmp/identity.log; exit 1; }
+          echo ">> Building web…"
+          pnpm build
+          echo ">> Starting web…"
+          (pnpm start > /tmp/web.log 2>&1 &)
+          for i in $(seq 1 90); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:3000/ > /dev/null || { echo ">> web failed to start"; cat /tmp/web.log; exit 1; }
+          echo ">> Running suite…"
+          pnpm exec playwright test --config e2e/playwright.config.ts --reporter=list
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/e2e/test-results/
+          retention-days: 7

@@ -84,12 +84,20 @@ class MFAService:
         The secret is encrypted and persisted immediately (MFA stays disabled
         until the first code verifies). Backup codes are regenerated on every
         call, replacing all ten slots.
+
+        A pending (not yet enabled) secret is reused so revisiting the setup
+        page — reload, remount, retry after a bad code — does not invalidate a
+        secret the user has already scanned into their authenticator app.
         """
         user = await self.user_repo.get_by_id(user_id)
         if user is None:
             raise UserNotFoundError()
 
-        secret = pyotp.random_base32()
+        if user.mfa_secret is not None and not user.mfa_enabled:
+            secret = decrypt_mfa_secret(user.mfa_secret)
+        else:
+            secret = pyotp.random_base32()
+
         provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
             name=user.email,
             issuer_name=settings.MFA_TOTP_ISSUER,

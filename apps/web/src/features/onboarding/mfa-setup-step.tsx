@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -26,6 +26,7 @@ import { OtpInput } from "@/lib/auth/OtpInput";
 import { cn } from "@/lib/utils";
 
 function MfaSetupStep() {
+  const setupRef = useRef<{ started: boolean; mounted: boolean } | null>(null);
   const [setup, setSetup] = useState<MfaSetup>();
   const [code, setCode] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -41,13 +42,16 @@ function MfaSetupStep() {
   const [regenerated, setRegenerated] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const state = (setupRef.current ??= { started: false, mounted: true });
+    state.mounted = true;
+    if (state.started) return;
+    state.started = true;
     setupMfa()
       .then((result) => {
-        if (!cancelled) setSetup(result);
+        if (state.mounted) setSetup(result);
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (state.mounted) {
           setError(
             err instanceof Error
               ? err.message
@@ -56,7 +60,7 @@ function MfaSetupStep() {
         }
       });
     return () => {
-      cancelled = true;
+      state.mounted = false;
     };
   }, []);
 
@@ -106,13 +110,22 @@ function MfaSetupStep() {
     }
     setConfirming(true);
     setError(undefined);
-    const result = await confirmMfaSetup({ code });
-    setConfirming(false);
-    if (result.status === "ok") {
-      setConfirmed(true);
-    } else {
-      setCode("");
-      setError("That code doesn't match. Try again.");
+    try {
+      const result = await confirmMfaSetup({ code });
+      if (result.status === "ok") {
+        setConfirmed(true);
+      } else {
+        setCode("");
+        setError("That code doesn't match. Try again.");
+      }
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not verify the code. Try again.",
+      );
+    } finally {
+      setConfirming(false);
     }
   }
 

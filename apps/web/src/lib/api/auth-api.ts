@@ -455,7 +455,7 @@ export async function confirmMfaSetup(input: {
     ok?: boolean;
     error?: string;
   };
-  if (res.status === 400) {
+ if (res.status === 400 || res.status === 403) {
     return { status: "invalid" };
   }
   if (!res.ok) {

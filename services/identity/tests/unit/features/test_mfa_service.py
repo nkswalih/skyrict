@@ -197,6 +197,24 @@ class TestSetupTotp:
         assert stored != result["secret"]
         assert decrypt_mfa_secret(stored) == result["secret"]
 
+    async def test_setup_reuses_pending_secret_before_enrollment(self, tenant_ctx: str) -> None:
+        service, user_repo, _ = _make_service()
+
+        first = await service.setup_totp(user_repo.user.id)
+        second = await service.setup_totp(user_repo.user.id)
+
+        assert second["secret"] == first["secret"]
+        assert second["provisioning_uri"] == first["provisioning_uri"]
+
+    async def test_setup_regenerates_secret_once_enabled(self, tenant_ctx: str) -> None:
+        service, user_repo, _ = _make_service()
+
+        first = await service.setup_totp(user_repo.user.id)
+        await service.enable_mfa(user_repo.user.id, first["backup_codes"][0])
+        second = await service.setup_totp(user_repo.user.id)
+
+        assert second["secret"] != first["secret"]
+
     async def test_setup_regenerates_all_ten_backup_code_slots(self, tenant_ctx: str) -> None:
         service, user_repo, _ = _make_service()
 
