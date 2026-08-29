@@ -1,34 +1,43 @@
 """Leave pattern anomaly repository (HR-AI-002, 8.2.1 — the anomaly inbox).
 
 Scans approved/pending leave requests in a trailing window and finds per-team
-pattern deviations:
+pattern deviations. The detection itself lives in the PURE shared engine
+:mod:`skyrict_common.ai_hr_rules` — the ai-agent eval harness grades the exact
+same code — and this repository is the I/O boundary (projection + persistence):
 
-  - ``leave_overuse``: an employee consumes >= 3x the team's median leave-days
-    (only when the median itself is >= 1 day).
-  - ``frequent_absence``: an employee files >= 3x the team's median request
-    count (only when the median itself is >= 1 request).
+  - ``leave_overuse``: consumes >= 3x the team's median leave-days.
+  - ``frequent_absence``: files >= 3x the team's median request count.
+  - ``short_notice_monday_friday``: a Monday/Friday-touching block filed with
+    < 14 days' notice and >= 3x the median.
+  - ``pre_holiday_spike``: leave within 2 days of a public holiday and >= 3x
+    the median.
 
-Severity scales with the ratio (>=5x critical, >=4x high, >=3x medium). The
-*team-size gate* abstains entirely for teams with fewer than 4 active members —
-the Gherkin case drives no persisted rows for a thin baseline. Findings are
-persisted into ``ai_hr_leave_anomalies`` by replace-tenant scan.
+The *team-size gate* abstains entirely for teams with fewer than 4 active
+members — thin baselines drive no persisted rows. Findings are persisted into
+``ai_hr_leave_anomalies`` by replace-tenant scan.
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
-from statistics import median
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import and_, delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.features.ai_hr.models.leave_anomaly import LeaveAnomalyModel
+from core.features.ai_hr.models.public_holiday import AiHrPublicHolidayModel
 from core.features.hr.models.department import DepartmentModel
 from core.features.hr.models.employee import EmployeeModel, EmploymentStatus
 from core.features.hr.models.leave_request import LeaveRequestModel, LeaveRequestStatus
+from skyrict_common.ai_hr_rules import (
+    Holiday,
+    RequestSignal,
+    detect_leave_pattern_anomalies,
+    ratio_severity,
+)
 
 _ACTIVE = (EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE)
 _INCLUDED_STATES = (LeaveRequestStatus.APPROVED, LeaveRequestStatus.PENDING)
@@ -66,7 +75,6 @@ class AiHrAnomalyRepository:
     async def build_anomaly_rows(self, tenant_id: uuid.UUID) -> list[LeaveAnomaly]:
         """Compute per-team pattern deviations for the current scan."""
         today = date.today()
-        window_start = today - timedelta(days=self.TRAILING_DAYS)
 
         employees = select(
             EmployeeModel.id.label("employee_id"),
@@ -76,104 +84,88 @@ class AiHrAnomalyRepository:
             EmployeeModel.employment_status.in_(_ACTIVE),
         )
         employee_rows = (await self.session.execute(employees)).all()
-        by_department: dict[uuid.UUID | None, list[uuid.UUID]] = {}
+        members: dict[uuid.UUID | None, list[uuid.UUID]] = {}
         for r in employee_rows:
-            by_department.setdefault(r.department_id, []).append(r.employee_id)
+            members.setdefault(r.department_id, []).append(r.employee_id)
 
         req_stmt = select(
+            LeaveRequestModel.id,
             LeaveRequestModel.employee_id,
             LeaveRequestModel.start_date,
+            LeaveRequestModel.end_date,
             LeaveRequestModel.days,
             LeaveRequestModel.leave_type,
+            LeaveRequestModel.created_at,
         ).where(
             LeaveRequestModel.tenant_id == tenant_id,
             LeaveRequestModel.status.in_(_INCLUDED_STATES),
-            LeaveRequestModel.start_date >= window_start,
-            LeaveRequestModel.start_date <= today,
         )
         req_rows = (await self.session.execute(req_stmt)).all()
-        requests: dict[uuid.UUID, list[Any]] = {}
+        requests: dict[uuid.UUID, list[RequestSignal]] = {}
         for rq in req_rows:
-            requests.setdefault(rq.employee_id, []).append(rq)
+            requests.setdefault(rq.employee_id, []).append(
+                RequestSignal(
+                    request_id=rq.id,
+                    employee_id=rq.employee_id,
+                    start_date=rq.start_date,
+                    end_date=rq.end_date,
+                    days=int(rq.days or 0),
+                    leave_type=rq.leave_type,
+                    filed_on=rq.created_at.date(),
+                )
+            )
 
-        return self._compute(by_department, requests)
+        holidays_stmt = select(
+            AiHrPublicHolidayModel.calendar_date,
+            AiHrPublicHolidayModel.name,
+            AiHrPublicHolidayModel.department_id,
+        ).where(AiHrPublicHolidayModel.tenant_id == tenant_id)
+        holidays = [
+            Holiday(
+                calendar_date=h.calendar_date,
+                name=h.name,
+                department_id=h.department_id,
+            )
+            for h in (await self.session.execute(holidays_stmt)).all()
+        ]
+
+        return self._compute(members, requests, holidays, today)
 
     @classmethod
     def _compute(
         cls,
-        by_department: dict[uuid.UUID | None, list[uuid.UUID]],
-        requests: dict[uuid.UUID, list[Any]],
+        members: dict[uuid.UUID | None, list[uuid.UUID]],
+        requests: dict[uuid.UUID, list[RequestSignal]],
+        holidays: list[Holiday] | None = None,
+        today: date | None = None,
     ) -> list[LeaveAnomaly]:
-        """Pure rule engine over grouped members + requests — unit-testable."""
-        anomalies: list[LeaveAnomaly] = []
-        for department_id, members in by_department.items():
-            if len(members) < cls.MIN_TEAM_SIZE:
-                continue  # team-size gate: abstain for thin baselines
-            days_by: dict[uuid.UUID, int] = {}
-            count_by: dict[uuid.UUID, int] = {}
-            for mid in members:
-                member_reqs = requests.get(mid, [])
-                days_by[mid] = sum(int(r.days or 0) for r in member_reqs)
-                count_by[mid] = len(member_reqs)
-            med_days = median(days_by.values())
-            med_count = median(count_by.values())
-            for mid in members:
-                if mid not in requests:
-                    continue
-                member_reqs = requests[mid]
-                total_days = days_by[mid]
-                count = count_by[mid]
-                first_start = str(min(rq.start_date for rq in member_reqs))
-                if med_days >= 1 and total_days >= 3 * med_days:
-                    ratio = total_days / med_days
-                    severity = cls._ratio_severity(ratio)
-                    anomalies.append(
-                        LeaveAnomaly(
-                            employee_id=mid,
-                            anomaly_type="leave_overuse",
-                            severity=severity,
-                            title="Above-average leave consumption",
-                            description=(
-                                f"{total_days} leave day(s) used in the trailing "
-                                f"{cls.TRAILING_DAYS} days vs a team median of "
-                                f"{med_days:.1f}."
-                            ),
-                            team_id=department_id,
-                            team_size=len(members),
-                            evidence={
-                                "window_days": cls.TRAILING_DAYS,
-                                "leave_days": total_days,
-                                "team_median_days": round(med_days, 2),
-                                "request_count": count,
-                                "first_start": first_start,
-                            },
-                        )
-                    )
-                if med_count >= 1 and count >= 3 * med_count:
-                    ratio = count / med_count
-                    severity = cls._ratio_severity(ratio)
-                    anomalies.append(
-                        LeaveAnomaly(
-                            employee_id=mid,
-                            anomaly_type="frequent_absence",
-                            severity=severity,
-                            title="Frequent leave requests",
-                            description=(
-                                f"{count} leave request(s) in the trailing "
-                                f"{cls.TRAILING_DAYS} days vs a team median of "
-                                f"{med_count:.1f}."
-                            ),
-                            team_id=department_id,
-                            team_size=len(members),
-                            evidence={
-                                "window_days": cls.TRAILING_DAYS,
-                                "request_count": count,
-                                "team_median_count": round(med_count, 2),
-                                "leave_days": total_days,
-                            },
-                        )
-                    )
-        return anomalies
+        """Run the PURE shared engine and map findings onto the row shape."""
+        now = datetime.now(UTC)
+        return [
+            LeaveAnomaly(
+                employee_id=found.employee_id,
+                anomaly_type=found.anomaly_type,
+                severity=found.severity,
+                title=found.title,
+                description=found.description,
+                team_id=found.team_id,
+                team_size=found.team_size,
+                evidence=found.evidence,
+                created_at=now,
+            )
+            for found in detect_leave_pattern_anomalies(
+                members=members,
+                requests_by_employee=requests,
+                holidays=holidays or (),
+                today=today or date.today(),
+                trailing_days=cls.TRAILING_DAYS,
+                min_team_size=cls.MIN_TEAM_SIZE,
+                short_notice_days=cls.SHORT_NOTICE_DAYS,
+                short_notice_pressing_days=cls.SHORT_NOTICE_PRESSING_DAYS,
+                pre_holiday_adjacency_days=cls.PRE_HOLIDAY_ADJACENCY_DAYS,
+                spike_ratio=cls.SPIKE_RATIO,
+            )
+        ]
 
     # -- persistence ----------------------------------------------------------
 
@@ -276,14 +268,14 @@ class AiHrAnomalyRepository:
 
     TRAILING_DAYS = 90
     MIN_TEAM_SIZE = 4
+    SHORT_NOTICE_DAYS = 14
+    SHORT_NOTICE_PRESSING_DAYS = 3
+    PRE_HOLIDAY_ADJACENCY_DAYS = 2
+    SPIKE_RATIO = 3.0
 
     @staticmethod
     def _ratio_severity(ratio: float) -> str:
-        if ratio >= 5:
-            return "critical"
-        if ratio >= 4:
-            return "high"
-        return "medium"
+        return ratio_severity(ratio)
 
 
 __all__ = ["AiHrAnomalyRepository", "LeaveAnomaly"]

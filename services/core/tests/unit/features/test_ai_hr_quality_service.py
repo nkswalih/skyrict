@@ -7,13 +7,16 @@ the L1 org KPI aggregation, and the lazy-on-read TTL recalc. No database.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 
 from core.features.ai_hr.quality_repository import EmployeeQuality
 from core.features.ai_hr.quality_service import QualityService, _score_row
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 pytestmark = pytest.mark.unit
 

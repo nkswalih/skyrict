@@ -89,7 +89,9 @@ class AnomalyService:
         narrative = (
             f"{len(anomalies)} open leave anomaly(-ies): "
             f"{by_type.get('leave_overuse', 0)} overuse, "
-            f"{by_type.get('frequent_absence', 0)} frequent-absence."
+            f"{by_type.get('frequent_absence', 0)} frequent-absence, "
+            f"{by_type.get('short_notice_monday_friday', 0)} short-notice "
+            f"Mon/Fri, {by_type.get('pre_holiday_spike', 0)} pre-holiday spike."
         )
         return AnomalyOrgSummary(
             total_anomalies=len(anomalies),
