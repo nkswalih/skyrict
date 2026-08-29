@@ -15,6 +15,7 @@ from core.features.ai_hr.models.employee_document import (
 )
 from core.features.ai_hr.models.hr_eval_run import HrEvalRunModel
 from core.features.ai_hr.models.leave_anomaly import LeaveAnomalyModel, LeaveAnomalyStatus
+from core.features.ai_hr.models.leave_blackout_period import AiHrLeaveBlackoutPeriodModel
 from core.features.ai_hr.models.leave_suggestion import LeaveSuggestionModel, LeaveSuggestionStatus
 from core.features.ai_hr.models.payroll_anomaly import (
     AnomalySeverity,
@@ -22,6 +23,7 @@ from core.features.ai_hr.models.payroll_anomaly import (
     AnomalyType,
     PayrollAnomalyModel,
 )
+from core.features.ai_hr.models.public_holiday import AiHrPublicHolidayModel
 from core.features.ai_hr.models.quality_score import QualityGrade, QualityScoreModel
 from core.features.ai_hr.models.utilization_alert import (
     UtilizationAlertModel,
@@ -30,6 +32,8 @@ from core.features.ai_hr.models.utilization_alert import (
 )
 
 __all__ = [
+    "AiHrLeaveBlackoutPeriodModel",
+    "AiHrPublicHolidayModel",
     "AnomalySeverity",
     "AnomalyStatus",
     "AnomalyType",

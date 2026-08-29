@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from core.core.audit_service import AuditService as CoreAuditService
     from core.features.ai_hr.anomaly_service import AnomalyService
     from core.features.ai_hr.eval_repository import EvalRunRepository
+    from core.features.ai_hr.pattern_data_repository import (
+        AiHrPatternDataRepository as PatternDataRepository,
+    )
     from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
     from core.features.ai_hr.suggestion_service import SuggestionService
@@ -380,6 +383,13 @@ def get_eval_repository(db: AsyncSession = Depends(get_db)) -> EvalRunRepository
     from core.features.ai_hr.eval_repository import EvalRunRepository
 
     return EvalRunRepository(db)
+
+
+def get_pattern_data_repository(db: AsyncSession = Depends(get_db)) -> PatternDataRepository:
+    """Composition root for the AI pattern-engine config tables (0024)."""
+    from core.features.ai_hr.pattern_data_repository import AiHrPatternDataRepository
+
+    return AiHrPatternDataRepository(db)
 
 
 async def get_hr_ai_individual(

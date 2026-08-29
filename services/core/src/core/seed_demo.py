@@ -349,6 +349,31 @@ LEAVE_REQUEST_ROWS: tuple[dict[str, object], ...] = (
     },
 )
 
+# Malaysian public holidays for the demo tenant (org-wide; 8.2.1 input data).
+# Dates are illustrative — demo config, not an authoritative calendar.
+HOLIDAY_ROWS: tuple[dict[str, object], ...] = (
+    {"date": "2026-01-01", "name": "New Year's Day"},
+    {"date": "2026-02-17", "name": "Chinese New Year"},
+    {"date": "2026-03-20", "name": "Hari Raya Aidilfitri"},
+    {"date": "2026-05-01", "name": "Labour Day"},
+    {"date": "2026-05-31", "name": "Wesak Day"},
+    {"date": "2026-06-01", "name": "Yang di-Pertuan Agong's Birthday"},
+    {"date": "2026-08-31", "name": "National Day"},
+    {"date": "2026-09-16", "name": "Malaysia Day"},
+    {"date": "2026-12-25", "name": "Christmas Day"},
+)
+
+# Department-scoped blackout for the Finance team's year-end close (8.2.4).
+# Referenced by department index into DEPARTMENT_ROWS (3 = Finance).
+BLACKOUT_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "dept_idx": 3,
+        "start": "2026-12-20",
+        "end": "2026-12-31",
+        "reason": "Year-end financial close",
+    },
+)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FINANCE DATA
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1568,6 +1593,8 @@ async def _resolve_owner_id(session: AsyncSession, tenant_id: uuid.UUID) -> uuid
 
 async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[str, int]:
     """Seed demo data for all ERP modules. Idempotent unless force=True."""
+    from core.features.ai_hr.models.leave_blackout_period import AiHrLeaveBlackoutPeriodModel
+    from core.features.ai_hr.models.public_holiday import AiHrPublicHolidayModel
     from core.features.finance.models.chart_of_account import ErpChartOfAccountModel
     from core.features.finance.models.fiscal_period import ErpFiscalPeriodModel
     from core.features.finance.models.invoice import ErpInvoiceModel
@@ -1631,6 +1658,8 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
                 LeaveMovementModel,
                 LeaveRequestModel,
                 LeaveBalanceModel,
+                AiHrLeaveBlackoutPeriodModel,
+                AiHrPublicHolidayModel,
                 EmployeeModel,
                 DepartmentModel,
             ):
@@ -1748,6 +1777,28 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
                 )
                 session.add(bal)
         counts["leave_balances"] = len(emp_ids) * 2
+
+        # ── AI PATTERN DATA (holidays + blackouts; 0024) ────────────
+        for row in HOLIDAY_ROWS:
+            session.add(
+                AiHrPublicHolidayModel(
+                    tenant_id=tenant_id,
+                    calendar_date=date.fromisoformat(str(row["date"])),
+                    name=str(row["name"]),
+                )
+            )
+        for row in BLACKOUT_ROWS:
+            session.add(
+                AiHrLeaveBlackoutPeriodModel(
+                    tenant_id=tenant_id,
+                    start_date=date.fromisoformat(str(row["start"])),
+                    end_date=date.fromisoformat(str(row["end"])),
+                    department_id=dept_ids[int(str(row["dept_idx"]))],
+                    reason=str(row["reason"]),
+                )
+            )
+        counts["public_holidays"] = len(HOLIDAY_ROWS)
+        counts["leave_blackout_periods"] = len(BLACKOUT_ROWS)
 
         # ── ATTENDANCE (last 21 days; deterministic mix of statuses) ─
         # Cycle per employee/day: mostly on_time, some late, occasional

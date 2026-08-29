@@ -87,6 +87,9 @@ _HR_AI_TABLES = (
     "ai_hr_leave_anomalies",
     "ai_hr_leave_suggestions",
     "hr_eval_runs",
+    # 0024: HR-AI-002 pattern-engine input tables (holidays + blackouts).
+    "ai_hr_public_holidays",
+    "ai_hr_leave_blackout_periods",
 )
 
 
@@ -152,7 +155,7 @@ async def _assert_upgraded_schema(url: str) -> None:
             version = (
                 await conn.execute(text("SELECT version_num FROM alembic_version_core"))
             ).scalar_one()
-            assert version == "0023", f"head is {version}, expected 0023"
+            assert version == "0024", f"head is {version}, expected 0024"
 
             # 0018: erp.leave.self is a first-class catalog permission.
             perm_row = (

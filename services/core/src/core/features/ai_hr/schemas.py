@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from core.features.ai_hr.anomaly_repository import LeaveAnomaly
 from core.features.ai_hr.anomaly_service import AnomalyOrgSummary
 from core.features.ai_hr.attrition_repository import ScoredRisk
+from core.features.ai_hr.pattern_data_repository import LeaveBlackoutPeriod, PublicHoliday
 from core.features.ai_hr.quality_repository import EmployeeQuality
 from core.features.ai_hr.quality_service import QualityOrgKpi
 from core.features.ai_hr.repository import (
@@ -465,6 +466,65 @@ class HrEvalWriteOut(BaseModel):
     recorded: int
 
 
+class PublicHolidayWrite(BaseModel):
+    """Define one public-holiday / office-closure day (8.2.1 input config)."""
+
+    calendar_date: date
+    name: str = Field(min_length=1, max_length=100)
+    department_id: uuid.UUID | None = None
+
+
+class PublicHolidayOut(BaseModel):
+    """One stored holiday row."""
+
+    holiday_id: uuid.UUID
+    calendar_date: date
+    name: str
+    department_id: uuid.UUID | None
+    created_at: datetime
+
+
+class LeaveBlackoutWrite(BaseModel):
+    """Define one leave-blackout window (8.2.4 input config)."""
+
+    start_date: date
+    end_date: date
+    reason: str = Field(min_length=1, max_length=200)
+    department_id: uuid.UUID | None = None
+
+
+class LeaveBlackoutOut(BaseModel):
+    """One stored blackout window."""
+
+    blackout_id: uuid.UUID
+    start_date: date
+    end_date: date
+    department_id: uuid.UUID | None
+    reason: str
+    created_at: datetime
+
+
+def public_holiday_to_out(h: PublicHoliday) -> PublicHolidayOut:
+    return PublicHolidayOut(
+        holiday_id=h.holiday_id,
+        calendar_date=h.calendar_date,
+        name=h.name,
+        department_id=h.department_id,
+        created_at=h.created_at,
+    )
+
+
+def leave_blackout_to_out(b: LeaveBlackoutPeriod) -> LeaveBlackoutOut:
+    return LeaveBlackoutOut(
+        blackout_id=b.blackout_id,
+        start_date=b.start_date,
+        end_date=b.end_date,
+        department_id=b.department_id,
+        reason=b.reason,
+        created_at=b.created_at,
+    )
+
+
 __all__ = [
     "AnomalyOrgOut",
     "AttritionDetailOut",
@@ -481,9 +541,13 @@ __all__ = [
     "HrEvalRunWrite",
     "HrEvalWriteOut",
     "LeaveAnomalyOut",
+    "LeaveBlackoutOut",
+    "LeaveBlackoutWrite",
     "LeaveSuggestionOut",
     "Overview",
     "OverviewOut",
+    "PublicHolidayOut",
+    "PublicHolidayWrite",
     "QualityOrgOut",
     "SuggestionOrgOut",
     "TenureBand",
@@ -497,7 +561,9 @@ __all__ = [
     "attrition_l1_to_out",
     "attrition_l2_to_out",
     "employee_quality_to_out",
+    "leave_blackout_to_out",
     "overview_to_out",
+    "public_holiday_to_out",
     "quality_org_to_out",
     "suggestion_org_to_out",
     "suggestion_to_out",
