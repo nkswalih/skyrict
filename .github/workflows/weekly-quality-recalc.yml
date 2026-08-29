@@ -1,0 +1,35 @@
+name: Weekly — Data-Quality Recalc
+
+# Explicit weekly recompute of per-employee data-quality scores, independent of
+# the in-service 7-day TTL (8.1.3). Calls core's force-refresh maintenance
+# endpoint directly with the same secrets the nightly eval hook uses, so a new
+# run is written every Sunday even when the TTL would have skipped it. Unlike
+# the eval run (warn-not-fail), this job FAILS on a non-2xx: a silent recalc
+# regression is worth a red run.
+
+on:
+  schedule:
+    - cron: "17 3 * * 0" # Sunday 03:17 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-quality-recalc
+  cancel-in-progress: false
+
+jobs:
+  recalc:
+    name: Force quality refresh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recompute data-quality scores
+        run: |
+          curl -sS --fail -X POST \
+            -H "Authorization: Bearer ${{ secrets.SKYRICT_CORE_TOKEN }}" \
+            -H "X-Tenant-Slug: ${{ secrets.SKYRICT_TENANT_SLUG }}" \
+            "${{ secrets.SKYRICT_CORE_URL }}/api/v1/ai/hr/quality/refresh"
+      - name: Summarize
+        if: always()
+        run: |
+          echo "Weekly data-quality recalc executed"
+          echo "core_url config: $([ -n \"${{ secrets.SKYRICT_CORE_URL }}\" ] && echo set || echo unset)"
+          echo "auth: $([ -n \"${{ secrets.SKYRICT_CORE_TOKEN }}\" ] && [ -n \"${{ secrets.SKYRICT_TENANT_SLUG }}\" ] && echo enabled || echo disabled)"

@@ -502,6 +502,10 @@ box.
 >
 > Freshness mechanics: anomaly/quality feeds refresh after 7 days,
 > utilization after 1 day (`max(created_at)` + elapsed >= refresh window).
+> The quality feed also has an explicit **weekly recalc** — the ops cron in
+> §13.5 calls `POST /api/v1/ai/hr/quality/refresh` (force re-score; L1
+> maintenance response) every Sunday 03:17 UTC so the panel always has a
+> current run regardless of TTL.
 > The team-size gate and the four rule near-miss cases are pinned by the lib
 > tests and the `anomaly_precision` eval seed (rows above).
 
@@ -514,7 +518,12 @@ history lands in `hr_eval_runs`. This repository ships the job at
 `workflow_dispatch`, installs with `uv sync --all-packages --frozen`, then runs
 `uv run --project services/ai-agent ai-agent eval-hr-models` with
 `SKYRICT_CORE_URL` / `SKYRICT_CORE_TOKEN` / `SKYRICT_TENANT_SLUG` supplied from
-Actions secrets. Local equivalent:
+Actions secrets.
+
+The quality feed's **weekly recalc** ships as `.github/workflows/
+weekly-quality-recalc.yml` — Sunday **03:17 UTC** + `workflow_dispatch`, a
+dependency-free `curl` POST to `POST /api/v1/ai/hr/quality/refresh` reusing the
+same three secrets. Local equivalent:
 
 ```
 uv run --directory services/ai-agent ai-agent eval-hr-models --dry-run
