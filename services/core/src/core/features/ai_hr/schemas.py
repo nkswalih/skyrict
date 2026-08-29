@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from core.features.ai_hr.anomaly_repository import LeaveAnomaly
+from core.features.ai_hr.anomaly_service import AnomalyOrgSummary
 from core.features.ai_hr.attrition_repository import ScoredRisk
 from core.features.ai_hr.quality_repository import EmployeeQuality
 from core.features.ai_hr.quality_service import QualityOrgKpi
@@ -333,7 +335,62 @@ def utilization_org_to_out(summary: UtilizationOrgSummary) -> UtilizationOrgOut:
     )
 
 
+class LeaveAnomalyOut(BaseModel):
+    """One leave-pattern finding (L2 / self-scoped feed)."""
+
+    employee_id: uuid.UUID
+    employee_number: str | None
+    name: str | None
+    department_name: str | None
+    anomaly_type: str
+    severity: str
+    title: str
+    description: str
+    team_size: int
+    evidence: dict[str, Any]
+    status: str | None
+    created_at: datetime
+
+
+class AnomalyOrgOut(BaseModel):
+    """L1 aggregate response — never carries an employee identifier/name."""
+
+    total_anomalies: int
+    by_type: dict[str, int]
+    by_severity: dict[str, int]
+    generated_at: datetime
+    narrative: str
+
+
+def anomaly_to_out(a: LeaveAnomaly) -> LeaveAnomalyOut:
+    return LeaveAnomalyOut(
+        employee_id=a.employee_id,
+        employee_number=a.employee_number,
+        name=f"{a.first_name or ''} {a.last_name or ''}".strip() or None,
+        department_name=a.department_name,
+        anomaly_type=a.anomaly_type,
+        severity=a.severity,
+        title=a.title,
+        description=a.description,
+        team_size=a.team_size,
+        evidence=a.evidence,
+        status=a.status,
+        created_at=a.created_at,
+    )
+
+
+def anomaly_org_to_out(summary: AnomalyOrgSummary) -> AnomalyOrgOut:
+    return AnomalyOrgOut(
+        total_anomalies=summary.total_anomalies,
+        by_type=summary.by_type,
+        by_severity=summary.by_severity,
+        generated_at=summary.generated_at,
+        narrative=summary.narrative,
+    )
+
+
 __all__ = [
+    "AnomalyOrgOut",
     "AttritionDetailOut",
     "AttritionSummaryOut",
     "DepartmentCount",
@@ -345,6 +402,7 @@ __all__ = [
     "FactorOut",
     "HeadcountPoint",
     "HeadcountPointOut",
+    "LeaveAnomalyOut",
     "Overview",
     "OverviewOut",
     "QualityOrgOut",
@@ -354,6 +412,8 @@ __all__ = [
     "TenureSummaryOut",
     "UtilizationAlertOut",
     "UtilizationOrgOut",
+    "anomaly_org_to_out",
+    "anomaly_to_out",
     "attrition_l1_to_out",
     "attrition_l2_to_out",
     "employee_quality_to_out",

@@ -135,6 +135,15 @@ class Settings(BaseSettings):
             "is older than this many days."
         ),
     )
+    AI_HR_ANOMALY_SCAN_INTERVAL_DAYS: int = Field(
+        default=7,
+        ge=1,
+        description=(
+            "lazy-on-read TTL for the leave-pattern anomaly detector (8.2.1): "
+            "the anomaly inbox is regenerated when it is read and the latest "
+            "scan is older than this many days."
+        ),
+    )
 
     # --- Derived (loaded from files at validation time) ---
     jwt_public_key: str = ""

@@ -29,6 +29,7 @@ from skyrict_common.exceptions import AuthenticationError, PermissionDeniedError
 
 if TYPE_CHECKING:
     from core.core.audit_service import AuditService as CoreAuditService
+    from core.features.ai_hr.anomaly_service import AnomalyService
     from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
     from core.features.ai_hr.utilization_service import UtilizationService
@@ -341,6 +342,20 @@ def get_utilization_service(
     return UtilizationService(
         repository=AiHrUtilizationRepository(db),
         refresh_days=settings.AI_HR_UTILIZATION_SCAN_INTERVAL_DAYS,
+    )
+
+
+def get_anomaly_service(
+    db: AsyncSession = Depends(get_db),
+) -> AnomalyService:
+    """Composition root for the leave-pattern anomaly scanner (8.2.1)."""
+    from core.core.config import settings
+    from core.features.ai_hr.anomaly_repository import AiHrAnomalyRepository
+    from core.features.ai_hr.anomaly_service import AnomalyService
+
+    return AnomalyService(
+        repository=AiHrAnomalyRepository(db),
+        refresh_days=settings.AI_HR_ANOMALY_SCAN_INTERVAL_DAYS,
     )
 
 

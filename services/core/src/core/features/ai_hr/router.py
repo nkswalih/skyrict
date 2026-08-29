@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 
 from core.api.deps import (
     get_ai_hr_service,
+    get_anomaly_service,
     get_current_user,
     get_hr_ai_individual,
     get_quality_service,
@@ -40,18 +41,23 @@ from core.core.permissions import (
 from core.core.tenant_resolver import derive_tenant_slug
 from core.features.ai.proxy import forward_to_ai_agent, relay_response
 from core.features.ai.router import get_ai_client
+from core.features.ai_hr.anomaly_service import AnomalyService
 from core.features.ai_hr.attrition_client import score_features
 from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
 from core.features.ai_hr.quality_service import QualityService
 from core.features.ai_hr.schemas import (
+    AnomalyOrgOut,
     AttritionDetailOut,
     AttritionSummaryOut,
     EmployeeQualityOut,
+    LeaveAnomalyOut,
     OverviewOut,
     QualityOrgOut,
     TenureSummaryOut,
     UtilizationAlertOut,
     UtilizationOrgOut,
+    anomaly_org_to_out,
+    anomaly_to_out,
     attrition_l1_to_out,
     attrition_l2_to_out,
     employee_quality_to_out,
@@ -81,6 +87,7 @@ _CurrentUserDep = Annotated[dict[str, Any], Depends(get_current_user)]
 _ServiceDep = Annotated[AiHrService, Depends(get_ai_hr_service)]
 _QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
 _UtilizationServiceDep = Annotated[UtilizationService, Depends(get_utilization_service)]
+_AnomalyServiceDep = Annotated[AnomalyService, Depends(get_anomaly_service)]
 _ClientDep = Annotated[httpx.AsyncClient, Depends(get_ai_client)]
 _IndividualDep = Annotated[bool, Depends(get_hr_ai_individual)]
 
@@ -211,6 +218,45 @@ async def utilization_employee(
     return ResponseEnvelope(
         data=[utilization_alert_to_out(a) for a in alerts],
         message="HR AI employee utilization alerts retrieved",
+    )
+
+
+@router.get("/alerts/anomalies", response_model=ResponseEnvelope[AnomalyOrgOut])
+async def anomaly_org(
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    anomaly_service: _AnomalyServiceDep,
+) -> ResponseEnvelope[AnomalyOrgOut]:
+    """L1 leave-pattern anomaly feed (8.2.1). Never carries per-person values."""
+    summary = await anomaly_service.org_feed(_tenant_id(current_user))
+    return ResponseEnvelope(
+        data=anomaly_org_to_out(summary),
+        message="HR AI leave anomaly feed retrieved",
+    )
+
+
+@router.get(
+    "/alerts/anomalies/{employee_id}",
+    response_model=ResponseEnvelope[list[LeaveAnomalyOut]],
+)
+async def anomaly_employee(
+    employee_id: uuid.UUID,
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    anomaly_service: _AnomalyServiceDep,
+    show_individual: _IndividualDep,
+) -> ResponseEnvelope[list[LeaveAnomalyOut]] | JSONResponse:
+    """L2 per-employee anomaly findings for ``individual`` callers; 403 else."""
+    if not show_individual:
+        limited: ResponseEnvelope[dict[str, Any]] = ResponseEnvelope(
+            data={"detail": "erp.hr.ai.individual required for the individual view"},
+            message="erp.hr.ai.individual required",
+        )
+        return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
+    anomalies = await anomaly_service.employee_anomalies(_tenant_id(current_user), employee_id)
+    return ResponseEnvelope(
+        data=[anomaly_to_out(a) for a in anomalies],
+        message="HR AI employee leave anomaly findings retrieved",
     )
 
 

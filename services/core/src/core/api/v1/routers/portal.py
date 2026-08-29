@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from core.api.deps import (
+    get_anomaly_service,
     get_leave_service,
     get_tenant_id,
     get_utilization_service,
@@ -29,7 +30,13 @@ from core.api.v1.schemas.hr import (
     PortalLeaveRequestCreate,
     PortalMeOut,
 )
-from core.features.ai_hr.schemas import UtilizationAlertOut, utilization_alert_to_out
+from core.features.ai_hr.anomaly_service import AnomalyService
+from core.features.ai_hr.schemas import (
+    LeaveAnomalyOut,
+    UtilizationAlertOut,
+    anomaly_to_out,
+    utilization_alert_to_out,
+)
 from core.features.ai_hr.utilization_service import UtilizationService
 from core.features.hr.service import LeaveService
 from skyrict_common.schemas import ResponseEnvelope
@@ -119,4 +126,19 @@ async def my_leave_alerts(
     return ResponseEnvelope(
         data=[utilization_alert_to_out(a) for a in alerts],
         message="Your utilization alerts retrieved",
+    )
+
+
+@router.get("/leave/anomalies", response_model=ResponseEnvelope[list[LeaveAnomalyOut]])
+async def my_leave_anomalies(
+    current_user: dict[str, Any] = Depends(require_employee_self_service),
+    anomaly_service: AnomalyService = Depends(get_anomaly_service),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> ResponseEnvelope[list[LeaveAnomalyOut]]:
+    """The caller's OWN leave-pattern findings, self-scoped."""
+    employee = current_user["employee"]
+    anomalies = await anomaly_service.own_anomalies(tenant_id, employee.id)
+    return ResponseEnvelope(
+        data=[anomaly_to_out(a) for a in anomalies],
+        message="Your leave anomaly findings retrieved",
     )
