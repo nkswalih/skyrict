@@ -7,10 +7,10 @@ review applies open -> resolved | dismissed | escalated transitions.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 
 from ai_agent.models.ai_anomaly import AiAnomalyModel
 from skyrict_common.exceptions import NotFoundError
@@ -54,16 +54,26 @@ class AnomalyRepository:
         await self.session.flush()
         return row
 
-    async def has_open(self, *, tenant_id: uuid.UUID, anomaly_type: str) -> bool:
-        """True when an OPEN anomaly of this type exists (dedupe gate)."""
+    async def has_open(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        anomaly_type: str,
+        product_id: uuid.UUID | None = None,
+        warehouse_id: uuid.UUID | None = None,
+    ) -> bool:
+        """True when an OPEN anomaly of this type+scope exists (dedupe gate)."""
+        conditions = [
+            AiAnomalyModel.tenant_id == tenant_id,
+            AiAnomalyModel.anomaly_type == anomaly_type,
+            AiAnomalyModel.status == "open",
+        ]
+        if product_id is not None:
+            conditions.append(AiAnomalyModel.affected_product_id == product_id)
+        if warehouse_id is not None:
+            conditions.append(AiAnomalyModel.affected_warehouse_id == warehouse_id)
         result = await self.session.execute(
-            select(func.count())
-            .select_from(AiAnomalyModel)
-            .where(
-                AiAnomalyModel.tenant_id == tenant_id,
-                AiAnomalyModel.anomaly_type == anomaly_type,
-                AiAnomalyModel.status == "open",
-            )
+            select(func.count()).select_from(AiAnomalyModel).where(*conditions)
         )
         return int(result.scalar_one()) > 0
 
@@ -132,3 +142,23 @@ class AnomalyRepository:
         row.resolution_note = resolution_note
         await self.session.flush()
         return row
+
+    async def auto_close_stale(self, *, close_days: int) -> int:
+        """Bulk-dismiss open anomalies older than *close_days* (spec 4.4).
+
+        Returns the number of rows affected.
+        """
+        cutoff = datetime.now(tz=UTC) - timedelta(days=close_days)
+        result = await self.session.execute(
+            update(AiAnomalyModel)
+            .where(
+                AiAnomalyModel.status == "open",
+                AiAnomalyModel.created_at < cutoff,
+            )
+            .values(
+                status="dismissed",
+                resolution_note="Auto-closed after configured expiry period.",
+            )
+        )
+        await self.session.flush()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]

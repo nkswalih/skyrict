@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+    AlertTriangle,
     ArrowLeftRight,
     BellRing,
+    BarChart3,
+    Calendar,
     LayoutDashboard,
     Layers,
     Package,
+    ShoppingCart,
     Warehouse,
     type LucideIcon,
 } from "lucide-react";
@@ -41,12 +45,28 @@ const INVENTORY_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
         label: "Alerts",
         icon: BellRing,
     },
+    {
+        href: "/dashboard/erp/inventory/suggestions",
+        label: "AI Suggestions",
+        icon: ShoppingCart,
+    },
+    {
+        href: "/dashboard/erp/inventory/anomalies",
+        label: "Anomalies",
+        icon: AlertTriangle,
+    },
+    {
+        href: "/dashboard/erp/inventory/forecast",
+        label: "Forecast",
+        icon: Calendar,
+    },
+    {
+        href: "/dashboard/erp/inventory/abc",
+        label: "ABC",
+        icon: BarChart3,
+    },
 ];
 
-/**
- * In-page tab bar shared by every inventory page. The sidebar keeps a single
- * flat "Inventory" item; this bar navigates between the module's sections.
- */
 export function InventoryNav() {
     const pathname = usePathname();
 

@@ -10,10 +10,10 @@ The partial unique index ``idx_ai_suggestions_pending_unique`` enforces
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 
 from ai_agent.models.ai_suggestion import AiSuggestionModel
 from skyrict_common.exceptions import NotFoundError
@@ -106,6 +106,23 @@ class SuggestionRepository:
         row.review_note = review_note
         await self.session.flush()
         return row
+
+    async def expire_stale(self, *, expiry_days: int) -> int:
+        """Bulk-expire pending suggestions older than *expiry_days* (spec 3.4).
+
+        Returns the number of rows affected.
+        """
+        cutoff = _utcnow() - timedelta(days=expiry_days)
+        result = await self.session.execute(
+            update(AiSuggestionModel)
+            .where(
+                AiSuggestionModel.status == "pending",
+                AiSuggestionModel.created_at < cutoff,
+            )
+            .values(status="expired")
+        )
+        await self.session.flush()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 def _utcnow() -> datetime:

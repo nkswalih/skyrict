@@ -227,8 +227,38 @@ export async function apiFetchWithMeta<T>(
 
 export { apiFetchWithMeta as apiFetchEnvelope };
 
+async function readBody<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => ({}))) as {
+    data?: unknown;
+    meta?: PaginationMeta | null;
+    detail?: { error?: { message?: string }; message?: string } | string;
+  };
+  if (!response.ok) {
+    const message =
+      (typeof payload.detail === "object" && payload.detail?.error?.message) ||
+      (typeof payload.detail === "object" && payload.detail?.message) ||
+      (typeof payload.detail === "string" ? payload.detail : null) ||
+      "Request failed. Please try again.";
+    throw new ApiError(response.status, message);
+  }
+  return payload as T;
+}
+
+/** Fetch a `/api/v1` endpoint and return the FULL response body (no envelope unwrap). */
+export async function apiFetchBody<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return readBody<T>(await fetchWithSession(path, options));
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** POST a `/api/v1` endpoint and return the FULL response body (no envelope unwrap). */
+export async function apiPostBody<T>(path: string, body: unknown): Promise<T> {
+  return apiFetchBody<T>(path, {
     method: "POST",
     body: JSON.stringify(body),
   });

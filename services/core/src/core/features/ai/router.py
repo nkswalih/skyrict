@@ -1,16 +1,12 @@
 """``/api/v1/ai/*`` proxy routes — permission checks BEFORE forwarding.
 
-Permission matrix (ticket [AI-INFRA-001], spec §6.3): every AI call needs
+Permission matrix (ticket SKY-68, spec 6.3): every AI call needs
 ``erp.ai.invoke`` AND the module key for the touched domain —
-``erp.inventory.read`` for reads, ``erp.inventory.write`` for mutations
-(scan, approve/reject, anomaly dispositions). The ticket also names an
-"ai.approve" module key; no such key exists in either service's catalog
-yet, so the existing write key guards review actions this phase and a
-dedicated approval key lands with the PO-integration ticket (documented,
-not silently dropped).
+``erp.inventory.read`` for reads, ``erp.inventory.write`` for anomaly
+dispositions, ``erp.inventory.ai.approve`` for suggestion scan/approve/reject.
 
 The JWT is forwarded verbatim; ai-agent re-verifies it against the
-relayed tenant slug (spec §1.4: AI is a proxy, not an auth bypass).
+relayed tenant slug (spec 1.4: AI is a proxy, not an auth bypass).
 
 Path ids are typed ``uuid.UUID`` so FastAPI rejects anything else with
 422 before the handler runs — the forwarded URL only ever embeds the
@@ -30,6 +26,7 @@ from fastapi.responses import Response
 from core.api.deps import require_permission
 from core.core.permissions import (
     ERP_AI_INVOKE,
+    ERP_INVENTORY_AI_APPROVE,
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
 )
@@ -43,10 +40,12 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 _require_ai_invoke = require_permission(ERP_AI_INVOKE)
 _require_inventory_read = require_permission(ERP_INVENTORY_READ)
 _require_inventory_write = require_permission(ERP_INVENTORY_WRITE)
+_require_inventory_ai_approve = require_permission(ERP_INVENTORY_AI_APPROVE)
 
 _InvokeDep = Annotated[dict[str, Any], Depends(_require_ai_invoke)]
 _ReadDep = Annotated[dict[str, Any], Depends(_require_inventory_read)]
 _WriteDep = Annotated[dict[str, Any], Depends(_require_inventory_write)]
+_AIApproveDep = Annotated[dict[str, Any], Depends(_require_inventory_ai_approve)]
 
 
 def get_ai_client(request: Request) -> httpx.AsyncClient:
@@ -91,8 +90,8 @@ async def proxy_nl_query(
     _read: _ReadDep,
     client: _ClientDep,
 ) -> Response:
-    """Natural-language question about stock -> ai-agent /ai/query."""
-    return await _proxy(request, client, "/ai/query")
+    """Natural-language question about stock -> ai-agent /api/v1/ai/query."""
+    return await _proxy(request, client, "/api/v1/ai/query")
 
 
 @router.get("/inventory/query/history")
@@ -102,8 +101,8 @@ async def proxy_query_history(
     _read: _ReadDep,
     client: _ClientDep,
 ) -> Response:
-    """Recent queries for this tenant -> ai-agent /ai/query/history."""
-    return await _proxy(request, client, "/ai/query/history")
+    """Recent queries for this tenant -> ai-agent /api/v1/ai/query/history."""
+    return await _proxy(request, client, "/api/v1/ai/query/history")
 
 
 # --- Restock suggestions (feature 2) ---------------------------------------
@@ -116,19 +115,19 @@ async def proxy_list_suggestions(
     _read: _ReadDep,
     client: _ClientDep,
 ) -> Response:
-    """Pending suggestions feed -> ai-agent /ai/suggestions."""
-    return await _proxy(request, client, "/ai/suggestions")
+    """Pending suggestions feed -> ai-agent /api/v1/ai/suggestions."""
+    return await _proxy(request, client, "/api/v1/ai/suggestions")
 
 
 @router.post("/suggestions/scan")
 async def proxy_suggestion_scan(
     request: Request,
     _invoke: _InvokeDep,
-    _write: _WriteDep,
+    _approve: _AIApproveDep,
     client: _ClientDep,
 ) -> Response:
-    """Trigger the suggestion scan -> ai-agent /ai/suggestions/scan."""
-    return await _proxy(request, client, "/ai/suggestions/scan")
+    """Trigger the suggestion scan -> ai-agent /api/v1/ai/suggestions/scan."""
+    return await _proxy(request, client, "/api/v1/ai/suggestions/scan")
 
 
 @router.post("/suggestions/{suggestion_id}/approve")
@@ -136,11 +135,11 @@ async def proxy_approve_suggestion(
     request: Request,
     suggestion_id: uuid.UUID,
     _invoke: _InvokeDep,
-    _write: _WriteDep,
+    _approve: _AIApproveDep,
     client: _ClientDep,
 ) -> Response:
-    """Approve one pending suggestion (spec §3.4 human-in-the-loop)."""
-    return await _proxy(request, client, f"/ai/suggestions/{suggestion_id}/approve")
+    """Approve one pending suggestion (spec 3.4 human-in-the-loop)."""
+    return await _proxy(request, client, f"/api/v1/ai/suggestions/{suggestion_id}/approve")
 
 
 @router.post("/suggestions/{suggestion_id}/reject")
@@ -148,11 +147,11 @@ async def proxy_reject_suggestion(
     request: Request,
     suggestion_id: uuid.UUID,
     _invoke: _InvokeDep,
-    _write: _WriteDep,
+    _approve: _AIApproveDep,
     client: _ClientDep,
 ) -> Response:
     """Reject one pending suggestion; note feeds the feedback loop."""
-    return await _proxy(request, client, f"/ai/suggestions/{suggestion_id}/reject")
+    return await _proxy(request, client, f"/api/v1/ai/suggestions/{suggestion_id}/reject")
 
 
 # --- Stock anomalies (feature 3) --------------------------------------------
@@ -165,8 +164,8 @@ async def proxy_list_anomalies(
     _read: _ReadDep,
     client: _ClientDep,
 ) -> Response:
-    """Anomaly feed -> ai-agent /ai/anomalies."""
-    return await _proxy(request, client, "/ai/anomalies")
+    """Anomaly feed -> ai-agent /api/v1/ai/anomalies."""
+    return await _proxy(request, client, "/api/v1/ai/anomalies")
 
 
 @router.post("/anomalies/scan")
@@ -176,8 +175,8 @@ async def proxy_anomaly_scan(
     _write: _WriteDep,
     client: _ClientDep,
 ) -> Response:
-    """Trigger anomaly detection -> ai-agent /ai/anomalies/scan."""
-    return await _proxy(request, client, "/ai/anomalies/scan")
+    """Trigger anomaly detection -> ai-agent /api/v1/ai/anomalies/scan."""
+    return await _proxy(request, client, "/api/v1/ai/anomalies/scan")
 
 
 @router.post("/anomalies/{anomaly_id}/resolve")
@@ -189,7 +188,7 @@ async def proxy_resolve_anomaly(
     client: _ClientDep,
 ) -> Response:
     """Mark an anomaly resolved (human investigated)."""
-    return await _proxy(request, client, f"/ai/anomalies/{anomaly_id}/resolve")
+    return await _proxy(request, client, f"/api/v1/ai/anomalies/{anomaly_id}/resolve")
 
 
 @router.post("/anomalies/{anomaly_id}/dismiss")
@@ -201,7 +200,7 @@ async def proxy_dismiss_anomaly(
     client: _ClientDep,
 ) -> Response:
     """Mark an anomaly as false positive (feeds tuning)."""
-    return await _proxy(request, client, f"/ai/anomalies/{anomaly_id}/dismiss")
+    return await _proxy(request, client, f"/api/v1/ai/anomalies/{anomaly_id}/dismiss")
 
 
 @router.post("/anomalies/{anomaly_id}/escalate")
@@ -213,4 +212,44 @@ async def proxy_escalate_anomaly(
     client: _ClientDep,
 ) -> Response:
     """Escalate an anomaly to admin attention."""
-    return await _proxy(request, client, f"/ai/anomalies/{anomaly_id}/escalate")
+    return await _proxy(request, client, f"/api/v1/ai/anomalies/{anomaly_id}/escalate")
+
+
+# --- Demand forecasting (feature 4) ------------------------------------------
+
+
+@router.get("/forecast/{product_id}")
+async def proxy_get_forecast(
+    request: Request,
+    product_id: uuid.UUID,
+    _invoke: _InvokeDep,
+    _read: _ReadDep,
+    client: _ClientDep,
+) -> Response:
+    """Demand forecast for one product -> ai-agent /api/v1/ai/forecast/{id}."""
+    return await _proxy(request, client, f"/api/v1/ai/forecast/{product_id}")
+
+
+# --- ABC inventory classification (feature 5) --------------------------------
+
+
+@router.get("/abc")
+async def proxy_list_abc_classifications(
+    request: Request,
+    _invoke: _InvokeDep,
+    _read: _ReadDep,
+    client: _ClientDep,
+) -> Response:
+    """ABC banding for the tenant's products -> ai-agent /api/v1/ai/abc."""
+    return await _proxy(request, client, "/api/v1/ai/abc")
+
+
+@router.get("/abc/summary")
+async def proxy_get_abc_summary(
+    request: Request,
+    _invoke: _InvokeDep,
+    _read: _ReadDep,
+    client: _ClientDep,
+) -> Response:
+    """ABC band counts (A/B/C) -> ai-agent /api/v1/ai/abc/summary."""
+    return await _proxy(request, client, "/api/v1/ai/abc/summary")

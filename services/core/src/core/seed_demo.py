@@ -43,6 +43,45 @@ def _ago(days: float) -> datetime:
     return datetime.now(UTC) - timedelta(days=days)
 
 
+def _opening_balance_rows(
+    stock_levels: tuple[dict[str, object], ...],
+    stock_movements: tuple[dict[str, object], ...],
+) -> list[dict[str, object]]:
+    """Balancing ledger rows that back every seeded opening stock level.
+
+    Stock levels are seeded as opening balances; core recomputes
+    ``qty_on_hand`` as the sum of all non-reservation/release movements, so
+    each level must be reconciled with a balancing movement entry or the
+    AI-agent ledger-mismatch rule fires on demo data. Returns one row per
+    level whose movement sum differs from ``on_hand`` (receipt when the
+    balance is positive, issue when negative).
+    """
+    reservation_types = {"reservation", "release"}
+    ledger_sum: dict[tuple[int, int], Decimal] = {}
+    for mrow in stock_movements:
+        if getattr(mrow["type"], "value", mrow["type"]) in reservation_types:
+            continue
+        key = (int(str(mrow["prod"])), int(str(mrow["wh"])))
+        ledger_sum[key] = ledger_sum.get(key, Decimal(0)) + Decimal(str(mrow["qty"]))
+
+    balance: list[dict[str, object]] = []
+    for srow in stock_levels:
+        prod_idx = int(str(srow["prod"]))
+        wh_idx = int(str(srow["wh"]))
+        delta = Decimal(str(srow["on_hand"])) - ledger_sum.get((prod_idx, wh_idx), Decimal(0))
+        if delta == 0:
+            continue
+        balance.append(
+            {
+                "prod": prod_idx,
+                "wh": wh_idx,
+                "type": (StockMovementType.RECEIPT if delta > 0 else StockMovementType.ISSUE),
+                "qty": delta,
+            }
+        )
+    return balance
+
+
 def _today() -> date:
     return date.today()
 
@@ -2238,6 +2277,30 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
             )
             session.add(sm)
         counts["stock_movements"] = len(STOCK_MOVEMENT_ROWS)
+
+        # ── OPENING-BALANCE RECONCILIATION ───────────────────────────
+        # Stock levels above are opening balances; in production core
+        # recomputes qty_on_hand as the sum of non-reservation/release
+        # movements, so the demo ledger must back every level or the
+        # ledger-mismatch anomaly rule fires on demo data. Add one
+        # balancing entry per (product, warehouse) pair so the
+        # non-reservation movement sum equals qty_on_hand. Entries are
+        # backdated outside the AI agent's recent-window rules.
+        opening_rows = _opening_balance_rows(STOCK_LEVEL_ROWS, STOCK_MOVEMENT_ROWS)
+        for orow in opening_rows:
+            session.add(
+                ErpStockMovementModel(
+                    tenant_id=tenant_id,
+                    product_id=product_ids[int(str(orow["prod"]))],
+                    warehouse_id=wh_ids[int(str(orow["wh"]))],
+                    movement_type=orow["type"],
+                    qty=orow["qty"],
+                    ref_type="opening_balance",
+                    ref_id=f"OPB-{orow['prod']:02d}-{orow['wh']}",
+                    created_at=_ago(180),
+                )
+            )
+        counts["stock_movements"] = len(STOCK_MOVEMENT_ROWS) + len(opening_rows)
 
         await session.commit()
         logger.info("seed.demo.complete", tenant_id=str(tenant_id), **counts)

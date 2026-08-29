@@ -23,11 +23,15 @@ from ai_agent.features.nl_query.gateway import MovementType  # noqa: TC001
 
 
 class IntentAction(StrEnum):
-    """Executable read-only actions (spec §2.2 examples, v1 subset)."""
+    """Executable read-only actions (spec 2.2 examples, v1 subset)."""
 
     STOCK_COUNT = "stock_count"  # qty on hand for product [+ warehouse]
     BELOW_REORDER = "below_reorder"  # what is below reorder point
     RECENT_MOVEMENTS = "recent_movements"  # movements for product/warehouse/type
+    TOTAL_STOCK_VALUE = "total_stock_value"  # sum of qty_on_hand * cost_price
+    HIGHEST_RESERVED = "highest_reserved"  # product with highest qty_reserved
+    LAST_RECEIPT = "last_receipt"  # most recent receipt for a product
+    WAREHOUSE_COUNT = "warehouse_count"  # how many warehouses
 
 
 class ParsedIntent(BaseModel):
@@ -72,7 +76,7 @@ INTENT_SYSTEM_PROMPT = """You translate inventory questions into strict JSON.
 
 Respond with ONLY a JSON object, no prose, matching exactly:
 {
-  "action": "<stock_count|below_reorder|recent_movements>",
+  "action": "<stock_count|below_reorder|recent_movements|total_stock_value|highest_reserved|last_receipt|warehouse_count>",
   "product_name": "<product name mentioned, or null>",
   "warehouse_name": "<warehouse name mentioned, or null>",
   "movement_type": "<receipt|issue|transfer|adjustment|reservation|release, or null>",
@@ -83,6 +87,10 @@ Rules:
 - stock_count: how many units of a product exist (optionally at one warehouse).
 - below_reorder: which items are below their reorder point / need reordering.
 - recent_movements: stock movement history (receipts, issues, transfers...).
+- total_stock_value: total monetary value of stock (optionally at one warehouse).
+- highest_reserved: which product has the highest reserved quantity.
+- last_receipt: when was the last receipt/shipment for a product.
+- warehouse_count: how many warehouses exist.
 - If the question matches none of these actions, use confidence below 0.5 and
   the closest plausible action.
 - Copy names EXACTLY as the user wrote them. Never invent identifiers.

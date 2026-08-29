@@ -54,6 +54,7 @@ ERP_SALES_APPROVE = "erp.sales.approve"
 ERP_INVENTORY_READ = "erp.inventory.read"
 ERP_INVENTORY_WRITE = "erp.inventory.write"
 ERP_INVENTORY_APPROVE = "erp.inventory.approve"
+ERP_INVENTORY_AI_APPROVE = "erp.inventory.ai.approve"
 ERP_FINANCE_READ = "erp.finance.read"
 ERP_FINANCE_WRITE = "erp.finance.write"
 ERP_HR_READ = "erp.hr.read"
@@ -118,6 +119,7 @@ CATALOG: tuple[str, ...] = (
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
     ERP_INVENTORY_APPROVE,
+    ERP_INVENTORY_AI_APPROVE,
     ERP_FINANCE_READ,
     ERP_FINANCE_WRITE,
     ERP_HR_READ,
@@ -154,7 +156,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "erp_inventory",
         "ERP Inventory",
-        (ERP_INVENTORY_READ, ERP_INVENTORY_WRITE, ERP_INVENTORY_APPROVE),
+        (ERP_INVENTORY_READ, ERP_INVENTORY_WRITE, ERP_INVENTORY_APPROVE, ERP_INVENTORY_AI_APPROVE),
     ),
     ("erp_finance", "ERP Finance", (ERP_FINANCE_READ, ERP_FINANCE_WRITE)),
     ("erp_hr", "ERP HR", (ERP_HR_READ, ERP_HR_WRITE, ERP_HR_APPROVE)),
@@ -211,6 +213,7 @@ __all__ = [
     "ERP_HR_APPROVE",
     "ERP_HR_READ",
     "ERP_HR_WRITE",
+    "ERP_INVENTORY_AI_APPROVE",
     "ERP_INVENTORY_APPROVE",
     "ERP_INVENTORY_READ",
     "ERP_INVENTORY_WRITE",

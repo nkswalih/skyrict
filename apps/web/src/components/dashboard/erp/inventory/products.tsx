@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useModuleAccess } from "@/lib/access/modules";
 import { ApiError } from "@/lib/api/http";
+import { listAbcClassifications } from "@/lib/api/ai-api";
 import {
     createProduct,
     deleteProduct,
@@ -85,6 +86,9 @@ export function ProductsClient() {
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
+    const [abcFilter, setAbcFilter] = useState<"all" | "A" | "B" | "C">("all");
+    const [abcMap, setAbcMap] = useState<Map<string, string>>(new Map());
+
     const [deleting, setDeleting] = useState<Product | null>(null);
     const [deletingBusy, setDeletingBusy] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -131,6 +135,20 @@ export function ProductsClient() {
         const timer = setTimeout(() => setNotice(null), 4000);
         return () => clearTimeout(timer);
     }, [notice]);
+
+    useEffect(() => {
+        listAbcClassifications()
+            .then((res) => {
+                const map = new Map<string, string>();
+                for (const item of res.data) {
+                    map.set(item.product_id, item.band);
+                }
+                setAbcMap(map);
+            })
+            .catch(() => {
+                // ABC data unavailable — filter silently hidden
+            });
+    }, []);
 
     function openCreate() {
         setEditing(null);
@@ -234,12 +252,17 @@ export function ProductsClient() {
         return <InventoryError message={status.message} />;
     }
 
+    const visibleProducts =
+        abcFilter === "all"
+            ? status.products
+            : status.products.filter((p) => abcMap.get(p.id) === abcFilter);
+
     return (
         <div className="space-y-4">
             {notice ? <InventorySuccess message={notice} /> : null}
 
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap">
                     <p className="text-sm text-muted-foreground">
                         {status.meta.total} product
                         {status.meta.total === 1 ? "" : "s"}
@@ -261,6 +284,24 @@ export function ProductsClient() {
                             Include archived
                         </label>
                     </div>
+                    {abcMap.size > 0 && (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">ABC:</span>
+                            {(["all", "A", "B", "C"] as const).map((b) => (
+                                <button
+                                    key={b}
+                                    onClick={() => setAbcFilter(b)}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                                        abcFilter === b
+                                            ? "bg-primary text-primary-foreground"
+                                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    }`}
+                                >
+                                    {b === "all" ? "All" : `Band ${b}`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
                 {canWrite ? (
                     <Button onClick={openCreate}>
@@ -270,13 +311,13 @@ export function ProductsClient() {
                 ) : null}
             </div>
 
-            {status.products.length === 0 ? (
+            {visibleProducts.length === 0 ? (
                 <InventoryEmpty
-                    title="No products yet"
-                    description="Products are what you track stock for. Create one to start building your catalog."
+                    title={abcFilter !== "all" ? `No Band ${abcFilter} products` : "No products yet"}
+                    description={abcFilter !== "all" ? "No products match the selected ABC filter." : "Products are what you track stock for. Create one to start building your catalog."}
                     icon={Package}
                     action={
-                        canWrite ? (
+                        canWrite && abcFilter === "all" ? (
                             <Button onClick={openCreate}>
                                 <Plus aria-hidden="true" />
                                 Create a product
@@ -310,18 +351,6 @@ export function ProductsClient() {
                                     </th>
                                     <th
                                         scope="col"
-                                        className="px-4 py-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                                    >
-                                        Unit
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="px-4 py-3 text-right text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                                    >
-                                        Cost
-                                    </th>
-                                    <th
-                                        scope="col"
                                         className="px-4 py-3 text-right text-xs font-semibold tracking-wider text-muted-foreground uppercase"
                                     >
                                         Sell
@@ -332,6 +361,14 @@ export function ProductsClient() {
                                     >
                                         Reorder at
                                     </th>
+                                    {abcMap.size > 0 && (
+                                        <th
+                                            scope="col"
+                                            className="px-4 py-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                                        >
+                                            ABC
+                                        </th>
+                                    )}
                                     <th
                                         scope="col"
                                         className="px-4 py-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
@@ -348,7 +385,9 @@ export function ProductsClient() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {status.products.map((product) => (
+                                {visibleProducts.map((product) => {
+                                    const band = abcMap.get(product.id);
+                                    return (
                                     <tr
                                         key={product.id}
                                         className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/30"
@@ -362,18 +401,32 @@ export function ProductsClient() {
                                         <td className="px-4 py-3 text-muted-foreground">
                                             {product.category ?? "—"}
                                         </td>
-                                        <td className="px-4 py-3 text-muted-foreground">
-                                            {product.unit ?? "—"}
-                                        </td>
-                                        <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                                            {formatMoney(product.costPrice)}
-                                        </td>
                                         <td className="px-4 py-3 text-right tabular-nums text-foreground">
                                             {formatMoney(product.sellPrice)}
                                         </td>
                                         <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                                             {product.reorderPoint}
                                         </td>
+                                        {abcMap.size > 0 && (
+                                            <td className="px-4 py-3">
+                                                {band ? (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={`text-xs ring-1 ${
+                                                            band === "A"
+                                                                ? "bg-red-500/10 text-red-700 ring-red-500/30"
+                                                                : band === "B"
+                                                                  ? "bg-amber-500/10 text-amber-700 ring-amber-500/30"
+                                                                  : "bg-blue-500/10 text-blue-700 ring-blue-500/30"
+                                                        }`}
+                                                    >
+                                                        {band}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground">—</span>
+                                                )}
+                                            </td>
+                                        )}
                                         <td className="px-4 py-3">
                                             {product.isActive ? (
                                                 <Badge
@@ -443,7 +496,7 @@ export function ProductsClient() {
                                             </td>
                                         ) : null}
                                     </tr>
-                                ))}
+                                )})}
                             </tbody>
                         </table>
                     </div>

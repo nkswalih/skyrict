@@ -39,6 +39,7 @@ SYSTEM_ROLE_NAMES = {
     "department_manager",
     "standard_user",
     "auditor",
+    "employee_self_service",
 }
 
 pytestmark = pytest.mark.integration
@@ -67,7 +68,7 @@ class TestProvisioning:
                 roles = (
                     await session.scalars(select(RoleModel).where(RoleModel.tenant_id == row.id))
                 ).all()
-                assert len(roles) == 5
+                assert len(roles) == 6
                 by_name = {role.name: role for role in roles}
                 assert set(by_name) == SYSTEM_ROLE_NAMES
                 assert all(role.is_system_role for role in roles)

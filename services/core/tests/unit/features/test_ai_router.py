@@ -32,6 +32,7 @@ def _app_with_recorder(seen: list[httpx.Request]) -> TestClient:
     app.dependency_overrides[ai_router._require_ai_invoke] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_inventory_read] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_inventory_write] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_inventory_ai_approve] = lambda: {"sub": "u1"}
     client_factory = lambda: httpx.AsyncClient(  # noqa: E731
         transport=httpx.MockTransport(handler), base_url="http://ai.test"
     )
@@ -53,7 +54,7 @@ class TestProxyPathIdsAreUuids:
         assert response.status_code == 200
         assert len(seen) == 1
         # Uppercase input reaches ai-agent in canonical lowercase form.
-        assert seen[0].url.path == f"/ai/suggestions/{suggestion_id}/approve"
+        assert seen[0].url.path == f"/api/v1/ai/suggestions/{suggestion_id}/approve"
 
     def test_anomaly_escalate_forwards_uuid(self) -> None:
         seen: list[httpx.Request] = []
@@ -66,7 +67,7 @@ class TestProxyPathIdsAreUuids:
         )
 
         assert response.status_code == 200
-        assert seen[0].url.path == f"/ai/anomalies/{anomaly_id}/escalate"
+        assert seen[0].url.path == f"/api/v1/ai/anomalies/{anomaly_id}/escalate"
 
     @pytest.mark.parametrize(
         ("route_template", "bad_id"),

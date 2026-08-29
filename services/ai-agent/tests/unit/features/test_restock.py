@@ -77,6 +77,9 @@ class FakeGateway:
     async def get_stock_levels(self, *, product_id=None, warehouse_id=None):
         return self.stock
 
+    async def list_movements(self, *, product_id=None, warehouse_id=None, movement_type=None):
+        return []
+
 
 class FakeSuggestions:
     def __init__(self, pending_pairs=None) -> None:

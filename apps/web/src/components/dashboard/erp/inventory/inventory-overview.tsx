@@ -12,6 +12,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 
+import { AiChatPanel } from "@/components/dashboard/erp/inventory/ai-chat-panel";
 import { InventoryError } from "@/components/dashboard/erp/inventory/inventory-banners";
 import { Badge } from "@/components/ui/badge";
 import { StatCardSkeleton } from "@/components/ui/page-skeletons";
@@ -165,6 +166,8 @@ export function InventoryOverview() {
                     />
                 </div>
             </section>
+
+            <AiChatPanel />
 
             {recentAlerts.length > 0 ? (
                 <section className="space-y-4">

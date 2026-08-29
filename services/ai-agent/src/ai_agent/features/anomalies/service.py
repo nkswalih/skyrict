@@ -64,14 +64,19 @@ class AnomalyService:
         """Detect anomalies over recent movements; dedupe open repeats."""
         gateway = await self._gateway_factory()
         movements = await gateway.list_movements()
-        findings = detect_all(movements)
+        stock_levels = await gateway.get_stock_levels()
+        findings = detect_all(movements, stock_levels=stock_levels)
 
         created = skipped = 0
         for finding in findings:
-            # One OPEN anomaly per type keeps feeds actionable; resolved rows
-            # allow re-detection if the pattern recurs.
+            # One OPEN anomaly per (type, product, warehouse) keeps feeds
+            # actionable; resolved rows allow re-detection if the pattern
+            # recurs on the same scope.
             if await self._anomalies.has_open(
-                tenant_id=tenant_id, anomaly_type=finding.anomaly_type
+                tenant_id=tenant_id,
+                anomaly_type=finding.anomaly_type,
+                product_id=finding.affected_product_id,
+                warehouse_id=finding.affected_warehouse_id,
             ):
                 skipped += 1
                 continue

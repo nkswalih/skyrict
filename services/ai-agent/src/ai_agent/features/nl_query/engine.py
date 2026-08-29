@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         InventoryGatewayPort,
         MovementType,
         ProductRef,
+        WarehouseRef,
     )
     from ai_agent.features.nl_query.matcher import MatchOutcome
 
@@ -152,6 +153,31 @@ class NlQueryEngine:
             )
         elif intent.action is IntentAction.BELOW_REORDER:
             result = await self._below_reorder_result(gateway=gateway, products=products)
+        elif intent.action is IntentAction.TOTAL_STOCK_VALUE:
+            result = await self._total_stock_value_result(
+                gateway=gateway,
+                products=products,
+                warehouse=warehouse_match,
+            )
+        elif intent.action is IntentAction.HIGHEST_RESERVED:
+            result = await self._highest_reserved_result(
+                gateway=gateway,
+                products=products,
+            )
+        elif intent.action is IntentAction.LAST_RECEIPT:
+            if product_match is None:
+                return _finish(
+                    answer="I can look up the last receipt for a specific product - which product did you mean?",
+                    model_used=completion.model_used,
+                    started=started,
+                    parsed_intent=intent.to_log_dict(),
+                )
+            result = await self._last_receipt_result(
+                gateway=gateway,
+                product=next(p for p in products if p.id == product_match.entity_id),
+            )
+        elif intent.action is IntentAction.WAREHOUSE_COUNT:
+            result = self._warehouse_count_result(warehouses=warehouses)
         else:  # IntentAction.RECENT_MOVEMENTS
             result = await self._recent_movements_result(
                 gateway=gateway,
@@ -274,6 +300,115 @@ class NlQueryEngine:
         return _ActionOutcome(
             answer="Recent movements:" + more + "\n" + "\n".join(lines),
             data={"movement_count": len(recent)},
+        )
+
+    async def _total_stock_value_result(
+        self,
+        *,
+        gateway: InventoryGatewayPort,
+        products: Sequence[ProductRef],
+        warehouse: MatchOutcome | None,
+    ) -> _ActionOutcome:
+        """Total monetary value of stock using cost_price (local-only, spec 5.5)."""
+        warehouse_id = warehouse.entity_id if warehouse else None
+        scope = warehouse.display_name if warehouse else "all warehouses"
+
+        levels = await gateway.get_stock_levels(warehouse_id=warehouse_id)
+        cost_by_product: dict[uuid.UUID, Decimal] = {
+            p.id: p.cost_price for p in products if p.cost_price is not None
+        }
+        total_value = Decimal(0)
+        items_with_value = 0
+        for row in levels:
+            cost = cost_by_product.get(row.product_id)
+            if cost is not None:
+                total_value += row.qty_on_hand * cost
+                items_with_value += 1
+
+        answer = (
+            f"The total stock value at {scope} is {total_value:.2f} "
+            f"(based on cost price for {items_with_value} product(s) with known cost)."
+        )
+        return _ActionOutcome(
+            answer=answer,
+            data={"total_value": str(total_value), "scope": scope, "items_count": items_with_value},
+        )
+
+    async def _highest_reserved_result(
+        self,
+        *,
+        gateway: InventoryGatewayPort,
+        products: Sequence[ProductRef],
+    ) -> _ActionOutcome:
+        """Product with the highest reserved quantity across all warehouses."""
+        levels = await gateway.get_stock_levels()
+        reserved_by_product: dict[uuid.UUID, Decimal] = {}
+        for row in levels:
+            reserved_by_product[row.product_id] = (
+                reserved_by_product.get(row.product_id, Decimal(0)) + row.qty_reserved
+            )
+        if not reserved_by_product or all(v == 0 for v in reserved_by_product.values()):
+            return _ActionOutcome(
+                answer="No products currently have reserved stock.",
+                data={"highest_reserved": None},
+            )
+        top_id = max(reserved_by_product, key=lambda k: reserved_by_product[k])
+        top_qty = reserved_by_product[top_id]
+        product = next((p for p in products if p.id == top_id), None)
+        name = product.name if product else str(top_id)
+        sku = product.sku if product else "N/A"
+        return _ActionOutcome(
+            answer=(
+                f"The product with the highest reserved quantity is {name} ({sku}) "
+                f"with {top_qty} units reserved."
+            ),
+            data={"product_name": name, "sku": sku, "qty_reserved": str(top_qty)},
+        )
+
+    async def _last_receipt_result(
+        self,
+        *,
+        gateway: InventoryGatewayPort,
+        product: ProductRef,
+    ) -> _ActionOutcome:
+        """Most recent receipt movement for a given product."""
+        movements = await gateway.list_movements(product_id=product.id, movement_type="receipt")
+        if not movements:
+            return _ActionOutcome(
+                answer=f"No receipt movements found for {product.name}.",
+                data={"product": product.name, "last_receipt": None},
+            )
+        latest = max(movements, key=lambda m: _as_utc(m.created_at))
+        answer = (
+            f"The last receipt for {product.name} was on "
+            f"{_as_utc(latest.created_at):%Y-%m-%d %H:%M} UTC "
+            f"({latest.qty} units)."
+        )
+        return _ActionOutcome(
+            answer=answer,
+            data={
+                "product": product.name,
+                "last_receipt": _as_utc(latest.created_at).isoformat(),
+                "qty": str(latest.qty),
+            },
+        )
+
+    @staticmethod
+    def _warehouse_count_result(
+        *,
+        warehouses: Sequence[WarehouseRef],
+    ) -> _ActionOutcome:
+        """Simple count of warehouses."""
+        count = len(warehouses)
+        names = [w.name for w in warehouses[:_MAX_ITEMS_SHOWN]]
+        answer = f"You have {count} warehouse(s)."
+        if names:
+            answer += " Names: " + ", ".join(names)
+            if count > _MAX_ITEMS_SHOWN:
+                answer += f" (and {count - _MAX_ITEMS_SHOWN} more)"
+        return _ActionOutcome(
+            answer=answer,
+            data={"warehouse_count": count, "names": names},
         )
 
 

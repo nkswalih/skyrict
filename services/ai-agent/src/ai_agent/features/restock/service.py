@@ -63,6 +63,9 @@ class RestockService:
         gateway = await self._gateway_factory()
         products, levels = await gateway.list_products(), await gateway.get_stock_levels()
 
+        # Fetch recent movements for 4-factor confidence scoring (spec 3.2).
+        movements = await gateway.list_movements()
+
         qty_by_pair: dict[tuple[uuid.UUID, uuid.UUID], Decimal] = {}
         for row in levels:
             key = (row.product_id, row.warehouse_id)
@@ -82,7 +85,12 @@ class RestockService:
             if (product_id, warehouse_id) in pending_pairs:
                 skipped += 1
                 continue
-            draft = compute_suggestion(product=product, warehouse_id=warehouse_id, qty_on_hand=qty)
+            draft = compute_suggestion(
+                product=product,
+                warehouse_id=warehouse_id,
+                qty_on_hand=qty,
+                movements=movements,
+            )
             try:
                 await self._suggestions.create_pending(
                     tenant_id=tenant_id,

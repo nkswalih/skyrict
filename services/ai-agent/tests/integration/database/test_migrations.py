@@ -2,9 +2,10 @@
 
 Applies identity's chain first (it creates ``tenants`` and owns the shared
 RLS helper ``public.current_tenant_id()`` that ai-agent's 0001 references),
-then the AI chain under ``alembic_version_ai`` - real migrations against real
-Postgres, never ``create_all``. Then unwinds all the way back to nothing and
-re-applies, proving the whole round-trip.
+then core's chain (its ``erp_products`` key is the FK target of ai-agent's
+0002 forecast/ABC tables), then the AI chain under ``alembic_version_ai`` -
+real migrations against real Postgres, never ``create_all``. Then unwinds all
+the way back to nothing and re-applies, proving the whole round-trip.
 
 Sentinel assertions probe one representative artefact per concern: table
 existence, version-table bookkeeping, RLS policies on exactly the four
@@ -44,6 +45,8 @@ _ROOT = Path(__file__).resolve().parents[3]  # services/ai-agent
 _AI_ALEMBIC_INI = _ROOT / "alembic.ini"
 _IDENTITY_ROOT = _ROOT.parent / "identity"
 _IDENTITY_ALEMBIC_INI = _IDENTITY_ROOT / "alembic.ini"
+_CORE_ROOT = _ROOT.parent / "core"
+_CORE_ALEMBIC_INI = _CORE_ROOT / "alembic.ini"
 
 _AI_TABLES = (
     "ai_query_log",
@@ -234,6 +237,11 @@ class TestAiMigrationRoundTrip:
                 "IDENTITY_JWKS_ISSUER": "https://auth.test.skyrict.io",
                 "IDENTITY_JWKS_AUDIENCE": "api.test.skyrict.io",
                 "IDENTITY_MFA_ENCRYPTION_KEY": Fernet.generate_key().decode("utf-8"),
+                "CORE_ENVIRONMENT": "test",
+                "CORE_DATABASE_URL": scratch_url,
+                "CORE_JWT_PUBLIC_KEY_PATH": str(key_dir / "public.pem"),
+                "CORE_JWKS_ISSUER": "https://auth.test.skyrict.io",
+                "CORE_JWKS_AUDIENCE": "api.test.skyrict.io",
             }
         )
         ai_env = shared_env.copy()
@@ -273,12 +281,15 @@ class TestAiMigrationRoundTrip:
             # Identity's chain FIRST - it owns tenants + current_tenant_id().
             _alembic(_IDENTITY_ALEMBIC_INI, _IDENTITY_ROOT, shared_env, "upgrade", "head")
 
+            # Core's chain SECOND - erp_products is the FK target of 0002.
+            _alembic(_CORE_ALEMBIC_INI, _CORE_ROOT, shared_env, "upgrade", "head")
+
             # AI chain up -> sentinel probes.
             _alembic(_AI_ALEMBIC_INI, _ROOT, ai_env, "upgrade", "head")
 
             artifacts = asyncio.run(_fetch_upgraded_artifacts(scratch_dsn))
             assert artifacts["tables"] == set(_AI_TABLES), "missing AI tables"
-            assert artifacts["version"] == "0002"
+            assert artifacts["version"] == "0003"
             assert "hr_copilot" in artifacts["agent_names"], "hr_copilot not seeded"
 
             expected_policies = {f"tenant_isolation_{t}" for t in _TENANT_SCOPED_TABLES}

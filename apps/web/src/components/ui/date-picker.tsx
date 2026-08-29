@@ -244,7 +244,7 @@ export function DatePicker({
       setHighlighted(toIso(next));
       if (next.m !== view.m || next.y !== view.y) setView(clampView({ y: next.y, m: next.m }, lockYear));
     },
-    [highlighted, view],
+    [highlighted, view, lockYear],
   );
   function commit(iso: string | null) {
     onChange(iso);
