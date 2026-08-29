@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from core.features.ai_hr.anomaly_service import AnomalyService
     from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
+    from core.features.ai_hr.suggestion_service import SuggestionService
     from core.features.ai_hr.utilization_service import UtilizationService
     from core.features.audit.service import AuditService
     from core.features.crm.service import CrmService
@@ -356,6 +357,20 @@ def get_anomaly_service(
     return AnomalyService(
         repository=AiHrAnomalyRepository(db),
         refresh_days=settings.AI_HR_ANOMALY_SCAN_INTERVAL_DAYS,
+    )
+
+
+def get_suggestion_service(
+    db: AsyncSession = Depends(get_db),
+) -> SuggestionService:
+    """Composition root for the smart leave-window suggestion engine (8.2.4)."""
+    from core.core.config import settings
+    from core.features.ai_hr.suggestion_repository import AiHrSuggestionRepository
+    from core.features.ai_hr.suggestion_service import SuggestionService
+
+    return SuggestionService(
+        repository=AiHrSuggestionRepository(db),
+        refresh_days=settings.AI_HR_SUGGESTION_SCAN_INTERVAL_DAYS,
     )
 
 

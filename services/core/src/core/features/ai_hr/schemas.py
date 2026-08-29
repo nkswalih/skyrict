@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -26,6 +26,8 @@ from core.features.ai_hr.repository import (
     TenureBand,
     TenureSummary,
 )
+from core.features.ai_hr.suggestion_repository import LeaveSuggestion
+from core.features.ai_hr.suggestion_service import SuggestionOrgSummary
 from core.features.ai_hr.utilization_repository import UtilizationAlert
 from core.features.ai_hr.utilization_service import UtilizationOrgSummary
 
@@ -389,6 +391,62 @@ def anomaly_org_to_out(summary: AnomalyOrgSummary) -> AnomalyOrgOut:
     )
 
 
+class LeaveSuggestionOut(BaseModel):
+    """One suggested leave window (L2 / self-scoped feed)."""
+
+    suggestion_id: uuid.UUID | None
+    employee_id: uuid.UUID
+    employee_number: str | None
+    name: str | None
+    department_name: str | None
+    leave_type: str
+    start_date: date
+    end_date: date
+    days: int
+    reasons: list[str]
+    status: str
+    used_at: datetime | None
+    created_at: datetime
+
+
+class SuggestionOrgOut(BaseModel):
+    """L1 aggregate response — never carries an employee identifier/name."""
+
+    total_suggestions: int
+    pending: int
+    by_leave_type: dict[str, int]
+    generated_at: datetime
+    narrative: str
+
+
+def suggestion_to_out(s: LeaveSuggestion) -> LeaveSuggestionOut:
+    return LeaveSuggestionOut(
+        suggestion_id=s.suggestion_id,
+        employee_id=s.employee_id,
+        employee_number=s.employee_number,
+        name=f"{s.first_name or ''} {s.last_name or ''}".strip() or None,
+        department_name=s.department_name,
+        leave_type=s.leave_type,
+        start_date=s.start_date,
+        end_date=s.end_date,
+        days=s.days,
+        reasons=s.reasons,
+        status=s.status,
+        used_at=s.used_at,
+        created_at=s.created_at,
+    )
+
+
+def suggestion_org_to_out(summary: SuggestionOrgSummary) -> SuggestionOrgOut:
+    return SuggestionOrgOut(
+        total_suggestions=summary.total_suggestions,
+        pending=summary.pending,
+        by_leave_type=summary.by_leave_type,
+        generated_at=summary.generated_at,
+        narrative=summary.narrative,
+    )
+
+
 __all__ = [
     "AnomalyOrgOut",
     "AttritionDetailOut",
@@ -403,9 +461,11 @@ __all__ = [
     "HeadcountPoint",
     "HeadcountPointOut",
     "LeaveAnomalyOut",
+    "LeaveSuggestionOut",
     "Overview",
     "OverviewOut",
     "QualityOrgOut",
+    "SuggestionOrgOut",
     "TenureBand",
     "TenureBandOut",
     "TenureSummary",
@@ -419,6 +479,8 @@ __all__ = [
     "employee_quality_to_out",
     "overview_to_out",
     "quality_org_to_out",
+    "suggestion_org_to_out",
+    "suggestion_to_out",
     "tenure_to_out",
     "utilization_alert_to_out",
     "utilization_org_to_out",

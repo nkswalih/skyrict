@@ -144,6 +144,15 @@ class Settings(BaseSettings):
             "scan is older than this many days."
         ),
     )
+    AI_HR_SUGGESTION_SCAN_INTERVAL_DAYS: int = Field(
+        default=7,
+        ge=1,
+        description=(
+            "lazy-on-read TTL for the smart leave-window suggestions (8.2.4): "
+            "pending suggestions are regenerated when the surface is read and "
+            "the latest scan is older than this many days."
+        ),
+    )
 
     # --- Derived (loaded from files at validation time) ---
     jwt_public_key: str = ""

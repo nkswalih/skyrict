@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from core.api.deps import (
     get_anomaly_service,
     get_leave_service,
+    get_suggestion_service,
     get_tenant_id,
     get_utilization_service,
     require_employee_self_service,
@@ -33,10 +34,13 @@ from core.api.v1.schemas.hr import (
 from core.features.ai_hr.anomaly_service import AnomalyService
 from core.features.ai_hr.schemas import (
     LeaveAnomalyOut,
+    LeaveSuggestionOut,
     UtilizationAlertOut,
     anomaly_to_out,
+    suggestion_to_out,
     utilization_alert_to_out,
 )
+from core.features.ai_hr.suggestion_service import SuggestionService
 from core.features.ai_hr.utilization_service import UtilizationService
 from core.features.hr.service import LeaveService
 from skyrict_common.schemas import ResponseEnvelope
@@ -141,4 +145,60 @@ async def my_leave_anomalies(
     return ResponseEnvelope(
         data=[anomaly_to_out(a) for a in anomalies],
         message="Your leave anomaly findings retrieved",
+    )
+
+
+@router.get("/leave/suggestions", response_model=ResponseEnvelope[list[LeaveSuggestionOut]])
+async def my_leave_suggestions(
+    current_user: dict[str, Any] = Depends(require_employee_self_service),
+    suggestion_service: SuggestionService = Depends(get_suggestion_service),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> ResponseEnvelope[list[LeaveSuggestionOut]]:
+    """The caller's OWN leave-window suggestions (prefill chips), self-scoped."""
+    employee = current_user["employee"]
+    suggestions = await suggestion_service.own_suggestions(tenant_id, employee.id)
+    return ResponseEnvelope(
+        data=[suggestion_to_out(s) for s in suggestions],
+        message="Your leave suggestions retrieved",
+    )
+
+
+@router.post(
+    "/leave/suggestions/{suggestion_id}/use",
+    response_model=ResponseEnvelope[LeaveSuggestionOut],
+)
+async def use_my_leave_suggestion(
+    suggestion_id: uuid.UUID,
+    current_user: dict[str, Any] = Depends(require_employee_self_service),
+    suggestion_service: SuggestionService = Depends(get_suggestion_service),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> ResponseEnvelope[LeaveSuggestionOut]:
+    """Record that the caller prefilled a leave form from a suggestion.
+
+    Never auto-submits: it only marks the suggestion ``used`` so the chip stops
+    being suggested; the actual leave request is submitted via the normal
+    ``POST /portal/leave/requests`` flow.
+    """
+    suggestion = await suggestion_service.use_suggestion(tenant_id, suggestion_id)
+    return ResponseEnvelope(
+        data=suggestion_to_out(suggestion),
+        message="Suggestion marked as used (no leave submitted)",
+    )
+
+
+@router.post(
+    "/leave/suggestions/{suggestion_id}/dismiss",
+    response_model=ResponseEnvelope[LeaveSuggestionOut],
+)
+async def dismiss_my_leave_suggestion(
+    suggestion_id: uuid.UUID,
+    current_user: dict[str, Any] = Depends(require_employee_self_service),
+    suggestion_service: SuggestionService = Depends(get_suggestion_service),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> ResponseEnvelope[LeaveSuggestionOut]:
+    """Record the caller's opt-out of a suggestion (status ``dismissed``)."""
+    suggestion = await suggestion_service.dismiss_suggestion(tenant_id, suggestion_id)
+    return ResponseEnvelope(
+        data=suggestion_to_out(suggestion),
+        message="Suggestion dismissed",
     )
