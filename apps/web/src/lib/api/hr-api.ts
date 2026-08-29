@@ -640,3 +640,185 @@ export async function upsertAttendance(input: {
   });
   return mapAttendanceRecord(raw ?? {});
 }
+
+// ---------------------------------------------------------------------------
+// HR AI — leave suggestions (per-employee, `erp.hr.ai.individual` gate)
+// ---------------------------------------------------------------------------
+
+export interface HrLeaveSuggestion {
+  suggestionId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reasons: string[];
+}
+
+interface HrSuggestionPayload {
+  suggestion_id?: unknown;
+  leave_type?: unknown;
+  start_date?: unknown;
+  end_date?: unknown;
+  days?: unknown;
+  reasons?: unknown;
+  status?: unknown;
+}
+
+export async function listEmployeeSuggestions(
+  employeeId: string,
+): Promise<HrLeaveSuggestion[]> {
+  const raw = await apiFetch<HrSuggestionPayload[] | null>(
+    `/api/v1/ai/hr/suggestions/${employeeId}`,
+  );
+  const rows = Array.isArray(raw) ? raw : [];
+  return rows
+    .filter((suggestion) => suggestion.status === "pending")
+    .map((suggestion) => ({
+      suggestionId: String(suggestion.suggestion_id ?? ""),
+      leaveType: String(suggestion.leave_type ?? ""),
+      startDate: String(suggestion.start_date ?? ""),
+      endDate: String(suggestion.end_date ?? ""),
+      days: Number(suggestion.days ?? 0),
+      reasons: Array.isArray(suggestion.reasons)
+        ? (suggestion.reasons as unknown[]).filter(
+            (reason): reason is string => typeof reason === "string",
+          )
+        : [],
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// HR AI — data quality (8.1.3): L1 org KPI + L2 per-employee drill-down
+// ---------------------------------------------------------------------------
+
+export type QualityGrade = "A" | "B" | "C" | "D" | "F";
+
+export interface QualityIssues {
+  mandatory: string[];
+  contact: string[];
+  document: string[];
+}
+
+export interface EmployeeQualityScore {
+  id: string;
+  employeeId: string;
+  employeeNumber: string | null;
+  name: string | null;
+  departmentName: string | null;
+  score: number;
+  grade: QualityGrade;
+  mandatoryScore: number;
+  contactScore: number;
+  documentScore: number;
+  issues: QualityIssues;
+  generatedAt: string;
+}
+
+export interface QualityOrgKpi {
+  totalScored: number;
+  averageScore: number;
+  gradeDistribution: Record<string, number>;
+  departmentAverages: {
+    departmentName: string;
+    averageScore: number;
+    lowQualityCount: number;
+    scored: number;
+  }[];
+  generatedAt: string;
+  narrative: string;
+}
+
+interface QualityScorePayload {
+  employee_id?: unknown;
+  employee_number?: unknown;
+  name?: unknown;
+  department_name?: unknown;
+  score?: unknown;
+  grade?: unknown;
+  mandatory_score?: unknown;
+  contact_score?: unknown;
+  document_score?: unknown;
+  issues?: unknown;
+  generated_at?: unknown;
+}
+
+function mapQualityScore(payload: QualityScorePayload): EmployeeQualityScore {
+  const issues = (payload.issues ?? {}) as Record<string, unknown>;
+  return {
+    id: String(payload.employee_id ?? ""),
+    employeeId: String(payload.employee_id ?? ""),
+    employeeNumber: payload.employee_number == null ? null : String(payload.employee_number),
+    name: payload.name == null ? null : String(payload.name),
+    departmentName:
+      payload.department_name == null ? null : String(payload.department_name),
+    score: Number(payload.score ?? 0),
+    grade: (String(payload.grade ?? "F") as QualityGrade),
+    mandatoryScore: Number(payload.mandatory_score ?? 0),
+    contactScore: Number(payload.contact_score ?? 0),
+    documentScore: Number(payload.document_score ?? 0),
+    issues: {
+      mandatory: Array.isArray(issues.mandatory)
+        ? (issues.mandatory as unknown[]).filter(
+            (issue): issue is string => typeof issue === "string",
+          )
+        : [],
+      contact: Array.isArray(issues.contact)
+        ? (issues.contact as unknown[]).filter(
+            (issue): issue is string => typeof issue === "string",
+          )
+        : [],
+      document: Array.isArray(issues.document)
+        ? (issues.document as unknown[]).filter(
+            (issue): issue is string => typeof issue === "string",
+          )
+        : [],
+    },
+    generatedAt: String(payload.generated_at ?? ""),
+  };
+}
+
+interface QualityOrgPayload {
+  total_scored?: unknown;
+  average_score?: unknown;
+  grade_distribution?: unknown;
+  department_averages?: unknown;
+  generated_at?: unknown;
+  narrative?: unknown;
+}
+
+/** L1 org data-quality KPI (never carries per-employee values). */
+export async function getQualityOrgKpi(): Promise<QualityOrgKpi | null> {
+  const raw = await apiFetch<QualityOrgPayload | null>("/api/v1/ai/hr/quality");
+  if (!raw) return null;
+  return {
+    totalScored: Number(raw.total_scored ?? 0),
+    averageScore: Number(raw.average_score ?? 0),
+    gradeDistribution: Object.fromEntries(
+      Object.entries((raw.grade_distribution ?? {}) as Record<string, unknown>).map(
+        ([grade, count]) => [grade, Number(count ?? 0)],
+      ),
+    ),
+    departmentAverages: Array.isArray(raw.department_averages)
+      ? (raw.department_averages as Record<string, unknown>[]).map((entry) => ({
+          departmentName: String(entry.department_name ?? ""),
+          averageScore: Number(entry.average_score ?? 0),
+          lowQualityCount: Number(entry.low_quality_count ?? 0),
+          scored: Number(entry.scored ?? 0),
+        }))
+      : [],
+    generatedAt: String(raw.generated_at ?? ""),
+    narrative: String(raw.narrative ?? ""),
+  };
+}
+
+/** L2 pageable per-employee quality rows, worst first. Requires `erp.hr.ai.individual`. */
+export async function listQualityScores(input: {
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<Paginated<EmployeeQualityScore>> {
+  const result = await apiList<QualityScorePayload>("/api/v1/ai/hr/quality/list", {
+    page: input.page,
+    pageSize: input.pageSize,
+  });
+  return { items: result.items.map(mapQualityScore), meta: result.meta };
+}

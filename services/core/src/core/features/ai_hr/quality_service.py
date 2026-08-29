@@ -143,6 +143,15 @@ class QualityService:
         rows = await self._repository.list_quality(tenant_id, employee_id=employee_id)
         return rows[0] if rows else None
 
+    async def list_scores(
+        self, tenant_id: uuid.UUID, *, limit: int = 100, offset: int = 0
+    ) -> list[EmployeeQuality]:
+        """L2 pageable drill-down (worst first), for the admin quality panel."""
+        await self._ensure_recalc(tenant_id)
+        rows = await self._repository.list_quality(tenant_id)
+        rows.sort(key=lambda r: r.score)
+        return rows[offset : offset + limit]
+
     @staticmethod
     def _build_kpi(rows: Sequence[EmployeeQuality]) -> QualityOrgKpi:
         total = len(rows)

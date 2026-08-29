@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from core.api.deps import (
@@ -188,6 +188,29 @@ async def quality_org(
     kpi = await quality_service.org_kpi(_tenant_id(current_user))
     return ResponseEnvelope(
         data=quality_org_to_out(kpi), message="HR AI data-quality KPI retrieved"
+    )
+
+
+@router.get("/quality/list", response_model=ResponseEnvelope[list[EmployeeQualityOut]])
+async def quality_list(
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    quality_service: _QualityServiceDep,
+    show_individual: _IndividualDep,
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ResponseEnvelope[list[EmployeeQualityOut]] | JSONResponse:
+    """L2 pageable per-employee quality rows (worst first) for the admin panel."""
+    if not show_individual:
+        limited: ResponseEnvelope[dict[str, Any]] = ResponseEnvelope(
+            data={"detail": "erp.hr.ai.individual required for the individual view"},
+            message="erp.hr.ai.individual required",
+        )
+        return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
+    rows = await quality_service.list_scores(_tenant_id(current_user), limit=limit, offset=offset)
+    return ResponseEnvelope(
+        data=[employee_quality_to_out(row) for row in rows],
+        message="HR AI employee data-quality scores retrieved",
     )
 
 

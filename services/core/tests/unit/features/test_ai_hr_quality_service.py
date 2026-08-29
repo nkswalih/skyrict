@@ -192,3 +192,29 @@ async def test_employee_quality_returns_none_when_not_scored() -> None:
     svc = QualityService(repo, refresh_days=7)
 
     assert await svc.employee_quality(TENANT, EMP_A) is None
+
+
+async def test_list_scores_paginates_worst_first() -> None:
+    a = _score_row(_row(EMP_A, mandatory_missing=["missing_email"]))
+    b = _score_row(
+        _row(
+            EMP_B,
+            department_name="Sales",
+            mandatory_missing=["missing_email", "missing_phone", "missing_job_title"],
+        )
+    )
+    assert b.score < a.score
+    repo = _FakeQualityRepo(latest=datetime.now(UTC), stored=[a, b])
+    svc = QualityService(repo, refresh_days=7)
+
+    rows = await svc.list_scores(TENANT)
+    assert [r.employee_id for r in rows] == [EMP_B, EMP_A]
+
+    first = await svc.list_scores(TENANT, limit=1, offset=0)
+    assert [r.employee_id for r in first] == [EMP_B]
+
+    second = await svc.list_scores(TENANT, limit=1, offset=1)
+    assert [r.employee_id for r in second] == [EMP_A]
+
+    past_end = await svc.list_scores(TENANT, limit=10, offset=99)
+    assert past_end == []
