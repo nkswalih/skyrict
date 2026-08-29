@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,6 +24,8 @@ from core.features.ai_hr.repository import (
     TenureBand,
     TenureSummary,
 )
+from core.features.ai_hr.utilization_repository import UtilizationAlert
+from core.features.ai_hr.utilization_service import UtilizationOrgSummary
 
 
 class HeadcountPointOut(BaseModel):
@@ -274,6 +277,62 @@ def employee_quality_to_out(q: EmployeeQuality) -> EmployeeQualityOut:
     )
 
 
+class UtilizationAlertOut(BaseModel):
+    """One utilization finding (L2 / self-scoped feed)."""
+
+    employee_id: uuid.UUID
+    employee_number: str | None
+    name: str | None
+    department_name: str | None
+    alert_type: str
+    severity: str
+    balance_days: int
+    projected_forfeiture_days: int | None
+    days_remaining_in_year: int | None
+    leave_type: str | None
+    status: str | None
+    evidence: dict[str, Any]
+    created_at: datetime
+
+
+class UtilizationOrgOut(BaseModel):
+    """L1 aggregate response — never carries an employee identifier/name."""
+
+    total_alerts: int
+    by_type: dict[str, int]
+    by_severity: dict[str, int]
+    generated_at: datetime
+    narrative: str
+
+
+def utilization_alert_to_out(a: UtilizationAlert) -> UtilizationAlertOut:
+    return UtilizationAlertOut(
+        employee_id=a.employee_id,
+        employee_number=a.employee_number,
+        name=f"{a.first_name or ''} {a.last_name or ''}".strip() or None,
+        department_name=a.department_name,
+        alert_type=a.alert_type,
+        severity=a.severity,
+        balance_days=a.balance_days,
+        projected_forfeiture_days=a.projected_forfeiture_days,
+        days_remaining_in_year=a.days_remaining_in_year,
+        leave_type=a.leave_type,
+        status=a.status,
+        evidence=a.evidence,
+        created_at=a.created_at,
+    )
+
+
+def utilization_org_to_out(summary: UtilizationOrgSummary) -> UtilizationOrgOut:
+    return UtilizationOrgOut(
+        total_alerts=summary.total_alerts,
+        by_type=summary.by_type,
+        by_severity=summary.by_severity,
+        generated_at=summary.generated_at,
+        narrative=summary.narrative,
+    )
+
+
 __all__ = [
     "AttritionDetailOut",
     "AttritionSummaryOut",
@@ -293,10 +352,14 @@ __all__ = [
     "TenureBandOut",
     "TenureSummary",
     "TenureSummaryOut",
+    "UtilizationAlertOut",
+    "UtilizationOrgOut",
     "attrition_l1_to_out",
     "attrition_l2_to_out",
     "employee_quality_to_out",
     "overview_to_out",
     "quality_org_to_out",
     "tenure_to_out",
+    "utilization_alert_to_out",
+    "utilization_org_to_out",
 ]

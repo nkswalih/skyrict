@@ -28,6 +28,7 @@ from core.api.deps import (
     get_current_user,
     get_hr_ai_individual,
     get_quality_service,
+    get_utilization_service,
     require_permission,
 )
 from core.core.permissions import (
@@ -49,14 +50,19 @@ from core.features.ai_hr.schemas import (
     OverviewOut,
     QualityOrgOut,
     TenureSummaryOut,
+    UtilizationAlertOut,
+    UtilizationOrgOut,
     attrition_l1_to_out,
     attrition_l2_to_out,
     employee_quality_to_out,
     overview_to_out,
     quality_org_to_out,
     tenure_to_out,
+    utilization_alert_to_out,
+    utilization_org_to_out,
 )
 from core.features.ai_hr.service import AiHrService
+from core.features.ai_hr.utilization_service import UtilizationService
 from skyrict_common.exceptions import NotFoundError
 from skyrict_common.schemas import ResponseEnvelope
 
@@ -74,6 +80,7 @@ _HrAiCopilotDep = Annotated[dict[str, Any], Depends(_require_hr_ai_copilot)]
 _CurrentUserDep = Annotated[dict[str, Any], Depends(get_current_user)]
 _ServiceDep = Annotated[AiHrService, Depends(get_ai_hr_service)]
 _QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
+_UtilizationServiceDep = Annotated[UtilizationService, Depends(get_utilization_service)]
 _ClientDep = Annotated[httpx.AsyncClient, Depends(get_ai_client)]
 _IndividualDep = Annotated[bool, Depends(get_hr_ai_individual)]
 
@@ -165,6 +172,45 @@ async def quality_employee(
         return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
     return ResponseEnvelope(
         data=employee_quality_to_out(row), message="HR AI employee quality retrieved"
+    )
+
+
+@router.get("/alerts/utilization", response_model=ResponseEnvelope[UtilizationOrgOut])
+async def utilization_org(
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    utilization_service: _UtilizationServiceDep,
+) -> ResponseEnvelope[UtilizationOrgOut]:
+    """L1 usage-balance alert feed (8.1.4). Never carries per-person values."""
+    summary = await utilization_service.org_feed(_tenant_id(current_user))
+    return ResponseEnvelope(
+        data=utilization_org_to_out(summary),
+        message="HR AI utilization alerts retrieved",
+    )
+
+
+@router.get(
+    "/alerts/utilization/{employee_id}",
+    response_model=ResponseEnvelope[list[UtilizationAlertOut]],
+)
+async def utilization_employee(
+    employee_id: uuid.UUID,
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    utilization_service: _UtilizationServiceDep,
+    show_individual: _IndividualDep,
+) -> ResponseEnvelope[list[UtilizationAlertOut]] | JSONResponse:
+    """L2 per-employee utilization alerts for ``individual`` callers; 403 else."""
+    if not show_individual:
+        limited: ResponseEnvelope[dict[str, Any]] = ResponseEnvelope(
+            data={"detail": "erp.hr.ai.individual required for the individual view"},
+            message="erp.hr.ai.individual required",
+        )
+        return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
+    alerts = await utilization_service.employee_alerts(_tenant_id(current_user), employee_id)
+    return ResponseEnvelope(
+        data=[utilization_alert_to_out(a) for a in alerts],
+        message="HR AI employee utilization alerts retrieved",
     )
 
 

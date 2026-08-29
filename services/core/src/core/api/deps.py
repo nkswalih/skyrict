@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from core.core.audit_service import AuditService as CoreAuditService
     from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
+    from core.features.ai_hr.utilization_service import UtilizationService
     from core.features.audit.service import AuditService
     from core.features.crm.service import CrmService
     from core.features.crm.workspace_service import CrmWorkspaceService
@@ -326,6 +327,20 @@ def get_quality_service(
     return QualityService(
         repository=AiHrQualityRepository(db),
         refresh_days=settings.AI_HR_REFRESH_INTERVAL_DAYS,
+    )
+
+
+def get_utilization_service(
+    db: AsyncSession = Depends(get_db),
+) -> UtilizationService:
+    """Composition root for the leave-balance utilization scanner (8.1.4)."""
+    from core.core.config import settings
+    from core.features.ai_hr.utilization_repository import AiHrUtilizationRepository
+    from core.features.ai_hr.utilization_service import UtilizationService
+
+    return UtilizationService(
+        repository=AiHrUtilizationRepository(db),
+        refresh_days=settings.AI_HR_UTILIZATION_SCAN_INTERVAL_DAYS,
     )
 
 

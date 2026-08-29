@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from core.api.deps import (
     get_leave_service,
     get_tenant_id,
+    get_utilization_service,
     require_employee_self_service,
 )
 from core.api.v1.routers.errors import raise_from_service_error
@@ -28,6 +29,8 @@ from core.api.v1.schemas.hr import (
     PortalLeaveRequestCreate,
     PortalMeOut,
 )
+from core.features.ai_hr.schemas import UtilizationAlertOut, utilization_alert_to_out
+from core.features.ai_hr.utilization_service import UtilizationService
 from core.features.hr.service import LeaveService
 from skyrict_common.schemas import ResponseEnvelope
 
@@ -101,4 +104,19 @@ async def submit_my_leave_request(
         raise_from_service_error(exc)
     return ResponseEnvelope(
         data=LeaveRequestOut.model_validate(request), message="Leave request submitted"
+    )
+
+
+@router.get("/leave/alerts", response_model=ResponseEnvelope[list[UtilizationAlertOut]])
+async def my_leave_alerts(
+    current_user: dict[str, Any] = Depends(require_employee_self_service),
+    utilization_service: UtilizationService = Depends(get_utilization_service),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> ResponseEnvelope[list[UtilizationAlertOut]]:
+    """The caller's OWN utilization alerts (forfeit warnings), self-scoped."""
+    employee = current_user["employee"]
+    alerts = await utilization_service.own_alerts(tenant_id, employee.id)
+    return ResponseEnvelope(
+        data=[utilization_alert_to_out(a) for a in alerts],
+        message="Your utilization alerts retrieved",
     )
