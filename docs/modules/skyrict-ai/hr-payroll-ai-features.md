@@ -30,7 +30,8 @@ own.
 9. [Feature 5 — HR Copilot agent](#9-feature-5--hr-copilot-agent)
 10. [Security architecture](#10-security-architecture)
 11. [Database design](#11-database-design)
-12. [Test strategy](#12-test-strategy)
+12. [Model eval harness (HR-AI-002 / SKY-72)](#12-model-eval-harness-hr-ai-002--sky-72)
+13. [Test strategy](#13-test-strategy)
 
 ---
 
@@ -126,6 +127,7 @@ seeded via identity migration, and enforced at the core edge before any AI work
 | `erp.hr.ai.individual` | L2 | View individual attrition + factor explanations | **owner + dedicated executive role only** |
 | `erp.hr.ai.acknowledge` | L2 | Acknowledge a team-risk item (audited) | owner, organization_admin, department_manager |
 | `erp.hr.ai.copilot` | L1 | Use the HR Copilot | owner, organization_admin, department_manager |
+| `erp.hr.ai.eval` | ops | Record ai-agent model-eval precision results (SKY-72) | operator / owner wildcard |
 | `erp.ai.invoke` | base | Existing gate; every AI path requires it | existing |
 
 **Gate semantics (Gherkin: permission gate on predictions):** a manager with
@@ -353,11 +355,47 @@ Conventions: `tenant_id` (composite partial PK), `id UUID` PK, `created_at`
 
 **Migration chain:** core `0020_hr_ai_tables` off `0019_leave_type_rework`;
 ai-agent `0002_hr_copilot` off `0001_ai_foundation_tables` (seeds the
-`agent_registry` row).
+`agent_registry` row). The HR-AI-002 wave-2 additions (HR-AI-002, Commit 1-5):
+core `0022_hr_ai_wave2` creates `ai_hr_quality_scores`, `ai_hr_utilization_alerts`,
+`ai_hr_leave_anomalies`, `ai_hr_leave_suggestions` and `hr_eval_runs`; core
+`0023_hr_ai_eval_permission` seeds the `erp.hr.ai.eval` catalog key.
 
 ---
 
-## 12. Test strategy
+## 12. Model eval harness (HR-AI-002 / SKY-72)
+
+**Location:** `services/ai-agent/src/ai_agent/eval/` + CLI command
+`ai-agent eval-hr-models`; recording endpoint in core
+`POST /api/v1/ai/hr/eval-runs`.
+
+The harness is the model-quality check for the deterministic HR models: it runs
+each labeled seed set from
+`services/ai-agent/tests/eval/hr_models.yaml` through the **same scorer the
+runtime uses** (attrition: `score_employee` incl. its abstention rule) and
+computes per-metric precision over the deployed model. It is non-LLM and
+reproducible (bundled fixed-seed model + stable seed sets). Seed rows carry
+feature arrays + labels only — never employee PII.
+
+**Warn-not-fail contract:** precision below the documented `0.70` minimum
+prints a `WARN` line (exit code 0) — an eval regression is an operator alert,
+not a hard deploy gate. Results are recorded append-only in core's
+`hr_eval_runs` (`metric`, `precision`, `considered`, `threshold`,
+`met_threshold`, `details JSONB`; RLS tenant-scoped; index
+`(tenant_id, model_name, generated_at)`) via the core API, gated by the seeded
+`erp.hr.ai.eval` permission (owner wildcard passes). Precision/threshold
+bounds are re-validated at the core edge.
+
+**Operate:**
+```
+uv run --directory services/ai-agent ai-agent eval-hr-models \
+  --core-url http://localhost:8000 --token <jwt> --tenant-slug <slug>
+```
+Drop `--core-url/--token/--tenant-slug` for a local-only dry-run
+(`--dry-run` forces the same).
+
+---
+
+## 13. Test strategy
 
 | Area | Coverage |
 |------|----------|
@@ -368,3 +406,5 @@ ai-agent `0002_hr_copilot` off `0001_ai_foundation_tables` (seeds the
 | Acknowledge (integration) | audited via `hr.ai.risk.acknowledged` |
 | Aggregates (integration) | L1 shapes only; no employee identifiers in serialized body |
 | RLS (integration) | new tables cross-tenant read filtered / write blocked |
+| Eval harness (unit) | seed-set precision ≥ threshold on the bundled model; abstentions excluded; unknown model fails fast |
+| Eval recording (integration) | migration round-trip includes 0022/0023 + `hr_eval_runs` / `erp.hr.ai.eval` sentinels |
