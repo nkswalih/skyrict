@@ -130,6 +130,25 @@ class QualityService:
             scored = [_score_row(q) for q in rows]
             await self._repository.upsert_quality(tenant_id, scored)
 
+    async def recalculate(self, tenant_id: uuid.UUID, *, force: bool = True) -> int:
+        """Re-score the tenant's data quality; returns the number of rows scored.
+
+        ``force=True`` always rebuilds regardless of the 7-day TTL — the ops
+        hook for the weekly recalc cron. ``force=False`` falls back to the lazy
+        ``_ensure_recalc`` TTL so read paths keep their behavior unchanged.
+        """
+        if not force:
+            await self._ensure_recalc(tenant_id)
+            return len(await self._repository.list_quality(tenant_id))
+        rows = await self._repository.build_quality_rows(tenant_id)
+        scored = [_score_row(q) for q in rows]
+        await self._repository.upsert_quality(tenant_id, scored)
+        return len(scored)
+
+    async def latest_generated_at(self, tenant_id: uuid.UUID) -> datetime | None:
+        """Timestamp of the current stored run (drives the panel's 'as of')."""
+        return await self._repository.latest_generated_at(tenant_id)
+
     async def org_kpi(self, tenant_id: uuid.UUID) -> QualityOrgKpi:
         await self._ensure_recalc(tenant_id)
         rows = await self._repository.list_quality(tenant_id)

@@ -187,6 +187,35 @@ async def test_recalc_runs_when_run_is_stale() -> None:
     assert len(repo.upserts) == 1
 
 
+async def test_recalculate_force_bypasses_fresh_ttl() -> None:
+    repo = _FakeQualityRepo(latest=datetime.now(UTC), rows=[_row()])
+    svc = QualityService(repo, refresh_days=7)
+
+    count = await svc.recalculate(TENANT, force=True)
+
+    assert count == 1
+    assert len(repo.upserts) == 1
+    assert repo.stored[0].grade == "A"
+
+
+async def test_recalculate_without_force_respects_fresh_ttl() -> None:
+    repo = _FakeQualityRepo(latest=datetime.now(UTC), stored=[_row()])
+    svc = QualityService(repo, refresh_days=7)
+
+    count = await svc.recalculate(TENANT, force=False)
+
+    assert count == 1
+    assert repo.upserts == []
+
+
+async def test_latest_generated_at_delegates_to_repository() -> None:
+    stamp = datetime(2026, 1, 1, tzinfo=UTC)
+    repo = _FakeQualityRepo(latest=stamp)
+    svc = QualityService(repo, refresh_days=7)
+
+    assert await svc.latest_generated_at(TENANT) == stamp
+
+
 async def test_employee_quality_returns_none_when_not_scored() -> None:
     repo = _FakeQualityRepo(latest=datetime.now(UTC), stored=[])
     svc = QualityService(repo, refresh_days=7)

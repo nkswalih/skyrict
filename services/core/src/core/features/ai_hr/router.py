@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import httpx
@@ -68,6 +69,7 @@ from core.features.ai_hr.schemas import (
     PublicHolidayOut,
     PublicHolidayWrite,
     QualityOrgOut,
+    QualityRefreshOut,
     SuggestionOrgOut,
     TenureSummaryOut,
     UtilizationAlertOut,
@@ -234,6 +236,29 @@ async def quality_employee(
         return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
     return ResponseEnvelope(
         data=employee_quality_to_out(row), message="HR AI employee quality retrieved"
+    )
+
+
+@router.post("/quality/refresh", response_model=ResponseEnvelope[QualityRefreshOut])
+async def quality_refresh(
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    quality_service: _QualityServiceDep,
+) -> ResponseEnvelope[QualityRefreshOut]:
+    """Force a data-quality recompute (L1 maintenance; the weekly recalc cron).
+
+    Re-scores and stores regardless of the 7-day TTL so a scheduled job always
+    produces a fresh run. The response carries only the aggregate row count and
+    run time — never per-person data, so ``erp.hr.ai.read`` suffices.
+    """
+    tenant_id = _tenant_id(current_user)
+    recount = await quality_service.recalculate(tenant_id, force=True)
+    generated_at = await quality_service.latest_generated_at(tenant_id)
+    if generated_at is None:
+        generated_at = datetime.now(UTC)
+    return ResponseEnvelope(
+        data=QualityRefreshOut(recount=recount, generated_at=generated_at),
+        message="HR AI data-quality scores recomputed",
     )
 
 

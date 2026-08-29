@@ -282,6 +282,13 @@ def employee_quality_to_out(q: EmployeeQuality) -> EmployeeQualityOut:
     )
 
 
+class QualityRefreshOut(BaseModel):
+    """Result of a forced data-quality recompute (L1 maintenance op)."""
+
+    recount: int
+    generated_at: datetime
+
+
 class UtilizationAlertOut(BaseModel):
     """One utilization finding (L2 / self-scoped feed)."""
 
