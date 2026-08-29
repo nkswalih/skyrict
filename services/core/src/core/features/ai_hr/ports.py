@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Protocol
 
 from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
+from core.features.ai_hr.quality_repository import EmployeeQuality
 from core.features.ai_hr.repository import (
     DepartmentCount,
     HeadcountPoint,
@@ -51,9 +52,27 @@ class AiHrAttritionRepositoryPort(Protocol):
     ) -> ScoredRisk | None: ...
 
 
+class AiHrQualityRepositoryPort(Protocol):
+    """Persistence + signal projection behind the quality scorer (8.1.3)."""
+
+    async def latest_generated_at(self, tenant_id: uuid.UUID) -> datetime | None: ...
+
+    async def build_quality_rows(self, tenant_id: uuid.UUID) -> list[EmployeeQuality]: ...
+
+    async def upsert_quality(
+        self, tenant_id: uuid.UUID, rows: Sequence[EmployeeQuality]
+    ) -> None: ...
+
+    async def list_quality(
+        self, tenant_id: uuid.UUID, employee_id: uuid.UUID | None = None
+    ) -> list[EmployeeQuality]: ...
+
+
 __all__ = [
     "AiHrAttritionRepositoryPort",
+    "AiHrQualityRepositoryPort",
     "AiHrRepositoryPort",
+    "EmployeeQuality",
     "FeatureVector",
     "ScoredRisk",
 ]

@@ -27,6 +27,7 @@ from core.api.deps import (
     get_ai_hr_service,
     get_current_user,
     get_hr_ai_individual,
+    get_quality_service,
     require_permission,
 )
 from core.core.permissions import (
@@ -40,17 +41,23 @@ from core.features.ai.proxy import forward_to_ai_agent, relay_response
 from core.features.ai.router import get_ai_client
 from core.features.ai_hr.attrition_client import score_features
 from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
+from core.features.ai_hr.quality_service import QualityService
 from core.features.ai_hr.schemas import (
     AttritionDetailOut,
     AttritionSummaryOut,
+    EmployeeQualityOut,
     OverviewOut,
+    QualityOrgOut,
     TenureSummaryOut,
     attrition_l1_to_out,
     attrition_l2_to_out,
+    employee_quality_to_out,
     overview_to_out,
+    quality_org_to_out,
     tenure_to_out,
 )
 from core.features.ai_hr.service import AiHrService
+from skyrict_common.exceptions import NotFoundError
 from skyrict_common.schemas import ResponseEnvelope
 
 router = APIRouter(prefix="/ai/hr", tags=["ai-hr"])
@@ -66,6 +73,7 @@ _HrAiAckDep = Annotated[dict[str, Any], Depends(_require_hr_ai_acknowledge)]
 _HrAiCopilotDep = Annotated[dict[str, Any], Depends(_require_hr_ai_copilot)]
 _CurrentUserDep = Annotated[dict[str, Any], Depends(get_current_user)]
 _ServiceDep = Annotated[AiHrService, Depends(get_ai_hr_service)]
+_QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
 _ClientDep = Annotated[httpx.AsyncClient, Depends(get_ai_client)]
 _IndividualDep = Annotated[bool, Depends(get_hr_ai_individual)]
 
@@ -122,6 +130,42 @@ async def tenure(
     """L1 tenure-band summary with a deterministic narrative."""
     result = await service.tenure(_tenant_id(current_user))
     return ResponseEnvelope(data=tenure_to_out(result), message="HR AI tenure summary retrieved")
+
+
+@router.get("/quality", response_model=ResponseEnvelope[QualityOrgOut])
+async def quality_org(
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    quality_service: _QualityServiceDep,
+) -> ResponseEnvelope[QualityOrgOut]:
+    """L1 org data-quality KPI (8.1.3). Never carries per-person values."""
+    kpi = await quality_service.org_kpi(_tenant_id(current_user))
+    return ResponseEnvelope(
+        data=quality_org_to_out(kpi), message="HR AI data-quality KPI retrieved"
+    )
+
+
+@router.get("/quality/{employee_id}", response_model=ResponseEnvelope[EmployeeQualityOut])
+async def quality_employee(
+    employee_id: uuid.UUID,
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiReadDep,
+    quality_service: _QualityServiceDep,
+    show_individual: _IndividualDep,
+) -> ResponseEnvelope[EmployeeQualityOut] | JSONResponse:
+    """L2 per-employee quality for ``individual`` callers; 403 otherwise."""
+    row = await quality_service.employee_quality(_tenant_id(current_user), employee_id)
+    if row is None:
+        raise NotFoundError(f"no quality score for employee {employee_id}")
+    if not show_individual:
+        limited: ResponseEnvelope[dict[str, Any]] = ResponseEnvelope(
+            data={"detail": "erp.hr.ai.individual required for the individual view"},
+            message="erp.hr.ai.individual required",
+        )
+        return JSONResponse(status_code=403, content=limited.model_dump(mode="json"))
+    return ResponseEnvelope(
+        data=employee_quality_to_out(row), message="HR AI employee quality retrieved"
+    )
 
 
 @router.get("/attrition", response_model=ResponseEnvelope[AttritionDetailOut])

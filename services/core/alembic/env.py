@@ -30,7 +30,12 @@ from core.features.ai_hr.models import (  # noqa: F401
     AttritionScoreModel,
     ComplianceCheckModel,
     EmployeeDocumentModel,
+    HrEvalRunModel,
+    LeaveAnomalyModel,
+    LeaveSuggestionModel,
     PayrollAnomalyModel,
+    QualityScoreModel,
+    UtilizationAlertModel,
 )
 from core.features.crm.models import (  # noqa: F401
     ErpCrmCustomerModel,

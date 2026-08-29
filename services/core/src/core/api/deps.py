@@ -29,6 +29,7 @@ from skyrict_common.exceptions import AuthenticationError, PermissionDeniedError
 
 if TYPE_CHECKING:
     from core.core.audit_service import AuditService as CoreAuditService
+    from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
     from core.features.audit.service import AuditService
     from core.features.crm.service import CrmService
@@ -311,6 +312,20 @@ def get_ai_hr_service(
         attrition_repository=AiHrAttritionRepository(db),
         audit=audit,
         attrition_refresh_days=settings.AI_HR_REFRESH_INTERVAL_DAYS,
+    )
+
+
+def get_quality_service(
+    db: AsyncSession = Depends(get_db),
+) -> QualityService:
+    """Composition root for the HR data-quality scorer (HR-AI-002, 8.1.3)."""
+    from core.core.config import settings
+    from core.features.ai_hr.quality_repository import AiHrQualityRepository
+    from core.features.ai_hr.quality_service import QualityService
+
+    return QualityService(
+        repository=AiHrQualityRepository(db),
+        refresh_days=settings.AI_HR_REFRESH_INTERVAL_DAYS,
     )
 
 

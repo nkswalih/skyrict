@@ -14,6 +14,8 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from core.features.ai_hr.attrition_repository import ScoredRisk
+from core.features.ai_hr.quality_repository import EmployeeQuality
+from core.features.ai_hr.quality_service import QualityOrgKpi
 from core.features.ai_hr.repository import (
     DepartmentCount,
     HeadcountPoint,
@@ -199,24 +201,102 @@ def attrition_l1_to_out(scored: Sequence[ScoredRisk]) -> AttritionSummaryOut:
     )
 
 
+class DepartmentQualityOut(BaseModel):
+    department_name: str
+    average_score: float
+    low_quality_count: int
+    scored: int
+
+
+class QualityOrgOut(BaseModel):
+    """L1 aggregate response — never carries an employee identifier/name."""
+
+    total_scored: int
+    average_score: float
+    grade_distribution: dict[str, int]
+    department_averages: list[DepartmentQualityOut]
+    generated_at: datetime
+    narrative: str
+
+
+class EmployeeQualityOut(BaseModel):
+    """L2 individual quality — the ONLY shape allowed to carry name/number."""
+
+    employee_id: uuid.UUID
+    employee_number: str | None
+    name: str | None
+    department_name: str | None
+    score: float
+    grade: str
+    mandatory_score: float
+    contact_score: float
+    document_score: float
+    issues: dict[str, list[str]]
+    generated_at: datetime
+
+
+def quality_org_to_out(kpi: QualityOrgKpi) -> QualityOrgOut:
+    return QualityOrgOut(
+        total_scored=kpi.total_scored,
+        average_score=kpi.average_score,
+        grade_distribution=kpi.grade_distribution,
+        department_averages=[
+            DepartmentQualityOut(
+                department_name=d.department_name,
+                average_score=d.average_score,
+                low_quality_count=d.low_quality_count,
+                scored=d.scored,
+            )
+            for d in kpi.department_averages
+        ],
+        generated_at=kpi.generated_at,
+        narrative=kpi.narrative,
+    )
+
+
+def employee_quality_to_out(q: EmployeeQuality) -> EmployeeQualityOut:
+    return EmployeeQualityOut(
+        employee_id=q.employee_id,
+        employee_number=q.employee_number,
+        name=f"{q.first_name or ''} {q.last_name or ''}".strip() or None,
+        department_name=q.department_name,
+        score=q.score,
+        grade=q.grade,
+        mandatory_score=q.mandatory_score,
+        contact_score=q.contact_score,
+        document_score=q.document_score,
+        issues={
+            "mandatory": q.mandatory_missing,
+            "contact": q.contact_issues,
+            "document": q.document_issues,
+        },
+        generated_at=q.generated_at,
+    )
+
+
 __all__ = [
     "AttritionDetailOut",
     "AttritionSummaryOut",
     "DepartmentCount",
     "DepartmentCountOut",
+    "DepartmentQualityOut",
     "DepartmentRiskOut",
+    "EmployeeQualityOut",
     "EmployeeRiskOut",
     "FactorOut",
     "HeadcountPoint",
     "HeadcountPointOut",
     "Overview",
     "OverviewOut",
+    "QualityOrgOut",
     "TenureBand",
     "TenureBandOut",
     "TenureSummary",
     "TenureSummaryOut",
     "attrition_l1_to_out",
     "attrition_l2_to_out",
+    "employee_quality_to_out",
     "overview_to_out",
+    "quality_org_to_out",
     "tenure_to_out",
 ]

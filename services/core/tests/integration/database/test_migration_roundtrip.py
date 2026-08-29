@@ -72,12 +72,19 @@ _ERP_PERMISSION_KEYS = (
     "erp.hr.ai.copilot",
 )
 
-# 0021: tenant-scoped tables created by the HR/Payroll AI migration.
+# 0021: tenant-scoped tables created by the HR/Payroll AI migrations.
 _HR_AI_TABLES = (
     "ai_hr_attrition_scores",
     "ai_payroll_anomaly_log",
     "ai_compliance_checks",
     "erp_employee_documents",
+    # 0022: HR-AI-002 wave-2 tables (data quality, utilization alerts,
+    # leave-pattern anomalies, leave suggestions, model eval harness).
+    "ai_hr_quality_scores",
+    "ai_hr_utilization_alerts",
+    "ai_hr_leave_anomalies",
+    "ai_hr_leave_suggestions",
+    "hr_eval_runs",
 )
 
 
@@ -143,7 +150,7 @@ async def _assert_upgraded_schema(url: str) -> None:
             version = (
                 await conn.execute(text("SELECT version_num FROM alembic_version_core"))
             ).scalar_one()
-            assert version == "0021", f"head is {version}, expected 0021"
+            assert version == "0022", f"head is {version}, expected 0022"
 
             # 0018: erp.leave.self is a first-class catalog permission.
             perm_row = (

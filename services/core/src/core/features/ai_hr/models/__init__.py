@@ -13,11 +13,20 @@ from core.features.ai_hr.models.employee_document import (
     DocumentType,
     EmployeeDocumentModel,
 )
+from core.features.ai_hr.models.hr_eval_run import HrEvalRunModel
+from core.features.ai_hr.models.leave_anomaly import LeaveAnomalyModel, LeaveAnomalyStatus
+from core.features.ai_hr.models.leave_suggestion import LeaveSuggestionModel, LeaveSuggestionStatus
 from core.features.ai_hr.models.payroll_anomaly import (
     AnomalySeverity,
     AnomalyStatus,
     AnomalyType,
     PayrollAnomalyModel,
+)
+from core.features.ai_hr.models.quality_score import QualityGrade, QualityScoreModel
+from core.features.ai_hr.models.utilization_alert import (
+    UtilizationAlertModel,
+    UtilizationAlertStatus,
+    UtilizationAlertType,
 )
 
 __all__ = [
@@ -31,5 +40,15 @@ __all__ = [
     "ComplianceStatus",
     "DocumentType",
     "EmployeeDocumentModel",
+    "HrEvalRunModel",
+    "LeaveAnomalyModel",
+    "LeaveAnomalyStatus",
+    "LeaveSuggestionModel",
+    "LeaveSuggestionStatus",
     "PayrollAnomalyModel",
+    "QualityGrade",
+    "QualityScoreModel",
+    "UtilizationAlertModel",
+    "UtilizationAlertStatus",
+    "UtilizationAlertType",
 ]
