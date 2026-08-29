@@ -489,34 +489,32 @@ box.
 | suggestion: own-request windows skipped | planner | unit `test_plan_best_block_skips_windows_blocked_by_own_requests` |
 | suggestion: fully blacked-out -> forfeit window + conflict reason | planner | unit `test_plan_best_block_falls_back_to_forfeit_window_when_fully_blacked_out` |
 
+> **Demo seed — live vs pre-seeded.** The `core seed-demo --force` scenario
+> mix deliberately splits determinism from end-to-end "first read" freshness:
+>
+> | Sample | Provisioning | Why |
+> |--------|--------------|-----|
+> | `leave_overuse` (Grace, EMP-0007) | **live-computed** — anomaly table left empty after force-reseed, so the portal/admin's first read runs the scan and materializes the finding | demo shows the compute path, not just a table read |
+> | `short_notice_monday_friday` (EMP-0007) | **live-computed** — approved block filed+starting today (advance 0), ending on the next Friday (Fri fringe), 7 days vs 2.0 team median | end-on-Friday is the only construction that fires for *any* seed weekday (proven over all 7) |
+> | `pre_holiday_spike` (EMP-0007) | **live-computed** — the 2026 demo calendar seeds National Day (08-31) inside the block (distance 0 -> high) | high requires overlap; a non-overlapping holiday can only reach medium |
+> | forfeit utilization alert (emp 1, 18/55) | **pre-seeded** fixture row (`ai_hr_utilization_alerts`, `created_at=now-0.5d` so the 1-day refresh keeps it fresh) | the forfeit scan only fires when < 60 days remain — mid-year (124 left on 08-29) it physically cannot fire live |
+> | thin-team abstention | **unit-tested only** | `>= 4` active members are required to scan; seed teams are all >= 4 so the live demo cannot produce it |
+>
+> Freshness mechanics: anomaly/quality feeds refresh after 7 days,
+> utilization after 1 day (`max(created_at)` + elapsed >= refresh window).
+> The team-size gate and the four rule near-miss cases are pinned by the lib
+> tests and the `anomaly_precision` eval seed (rows above).
+
 ### 13.5 Nightly / CI model-quality hook
 
 The eval harness is deterministic and cheap; wire the same command to a
 nightly job so a rules/model regression is caught within a day and the metric
-history lands in `hr_eval_runs`. GitHub Actions example (add to
-`.github/workflows/`), crontab analog shown after:
-
-```yaml
-name: nightly-hr-eval
-on:
-  schedule:
-    - cron: "17 2 * * *"   # 02:17 nightly UTC
-  workflow_dispatch:
-jobs:
-  eval:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: uv sync --frozen
-      - run: >-
-          uv run --directory services/ai-agent ai-agent eval-hr-models
-          --core-url "${{ secrets.SKYRICT_CORE_URL }}"
-          --token "${{ secrets.SKYRICT_CORE_TOKEN }}"
-          --tenant-slug crm
-```
-
-The job **never fails the build** — a `WARN` below 0.70 is an alerting signal,
-not a gate (see §12). Local equivalent:
+history lands in `hr_eval_runs`. This repository ships the job at
+`.github/workflows/nightly-hr-eval.yml` — runs at **02:17 UTC** and on
+`workflow_dispatch`, installs with `uv sync --all-packages --frozen`, then runs
+`uv run --project services/ai-agent ai-agent eval-hr-models` with
+`SKYRICT_CORE_URL` / `SKYRICT_CORE_TOKEN` / `SKYRICT_TENANT_SLUG` supplied from
+Actions secrets. Local equivalent:
 
 ```
 uv run --directory services/ai-agent ai-agent eval-hr-models --dry-run
@@ -525,6 +523,20 @@ uv run --directory services/ai-agent ai-agent eval-hr-models --dry-run
 Webhook alerting on a WARN line can fan out to the on-call channel (the metric
 row is already persisted). Same pattern already powers the CI `ci-core.yml`
 gates for ruff/mypy; this hook extends CI to model quality.
+
+### 13.6 Audit reconciliation
+
+Two accepted deviations from the ticket's literal wording (reasoned, tested,
+and documented here so the DoD surface matches reality):
+
+| Bulk-of-ticket wording | Delivered | Reason |
+|------------------------|-----------|--------|
+| data-quality scores over "company data incl. banking" | quality engine scores from **compensation** + **work-documents** proxies in this schema (no banking `erp_*` table exists) | proxies are the populated substitutes; contribution weights and issue codes are still per-rule and tested |
+| use-it-or-lose-it forfeit "urgency" by time-to-forfeit | forfeit fires only within `FORFEIT_WINDOW_DAYS = 60` of year end, severity by **balance magnitude** (`>= 20` high, `>= 10` medium, else low) | a mid-year 18-days/55-remaining case satisfies the demo's *medium severity* intent without inventing a nonexistent near-year-end trigger |
+
+The demo seed's forfeit fixture row literally materializes that second row
+(balance 18, 55 remaining, medium). Everything else in §13.4 is either live
+computed or unit-pinned as marked.
 
 ---
 

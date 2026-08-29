@@ -1,0 +1,49 @@
+name: Nightly — HR Model Eval
+
+# Regression eval of the deployed HR models against the labeled seed sets.
+# Runs every night and on demand. warn-not-fail by design: precision below the
+# documented 0.70 threshold (or a persistence hiccup) must NEVER block an
+# unrelated merge — the run prints WARN lines and stays green so the history
+# is inspected at leisure (services/ai-agent, `eval-hr-models`).
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-hr-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    name: Evaluate HR models
+    runs-on: ubuntu-latest
+    env:
+      SKYRICT_CORE_URL: ${{ secrets.SKYRICT_CORE_URL }}
+      SKYRICT_CORE_TOKEN: ${{ secrets.SKYRICT_CORE_TOKEN }}
+      SKYRICT_TENANT_SLUG: ${{ secrets.SKYRICT_TENANT_SLUG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-packages --frozen
+
+      - name: Run eval-hr-models
+        continue-on-error: true # warn-not-fail: never gate on eval
+        run: uv run --project services/ai-agent ai-agent eval-hr-models
+
+      - name: Summarize
+        if: always()
+        run: |
+          echo "Nightly HR model eval complete (see step logs for PASS/WARN lines)."
+          echo "core_url config: $([ -n \"$SKYRICT_CORE_URL\" ] && echo set || echo unset)"
+          echo "persistence: $([ -n \"$SKYRICT_CORE_TOKEN\" ] && [ -n \"$SKYRICT_TENANT_SLUG\" ] && echo enabled || echo disabled)"
