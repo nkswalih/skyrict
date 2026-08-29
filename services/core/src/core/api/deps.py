@@ -30,6 +30,7 @@ from skyrict_common.exceptions import AuthenticationError, PermissionDeniedError
 if TYPE_CHECKING:
     from core.core.audit_service import AuditService as CoreAuditService
     from core.features.ai_hr.anomaly_service import AnomalyService
+    from core.features.ai_hr.eval_repository import EvalRunRepository
     from core.features.ai_hr.quality_service import QualityService
     from core.features.ai_hr.service import AiHrService
     from core.features.ai_hr.suggestion_service import SuggestionService
@@ -372,6 +373,13 @@ def get_suggestion_service(
         repository=AiHrSuggestionRepository(db),
         refresh_days=settings.AI_HR_SUGGESTION_SCAN_INTERVAL_DAYS,
     )
+
+
+def get_eval_repository(db: AsyncSession = Depends(get_db)) -> EvalRunRepository:
+    """Composition root for the model-eval telemetry repository (SKY-72)."""
+    from core.features.ai_hr.eval_repository import EvalRunRepository
+
+    return EvalRunRepository(db)
 
 
 async def get_hr_ai_individual(

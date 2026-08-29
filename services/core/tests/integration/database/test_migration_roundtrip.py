@@ -70,6 +70,8 @@ _ERP_PERMISSION_KEYS = (
     "erp.hr.ai.individual",
     "erp.hr.ai.acknowledge",
     "erp.hr.ai.copilot",
+    # 0023: ai-agent eval-harness record permission (HR-AI-002, SKY-72).
+    "erp.hr.ai.eval",
 )
 
 # 0021: tenant-scoped tables created by the HR/Payroll AI migrations.
@@ -150,7 +152,7 @@ async def _assert_upgraded_schema(url: str) -> None:
             version = (
                 await conn.execute(text("SELECT version_num FROM alembic_version_core"))
             ).scalar_one()
-            assert version == "0022", f"head is {version}, expected 0022"
+            assert version == "0023", f"head is {version}, expected 0023"
 
             # 0018: erp.leave.self is a first-class catalog permission.
             perm_row = (

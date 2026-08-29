@@ -27,6 +27,7 @@ from core.api.deps import (
     get_ai_hr_service,
     get_anomaly_service,
     get_current_user,
+    get_eval_repository,
     get_hr_ai_individual,
     get_quality_service,
     get_suggestion_service,
@@ -37,6 +38,7 @@ from core.core.permissions import (
     ERP_AI_INVOKE,
     ERP_HR_AI_ACKNOWLEDGE,
     ERP_HR_AI_COPILOT,
+    ERP_HR_AI_EVAL,
     ERP_HR_AI_READ,
 )
 from core.core.tenant_resolver import derive_tenant_slug
@@ -45,12 +47,15 @@ from core.features.ai.router import get_ai_client
 from core.features.ai_hr.anomaly_service import AnomalyService
 from core.features.ai_hr.attrition_client import score_features
 from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
+from core.features.ai_hr.eval_repository import EvalRunRepository
 from core.features.ai_hr.quality_service import QualityService
 from core.features.ai_hr.schemas import (
     AnomalyOrgOut,
     AttritionDetailOut,
     AttritionSummaryOut,
     EmployeeQualityOut,
+    HrEvalRunWrite,
+    HrEvalWriteOut,
     LeaveAnomalyOut,
     LeaveSuggestionOut,
     OverviewOut,
@@ -84,17 +89,20 @@ _require_ai_invoke = require_permission(ERP_AI_INVOKE)
 _require_hr_ai_read = require_permission(ERP_HR_AI_READ)
 _require_hr_ai_acknowledge = require_permission(ERP_HR_AI_ACKNOWLEDGE)
 _require_hr_ai_copilot = require_permission(ERP_HR_AI_COPILOT)
+_require_hr_ai_eval = require_permission(ERP_HR_AI_EVAL)
 
 _AiInvokeDep = Annotated[dict[str, Any], Depends(_require_ai_invoke)]
 _HrAiReadDep = Annotated[dict[str, Any], Depends(_require_hr_ai_read)]
 _HrAiAckDep = Annotated[dict[str, Any], Depends(_require_hr_ai_acknowledge)]
 _HrAiCopilotDep = Annotated[dict[str, Any], Depends(_require_hr_ai_copilot)]
+_HrAiEvalDep = Annotated[dict[str, Any], Depends(_require_hr_ai_eval)]
 _CurrentUserDep = Annotated[dict[str, Any], Depends(get_current_user)]
 _ServiceDep = Annotated[AiHrService, Depends(get_ai_hr_service)]
 _QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
 _UtilizationServiceDep = Annotated[UtilizationService, Depends(get_utilization_service)]
 _AnomalyServiceDep = Annotated[AnomalyService, Depends(get_anomaly_service)]
 _SuggestionServiceDep = Annotated[SuggestionService, Depends(get_suggestion_service)]
+_EvalRepositoryDep = Annotated[EvalRunRepository, Depends(get_eval_repository)]
 _ClientDep = Annotated[httpx.AsyncClient, Depends(get_ai_client)]
 _IndividualDep = Annotated[bool, Depends(get_hr_ai_individual)]
 
@@ -380,3 +388,27 @@ async def copilot_chat(
         body=body,
     )
     return relay_response(upstream)
+
+
+@router.post("/eval-runs", response_model=ResponseEnvelope[HrEvalWriteOut])
+async def record_eval_runs(
+    runs: list[HrEvalRunWrite],
+    _invoke: _AiInvokeDep,
+    current_user: _HrAiEvalDep,
+    eval_repository: _EvalRepositoryDep,
+) -> ResponseEnvelope[HrEvalWriteOut]:
+    """Record ai-agent model-eval precision metrics (SKY-72, append-only).
+
+    One row per metric; gated by ``erp.hr.ai.eval`` (owner wildcard passes).
+    Each metric's ``precision``/``threshold`` are validated to [0, 1] here, so
+    the operator CLI can warn-not-fail without trusting its own input math.
+    """
+    rows = [run.model_dump() for run in runs]
+    recorded = await eval_repository.append_many(
+        tenant_id=_tenant_id(current_user),
+        rows=rows,
+    )
+    return ResponseEnvelope(
+        data=HrEvalWriteOut(recorded=recorded),
+        message="HR AI eval metrics recorded",
+    )

@@ -72,5 +72,77 @@ def attrition_train(
     )
 
 
+@app.command()
+def eval_hr_models(
+    config: str = typer.Option(
+        str(_PACKAGE_ROOT / "tests" / "eval" / "hr_models.yaml"),
+        "--config",
+        help="path to the HR model eval registry (YAML)",
+    ),
+    model_path: str = typer.Option(
+        "", "--model-path", help="model artifact path (default: bundled default)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="compute + print only; do not persist to core"
+    ),
+    core_url: str = typer.Option(
+        "", "--core-url", envvar="SKYRICT_CORE_URL", help="core service base URL"
+    ),
+    token: str = typer.Option(
+        "", "--token", envvar="SKYRICT_CORE_TOKEN", help="bearer token with erp.hr.ai.eval"
+    ),
+    tenant_slug: str = typer.Option(
+        "", "--tenant-slug", envvar="SKYRICT_TENANT_SLUG", help="tenant slug for the eval run"
+    ),
+) -> None:
+    """Evaluate the deployed HR models against the labeled seed sets (SKY-72).
+
+    Prints one line per metric, WARNS (never fails) when precision is below
+    the documented 0.70 threshold, and posts the results to core's
+    ``/api/v1/ai/hr/eval-runs`` endpoint for the historical record. Redact-safe:
+    seed rows carry features + labels only, never employee PII.
+    """
+    import asyncio
+
+    from ai_agent.eval.harness import post_eval_runs, run_registry, to_payload
+
+    results = run_registry(config, model_path=model_path or None)
+    for metric in results:
+        verdict = "PASS" if metric.met_threshold else "WARN"
+        typer.echo(
+            f"[{verdict}] {metric.model_name}:{metric.metric} "
+            f"precision={metric.precision:.4f} "
+            f"(considered={metric.considered}, abstained={metric.abstained}, "
+            f"threshold={metric.threshold:.2f}, source={metric.model_source}, "
+            f"version={metric.model_version})"
+        )
+    underperforming = [m for m in results if not m.met_threshold]
+    for metric in underperforming:
+        typer.echo(
+            f"WARNING {metric.model_name}:{metric.metric} precision "
+            f"{metric.precision:.4f} < {metric.threshold:.2f}",
+            err=True,
+        )
+
+    if dry_run:
+        typer.echo("dry-run: results not persisted")
+        return
+    if not (core_url and token and tenant_slug):
+        typer.echo(
+            "SKIPPED persistence: pass --core-url/--token/--tenant-slug "
+            "(or SKYRICT_CORE_URL/TOKEN/TENANT_SLUG) to record results",
+            err=True,
+        )
+        return
+
+    rows = [to_payload(metric) for metric in results]
+    try:
+        asyncio.run(post_eval_runs(core_url, token, tenant_slug, rows))
+    except Exception as exc:  # warn-not-fail: an eval is never a hard gate
+        typer.echo(f"WARNING failed to persist eval results: {exc}", err=True)
+        return
+    typer.echo(f"recorded {len(rows)} eval metric(s) -> {core_url}")
+
+
 if __name__ == "__main__":
     app()

@@ -1,0 +1,27 @@
+# HR model eval registry (HR-AI-002, SKY-72).
+#
+# Each model lists one metric per precision check plus a labeled seed set the
+# ai-agent eval harness (ai_agent/eval/harness.py) runs through the DEPLOYED
+# scorer. Precision below the documented 0.70 minimum WARNS (exit 0) — an eval
+# regression is an operator alert, not a hard deploy gate. Rows are recorded in
+# core's hr_eval_runs (POST /api/v1/ai/hr/eval-runs) for the historical log.
+#
+# Label semantics for attrition: 1 = attrition-prone, 0 = retained. A scored
+# employee counts as a positive prediction when its risk band is medium/high.
+threshold: 0.70
+models:
+  - name: attrition
+    version: v1-gbc-2026-08
+    # feature order matches ai_agent.features.attrition.features.FEATURES:
+    # tenure_years, compa_ratio, promotion_gap_months, activity_count
+    feature_names: [tenure_years, compa_ratio, promotion_gap_months, activity_count]
+    metrics:
+      - metric: attrition_precision
+        threshold: 0.70
+        cases:
+          - { features: [1.2, 0.83, 22.0, 1.0], label: 1 }
+          - { features: [2.0, 0.88, 17.0, 2.0], label: 1 }
+          - { features: [0.6, 0.78, 28.0, 1.0], label: 1 }
+          - { features: [6.0, 1.08, 5.0, 10.0], label: 0 }
+          - { features: [10.0, 1.22, 2.0, 14.0], label: 0 }
+          - { features: [4.5, 1.02, 6.0, 6.0], label: 0 }

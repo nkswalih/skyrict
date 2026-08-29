@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.features.ai_hr.anomaly_repository import LeaveAnomaly
 from core.features.ai_hr.anomaly_service import AnomalyOrgSummary
@@ -447,6 +447,24 @@ def suggestion_org_to_out(summary: SuggestionOrgSummary) -> SuggestionOrgOut:
     )
 
 
+class HrEvalRunWrite(BaseModel):
+    """One precision metric recorded by the ai-agent eval harness (SKY-72)."""
+
+    model_name: str = Field(min_length=1, max_length=64)
+    metric: str = Field(min_length=1, max_length=32)
+    precision: float = Field(ge=0.0, le=1.0)
+    considered: int = Field(ge=0)
+    threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    met_threshold: bool | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class HrEvalWriteOut(BaseModel):
+    """Confirmation of one batch of recorded eval metrics."""
+
+    recorded: int
+
+
 __all__ = [
     "AnomalyOrgOut",
     "AttritionDetailOut",
@@ -460,6 +478,8 @@ __all__ = [
     "FactorOut",
     "HeadcountPoint",
     "HeadcountPointOut",
+    "HrEvalRunWrite",
+    "HrEvalWriteOut",
     "LeaveAnomalyOut",
     "LeaveSuggestionOut",
     "Overview",
