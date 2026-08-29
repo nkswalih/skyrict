@@ -8,6 +8,15 @@
 #
 # Label semantics for attrition: 1 = attrition-prone, 0 = retained. A scored
 # employee counts as a positive prediction when its risk band is medium/high.
+#
+# Label semantics for anomaly: each case is one engineered team (team_size
+# members m1..m5) fed to skyrict_common.ai_hr_rules.detect_leave_pattern_anomalies
+# — the literal engine core's inbox uses. `expected` is the exact set of
+# (employee, anomaly_type) findings that must be predicted. Combined across the
+# cases below, `anomaly_precision` is TP/(TP+FP) and recall TP/(TP+FN):
+# cases 1-2 are recall probes for short_notice_monday_friday and
+# pre_holiday_spike; cases 3-4 are near-miss guards (the pattern must NOT fire
+# just outside its window). Dates are fixed so runs are reproducible.
 threshold: 0.70
 models:
   - name: attrition
@@ -25,3 +34,65 @@ models:
           - { features: [6.0, 1.08, 5.0, 10.0], label: 0 }
           - { features: [10.0, 1.22, 2.0, 14.0], label: 0 }
           - { features: [4.5, 1.02, 6.0, 6.0], label: 0 }
+  - name: anomaly
+    version: rules-v2-2026-08
+    metrics:
+      - metric: anomaly_precision
+        threshold: 0.70
+        cases:
+          # 1) short-notice block on a Monday (filed 2 days ahead, 6 days vs a
+          #    1-day team median) -> leave_overuse + short_notice_monday_friday.
+          - team_size: 5
+            today: "2026-08-24"
+            holidays: []
+            requests:
+              - { employee: m1, start: "2026-08-24", end: "2026-08-29", days: 6, filed: "2026-08-22", type: annual }
+              - { employee: m2, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m3, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m4, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m5, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+            expected:
+              - { employee: m1, type: leave_overuse }
+              - { employee: m1, type: short_notice_monday_friday }
+          # 2) 8-day block overlapping National Day (2026-08-31) on a 1-day
+          #    median -> leave_overuse + pre_holiday_spike (distance 0 = high).
+          - team_size: 5
+            today: "2026-08-24"
+            holidays:
+              - { date: "2026-08-31", name: "National Day" }
+            requests:
+              - { employee: m1, start: "2026-08-24", end: "2026-08-31", days: 8, filed: "2026-06-01", type: annual }
+              - { employee: m2, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m3, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m4, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m5, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+            expected:
+              - { employee: m1, type: leave_overuse }
+              - { employee: m1, type: pre_holiday_spike }
+          # 3) near-miss guard: span ends 3 days before the holiday (distance 3
+          #    > adjacency 2) -> pre_holiday_spike must NOT fire; only overuse.
+          - team_size: 5
+            today: "2026-08-24"
+            holidays:
+              - { date: "2026-08-31", name: "National Day" }
+            requests:
+              - { employee: m1, start: "2026-08-24", end: "2026-08-28", days: 5, filed: "2026-07-01", type: annual }
+              - { employee: m2, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m3, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m4, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m5, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+            expected:
+              - { employee: m1, type: leave_overuse }
+          # 4) near-miss guard: Monday block filed 20 days ahead (>= 14) ->
+          #    short_notice_monday_friday must NOT fire; only overuse.
+          - team_size: 5
+            today: "2026-08-24"
+            holidays: []
+            requests:
+              - { employee: m1, start: "2026-08-24", end: "2026-08-29", days: 6, filed: "2026-08-04", type: annual }
+              - { employee: m2, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m3, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m4, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+              - { employee: m5, start: "2026-08-03", end: "2026-08-03", days: 1, filed: "2026-08-01", type: annual }
+            expected:
+              - { employee: m1, type: leave_overuse }
