@@ -18,6 +18,7 @@ from core.features.ai_hr.suggestion_repository import (
     LeaveSuggestion,
 )
 from core.features.ai_hr.suggestion_service import SuggestionService
+from skyrict_common.ai_hr_rules import Holiday
 from skyrict_common.exceptions import NotFoundError
 
 if TYPE_CHECKING:
@@ -101,6 +102,58 @@ def test_plan_block_returns_none_without_balance_or_time() -> None:
     assert (
         AiHrSuggestionRepository._plan_block(18, 0, date(2026, 10, 1), date(2026, 12, 31)) is None
     )
+
+
+# -- calendar-aware planning (team load + blackouts + holidays) ---------------
+
+
+TODAY_S = date(2026, 10, 1)
+YEAR_END = date(2026, 12, 31)
+
+
+def _winning_block(**kwargs):
+    block = AiHrSuggestionRepository._plan_best_block(18, 55, TODAY_S, YEAR_END, **kwargs)
+    assert block is not None
+    return block
+
+
+def test_plan_best_block_defaults_to_latest_calm_window() -> None:
+    block = _winning_block()
+    assert (block.start_date, block.end_date, block.days) == (date(2026, 12, 18), YEAR_END, 14)
+    assert any("no teammates" in r for r in block.reasons)
+    assert any("forfeited" in r for r in block.reasons)
+
+
+def test_plan_best_block_avoids_department_blackout() -> None:
+    block = _winning_block(blackout_spans=[(date(2026, 12, 20), YEAR_END)])
+    assert block.end_date < date(2026, 12, 20)  # pulled ahead of the blackout
+    assert any("blackout" in r for r in block.reasons)
+
+
+def test_plan_best_block_prefers_lowest_team_load() -> None:
+    teammate_span = (date(2026, 12, 18), YEAR_END)
+    block = _winning_block(teammate_spans=[teammate_span])
+    assert block.end_date < date(2026, 12, 18)  # every NEWER window is booked
+    assert any("on leave in this window" in r for r in block.reasons)
+
+
+def test_plan_best_block_breaks_load_ties_toward_holiday_alignment() -> None:
+    holiday = Holiday(date(2026, 12, 15), "Public Holiday", None)
+    block = _winning_block(holidays=[holiday])  # Dec 17..30 sits within 2 days of it
+    assert block.start_date == date(2026, 12, 17)
+    assert any("aligned with Public Holiday" in r for r in block.reasons)
+
+
+def test_plan_best_block_skips_windows_blocked_by_own_requests() -> None:
+    own_span = (date(2026, 12, 18), YEAR_END)
+    block = _winning_block(own_spans=[own_span])
+    assert block.end_date < date(2026, 12, 18)
+
+
+def test_plan_best_block_falls_back_to_forfeit_window_when_fully_blacked_out() -> None:
+    block = _winning_block(blackout_spans=[(date(2026, 3, 1), YEAR_END)])
+    assert (block.start_date, block.end_date, block.days) == (date(2026, 12, 18), YEAR_END, 14)
+    assert any("may overlap a leave blackout" in r for r in block.reasons)
 
 
 # -- service -------------------------------------------------------------------
