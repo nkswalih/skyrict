@@ -267,15 +267,6 @@ LEAVE_REQUEST_ROWS: tuple[dict[str, object], ...] = (
         "reason": "Feeling unwell",
     },
     {
-        "emp": 6,
-        "type": "annual",
-        "start_days": -3,
-        "end_days": 12,
-        "days": 16,
-        "status": "approved",
-        "reason": "Summer holiday",
-    },
-    {
         "emp": 7,
         "type": "annual",
         "start_days": 5,
@@ -1593,8 +1584,13 @@ async def _resolve_owner_id(session: AsyncSession, tenant_id: uuid.UUID) -> uuid
 
 async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[str, int]:
     """Seed demo data for all ERP modules. Idempotent unless force=True."""
+    from core.features.ai_hr.models.leave_anomaly import LeaveAnomalyModel
     from core.features.ai_hr.models.leave_blackout_period import AiHrLeaveBlackoutPeriodModel
     from core.features.ai_hr.models.public_holiday import AiHrPublicHolidayModel
+    from core.features.ai_hr.models.utilization_alert import (
+        UtilizationAlertModel,
+        UtilizationAlertType,
+    )
     from core.features.finance.models.chart_of_account import ErpChartOfAccountModel
     from core.features.finance.models.fiscal_period import ErpFiscalPeriodModel
     from core.features.finance.models.invoice import ErpInvoiceModel
@@ -1660,6 +1656,8 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
                 LeaveBalanceModel,
                 AiHrLeaveBlackoutPeriodModel,
                 AiHrPublicHolidayModel,
+                UtilizationAlertModel,
+                LeaveAnomalyModel,
                 EmployeeModel,
                 DepartmentModel,
             ):
@@ -1761,7 +1759,29 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
                 reason=row.get("reason"),
             )
             session.add(lr)
-        counts["leave_requests"] = len(LEAVE_REQUEST_ROWS)
+        # HR-AI-002 8.2.1 — LIVE short-notice fixture (demoted from a static
+        # row because the fringe check only inspects start/end weekday): a
+        # filed-today approved block that starts today (advance 0, still
+        # within the trailing window) and ends on the NEXT Friday, so the
+        # Monday/Friday fringe holds on ANY seed day. At 6-13 days it clears
+        # 3x the Engineering median (2.0) and the live scan emits
+        # short_notice_monday_friday (high) every time it rebuilds.
+        _fri_ahead = ((4 - _today().weekday()) % 7) + 1
+        if _fri_ahead < 6:
+            _fri_ahead += 7
+        session.add(
+            LeaveRequestModel(
+                tenant_id=tenant_id,
+                employee_id=emp_ids[6],
+                leave_type="annual",
+                start_date=_today(),
+                end_date=_date_ahead(_fri_ahead - 1),
+                days=_fri_ahead,
+                status="approved",
+                reason="Summer holiday",
+            )
+        )
+        counts["leave_requests"] = len(LEAVE_REQUEST_ROWS) + 1
 
         # ── LEAVE BALANCES ───────────────────────────────────────────
         for emp_idx in range(len(emp_ids)):
@@ -1799,6 +1819,42 @@ async def seed_demo_data(tenant_id: uuid.UUID, *, force: bool = False) -> dict[s
             )
         counts["public_holidays"] = len(HOLIDAY_ROWS)
         counts["leave_blackout_periods"] = len(BLACKOUT_ROWS)
+
+        # ── HR AI DEMO FINDINGS (8.1.4 forfeit alert) ────────────────
+        # ONE PRE-COMPUTED fixture so the demo reproduces the Gherkin numbers
+        # on ANY seed day: the real forfeit scan only fires within
+        # FORFEIT_WINDOW_DAYS=60 of year-end, so most seed days (mid-year)
+        # would otherwise show an empty alert inbox. It is written with
+        # created_at = now so the lazy-on-read utilization scan is "fresh" and
+        # serves the fixture instead of immediately rebuilding over it; the
+        # next stale scan (refreshed every 1d) replaces it like generated rows
+        # (and on year-end runs the real scan reproduces the same finding).
+        #
+        # The ANOMALY inbox is deliberately NOT pre-seeded: leaving the table
+        # empty makes latest_generated_at = None, so the FIRST portal/admin
+        # read runs the live leave-pattern scan. Engineering's filed-today
+        # block above (starts today => advance 0, ends next Friday => Mon/Fri
+        # fringe, 6-13 days => 3x the 2.0 median) makes short_notice and
+        # leave_overuse deterministic on any seed day, and the scan re-emits
+        # them on every rebuild — a genuine live computation path in the demo.
+        session.add(
+            UtilizationAlertModel(
+                tenant_id=tenant_id,
+                employee_id=emp_ids[1],
+                alert_type=UtilizationAlertType.FORFEIT_RISK,
+                severity="medium",
+                balance_days=18,
+                projected_forfeiture_days=18,
+                days_remaining_in_year=55,
+                evidence={
+                    "leave_type": "annual",
+                    "year": _today().year,
+                    "forfeit_window_days": 60,
+                },
+                created_at=_ago(0.5),
+            )
+        )
+        counts["ai_utilization_alerts"] = 1
 
         # ── ATTENDANCE (last 21 days; deterministic mix of statuses) ─
         # Cycle per employee/day: mostly on_time, some late, occasional

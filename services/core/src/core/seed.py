@@ -71,6 +71,7 @@ class LeaveTypeDefault:
 
 
 LEAVE_TYPE_DEFAULTS: tuple[LeaveTypeDefault, ...] = (
+    LeaveTypeDefault("annual", "Annual Leave", True, 20),
     LeaveTypeDefault("casual", "Casual Leave", True, 12),
     LeaveTypeDefault("sick", "Sick Leave", True, 8),
     LeaveTypeDefault("unpaid", "Unpaid Leave", False, None),
