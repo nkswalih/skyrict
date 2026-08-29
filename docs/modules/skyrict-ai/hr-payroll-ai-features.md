@@ -475,6 +475,16 @@ box.
 
 ### 13.4 Coverage matrix (Gherkin scenarios)
 
+**HR-AI-002 wave-2 delivery — shipped:**
+
+| Ticket scope | Status | Where |
+|--------------|--------|-------|
+| 8.1.3 data quality scoring + org KPI + weekly recalc | shipped | `core/features/ai_hr/quality*`, quality panel, `POST /quality/refresh`, `.github/workflows/weekly-quality-recalc.yml` |
+| 8.1.4 balance utilization alerts (forfeit + negative accrual) | shipped | `core/features/ai_hr/utilization*`, seeded 18/55 fixture, severity bands §13.6 |
+| 8.2.1 leave pattern anomaly detection + inbox | shipped | `skyrict_common.ai_hr_rules`, table §13.1, team-size gate, eval `anomaly_precision` |
+| 8.2.4 smart leave suggestions (prefill-only) | shipped | calendar-aware `_plan_best_block`, chips in leave-portal + log-leave-dialog |
+| Eval harness + nightly runner (`hr_eval_runs`) | shipped | §12, `tests/eval/hr_models.yaml`, `.github/workflows/nightly-hr-eval.yml` |
+
 | Scenario (feature file) | Engine | Covered by |
 |-------------------------|--------|------------|
 | short-notice Monday/Friday request, filed < 14 days ahead, >= 3x median | rules | lib test + eval case 1 (`anomaly_precision`) |
