@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { LoaderCircle, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +19,16 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/dashboard/shared/searchable-select";
-import { byEmployeeName, createLeaveRequest, employeeName, type Employee } from "@/lib/api/hr-api";
+import {
+  byEmployeeName,
+  createLeaveRequest,
+  employeeName,
+  listEmployeeSuggestions,
+  type Employee,
+  type HrLeaveSuggestion,
+} from "@/lib/api/hr-api";
 import { ApiError } from "@/lib/api/http";
+import { formatDate } from "@/lib/format";
 
 const LEAVE_TYPES = [
   { value: "casual", label: "Casual" },
@@ -90,6 +98,39 @@ export function LogLeaveDialog({
     () => LEAVE_TYPES.map((lt) => ({ value: lt.value, label: lt.label })),
     [],
   );
+
+  const [suggestions, setSuggestions] = useState<HrLeaveSuggestion[]>([]);
+
+  useEffect(() => {
+    const employeeId = form.employeeId;
+    if (!employeeId) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    listEmployeeSuggestions(employeeId)
+      .then((rows) => {
+        if (!cancelled) setSuggestions(rows);
+      })
+      .catch(() => {
+        // Suggestions are optional polish: missing `erp.hr.ai.individual`
+        // (403) or any other failure just leaves the dialog suggestion-free.
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.employeeId]);
+
+  function prefillSuggestion(suggestion: HrLeaveSuggestion) {
+    setError(null);
+    const supported = LEAVE_TYPES.some(
+      (option) => option.value === suggestion.leaveType,
+    );
+    if (supported) updateField("leaveType", suggestion.leaveType);
+    updateField("startDate", suggestion.startDate);
+    updateField("endDate", suggestion.endDate);
+  }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -178,6 +219,50 @@ export function LogLeaveDialog({
                 placeholder="Select employee"
               />
             </div>
+
+            {suggestions.length > 0 ? (
+              <div className="space-y-2">
+                <Label>Suggestion chips</Label>
+                <ul className="space-y-2">
+                  {suggestions.map((suggestion) => (
+                    <li
+                      key={suggestion.suggestionId}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-start gap-2">
+                        <Sparkles
+                          aria-hidden="true"
+                          className="mt-0.5 size-3.5 shrink-0 text-primary"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium">
+                            {suggestion.leaveType}
+                            <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">
+                              {suggestion.days} {suggestion.days === 1 ? "day" : "days"}
+                            </span>
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(suggestion.startDate)} –{" "}
+                            {formatDate(suggestion.endDate)}
+                            {suggestion.reasons[0]
+                              ? ` · ${suggestion.reasons[0]}`
+                              : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => prefillSuggestion(suggestion)}
+                      >
+                        Fill form
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="space-y-1.5">
               <Label htmlFor="log-type">Leave type</Label>

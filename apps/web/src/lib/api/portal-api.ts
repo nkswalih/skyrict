@@ -49,6 +49,16 @@ export interface PortalLeaveRequest {
   createdAt: string;
 }
 
+export interface PortalLeaveSuggestion {
+  suggestionId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reasons: string[];
+  status: string;
+}
+
 interface PortalEmployeePayload {
   id?: unknown;
   employee_number?: unknown;
@@ -87,6 +97,22 @@ interface PortalLeaveRequestPayload {
   created_at?: unknown;
 }
 
+interface PortalSuggestionPayload {
+  suggestion_id?: unknown;
+  employee_id?: unknown;
+  employee_number?: unknown;
+  name?: unknown;
+  department_name?: unknown;
+  leave_type?: unknown;
+  start_date?: unknown;
+  end_date?: unknown;
+  days?: unknown;
+  reasons?: unknown;
+  status?: unknown;
+  used_at?: unknown;
+  created_at?: unknown;
+}
+
 function mapPortalEmployee(payload: PortalEmployeePayload): PortalEmployee {
   return {
     id: String(payload.id ?? ""),
@@ -109,6 +135,22 @@ function mapLeaveRequest(payload: PortalLeaveRequestPayload): PortalLeaveRequest
     reason: payload.reason == null ? null : String(payload.reason),
     approvedAt: payload.approved_at == null ? null : String(payload.approved_at),
     createdAt: String(payload.created_at ?? ""),
+  };
+}
+
+function mapSuggestion(payload: PortalSuggestionPayload): PortalLeaveSuggestion {
+  return {
+    suggestionId: String(payload.suggestion_id ?? ""),
+    leaveType: String(payload.leave_type ?? ""),
+    startDate: String(payload.start_date ?? ""),
+    endDate: String(payload.end_date ?? ""),
+    days: Number(payload.days ?? 0),
+    reasons: Array.isArray(payload.reasons)
+      ? (payload.reasons as unknown[]).filter(
+          (reason): reason is string => typeof reason === "string",
+        )
+      : [],
+    status: String(payload.status ?? "pending"),
   };
 }
 
@@ -166,4 +208,37 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Porta
     },
   );
   return mapLeaveRequest(raw ?? {});
+}
+
+/** Own calendar-aware leave suggestions (prefill chips), self-scoped. */
+export async function getLeaveSuggestions(): Promise<PortalLeaveSuggestion[]> {
+  const raw = await apiFetch<PortalSuggestionPayload[] | null>(
+    "/api/v1/portal/leave/suggestions",
+  );
+  return Array.isArray(raw) ? raw.map(mapSuggestion) : [];
+}
+
+/**
+ * Mark one suggestion as used — records the prefill so the chip stops being
+ * suggested. Never submits a leave request by itself.
+ */
+export async function markSuggestionUsed(
+  suggestionId: string,
+): Promise<PortalLeaveSuggestion> {
+  const raw = await apiPost<PortalSuggestionPayload | null>(
+    `/api/v1/portal/leave/suggestions/${suggestionId}/use`,
+    {},
+  );
+  return mapSuggestion(raw ?? {});
+}
+
+/** Opt out of one suggestion (status `dismissed`). */
+export async function dismissLeaveSuggestion(
+  suggestionId: string,
+): Promise<PortalLeaveSuggestion> {
+  const raw = await apiPost<PortalSuggestionPayload | null>(
+    `/api/v1/portal/leave/suggestions/${suggestionId}/dismiss`,
+    {},
+  );
+  return mapSuggestion(raw ?? {});
 }

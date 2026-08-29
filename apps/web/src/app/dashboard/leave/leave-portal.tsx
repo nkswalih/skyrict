@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarDays, LoaderCircle, Send } from "lucide-react";
+import { CalendarDays, LoaderCircle, Send, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -15,11 +15,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api/http";
 import {
+  dismissLeaveSuggestion,
+  getLeaveSuggestions,
   getPortalMe,
   listMyLeaveRequests,
+  markSuggestionUsed,
   submitLeaveRequest,
   type PortalLeaveRequest,
   type PortalLeaveRequestStatus,
+  type PortalLeaveSuggestion,
   type PortalMe,
 } from "@/lib/api/portal-api";
 import { formatDate } from "@/lib/format";
@@ -59,12 +63,14 @@ export function LeavePortal() {
   const [load, setLoad] = useState<LoadState>({ state: "loading" });
   const [requests, setRequests] = useState<PortalLeaveRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [suggestions, setSuggestions] = useState<PortalLeaveSuggestion[]>([]);
 
   const [leaveType, setLeaveType] = useState<string>("");
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [savingSuggestion, setSavingSuggestion] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -81,12 +87,26 @@ export function LeavePortal() {
     }
   }, []);
 
+  const loadSuggestions = useCallback(async () => {
+    try {
+      const result = await getLeaveSuggestions();
+      // Chips are only actionable while pending; used/dismissed are filtered
+      // out client-side so a stale row never lingers on screen.
+      setSuggestions(
+        result.filter((suggestion) => suggestion.status === "pending"),
+      );
+    } catch {
+      // Suggestions are optional polish — the form still works without them.
+      setSuggestions([]);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoad({ state: "loading" });
     try {
       const me = await getPortalMe();
       setLoad({ state: "ready", me });
-      await loadRequests();
+      await Promise.all([loadRequests(), loadSuggestions()]);
     } catch (error) {
       setLoad({
         state: "error",
@@ -96,11 +116,42 @@ export function LeavePortal() {
             : "Could not load your leave portal.",
       });
     }
-  }, [loadRequests]);
+  }, [loadRequests, loadSuggestions]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  /** Prefill the form from a suggestion — never auto-submits a request. */
+  async function applySuggestion(suggestion: PortalLeaveSuggestion) {
+    setSubmitError(null);
+    setSubmitSuccess(false);
+    setSavingSuggestion(suggestion.suggestionId);
+    try {
+      await markSuggestionUsed(suggestion.suggestionId);
+      setLeaveType(suggestion.leaveType);
+      setStartDate(suggestion.startDate);
+      setEndDate(suggestion.endDate);
+      setSuggestions((current) =>
+        current.filter((item) => item.suggestionId !== suggestion.suggestionId),
+      );
+    } catch {
+      setSubmitError("Could not apply the suggestion. The form was not changed.");
+    } finally {
+      setSavingSuggestion(null);
+    }
+  }
+
+  async function dismissSuggestion(suggestion: PortalLeaveSuggestion) {
+    try {
+      await dismissLeaveSuggestion(suggestion.suggestionId);
+      setSuggestions((current) =>
+        current.filter((item) => item.suggestionId !== suggestion.suggestionId),
+      );
+    } catch {
+      // Non-essential: leaving the chip visible is a safe fallback.
+    }
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -201,6 +252,71 @@ export function LeavePortal() {
           })}
         </div>
       </section>
+
+      {suggestions.length > 0 ? (
+        <section aria-labelledby="suggestions-heading" className="space-y-3">
+          <h2
+            id="suggestions-heading"
+            className="text-sm font-medium text-muted-foreground"
+          >
+            Time-off suggestions
+          </h2>
+          <ul className="space-y-2">
+            {suggestions.map((suggestion) => (
+              <li
+                key={suggestion.suggestionId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
+              >
+                <div className="flex min-w-0 items-start gap-2">
+                  <Sparkles
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0 text-primary"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {typeName(me, suggestion.leaveType)}
+                      <span className="ml-2 font-normal tabular-nums text-muted-foreground">
+                        {suggestion.days} {suggestion.days === 1 ? "day" : "days"}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(suggestion.startDate)} – {formatDate(suggestion.endDate)}
+                      {suggestion.reasons[0] ? ` · ${suggestion.reasons[0]}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={savingSuggestion === suggestion.suggestionId}
+                    onClick={() => void applySuggestion(suggestion)}
+                  >
+                    {savingSuggestion === suggestion.suggestionId ? (
+                      <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                    ) : null}
+                    Fill form
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Dismiss suggestion for ${typeName(me, suggestion.leaveType)}`}
+                    disabled={savingSuggestion === suggestion.suggestionId}
+                    onClick={() => void dismissSuggestion(suggestion)}
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            A suggestion only fills the form below — it never submits anything.
+          </p>
+        </section>
+      ) : null}
 
       <section aria-labelledby="submit-heading" className="space-y-3">
         <h2 id="submit-heading" className="text-sm font-medium text-muted-foreground">
