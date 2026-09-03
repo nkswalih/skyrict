@@ -116,3 +116,105 @@ class TestDegradation:
         gateway, _ = _make_gateway(handler)
         with pytest.raises(AiUnavailableError):
             await gateway.get_tenure()
+
+
+_EMPLOYEE = {
+    "id": "11111111-1111-1111-1111-111111111111",
+    "employee_number": "E001",
+    "first_name": "Asha",
+    "last_name": "Kumar",
+    "job_title": "Engineer",
+    "hire_date": "2022-05-01",
+    "employment_status": "active",
+    "email": "asha@acme.test",
+    "phone": "+15551234567",
+    "department_id": "22222222-2222-2222-2222-222222222222",
+    # Core echoes compensation; the gateway must never carry it into the ref.
+    "active_compensation": ["120000", "USD"],
+}
+
+_ATTRITION_L2 = {
+    "generated_at": "2026-09-01T00:00:00Z",
+    "model_version": "v1",
+    "employees": [
+        {
+            "employee_id": "11111111-1111-1111-1111-111111111111",
+            "employee_number": "E001",
+            "name": "Asha Kumar",
+            "department_name": "Engineering",
+            "risk_band": "high",
+            "score": 0.85,
+            "confidence": 0.9,
+            "factors": [{"label": "long tenure", "contribution": 0.4, "direction": "up"}],
+            "acknowledged": False,
+            "acknowledged_by": None,
+            "acknowledged_at": None,
+        }
+    ],
+}
+
+
+class TestEmployeesAndAttrition:
+    async def test_list_employees_parsed_without_compensation(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_envelope([_EMPLOYEE]))
+
+        gateway, seen = _make_gateway(handler)
+        employees = await gateway.list_employees()
+
+        assert seen[0].url.path == "/api/v1/hr/employees"
+        assert len(employees) == 1
+        employee = employees[0]
+        assert employee.id.hex == "11111111111111111111111111111111"
+        assert employee.employee_number == "E001"
+        assert employee.first_name == "Asha"
+        assert employee.job_title == "Engineer"
+        assert employee.employment_status == "active"
+        # Sensitive compensation is deliberately not part of the ref.
+        assert not hasattr(employee, "active_compensation")
+        assert not hasattr(employee, "compensation")
+
+    async def test_list_employees_degrades_to_empty_on_bad_body(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_envelope({"not": "a list"}))
+
+        gateway, _ = _make_gateway(handler)
+        assert await gateway.list_employees() == []
+
+    async def test_get_attrition_parses_l2_for_individual_holder(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_envelope(_ATTRITION_L2))
+
+        gateway, seen = _make_gateway(handler)
+        risks = await gateway.get_attrition()
+
+        assert seen[0].url.path == "/api/v1/ai/hr/attrition"
+        assert risks is not None
+        assert len(risks) == 1
+        assert risks[0].name == "Asha Kumar"
+        assert risks[0].risk_band == "high"
+        assert risks[0].score == 0.85
+        assert risks[0].factors == ("long tenure",)
+
+    async def test_get_attrition_returns_none_when_core_denies_403(self) -> None:
+        # A non-individual caller gets a 403 with an L1 aggregates body; the
+        # gateway must treat it as "no individual access", not as risk data.
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                json={
+                    "success": False,
+                    "data": {"detail": "erp.hr.ai.individual required"},
+                    "message": "erp.hr.ai.individual required",
+                },
+            )
+
+        gateway, _ = _make_gateway(handler)
+        assert await gateway.get_attrition() is None
+
+    async def test_get_attrition_returns_empty_list_for_no_scored_rows(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_envelope({"employees": []}))
+
+        gateway, _ = _make_gateway(handler)
+        assert await gateway.get_attrition() == []
