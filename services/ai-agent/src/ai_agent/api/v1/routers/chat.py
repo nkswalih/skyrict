@@ -1,4 +1,4 @@
-"""/ai/agents/chat/stream — real-time supervisor chat for the Agents shell.
+"""/ai/agents/chat/stream - real-time supervisor chat for the Agents shell.
 
 POST returns a ``text/event-stream`` response: one SSE event per supervisor
 turn step, in order:
@@ -8,14 +8,14 @@ turn step, in order:
 
 Authentication happens here (JWT re-verification); authorization happened
 upstream at the core monolith's proxy (``erp.ai.invoke`` + module keys checked
-before forwarding — SKY-57 "AI is a proxy, not a bypass"). This router
+before forwarding - SKY-57 "AI is a proxy, not a bypass"). This router
 composes per-request dependencies the same way nl_query/hr_copilot/rag do:
 caller identity, gateways bound to the CALLER'S token, and the shared LLM
 router from ``app.state``.
 
 Disconnect handling (SKY-60): client disconnects cancel the StreamingResponse
 generator, which closes the supervisor turn generator and in turn the upstream
-LLM stream — no orphaned generation runs server-side.
+LLM stream - no orphaned generation runs server-side.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from ai_agent.db.audit_repository import AiAuditLogRepository
 from ai_agent.db.query_cache_repository import QueryCacheRepository
 from ai_agent.db.rag_repository import RagRepository
 from ai_agent.features.crm.gateway import HttpCrmGateway
+from ai_agent.features.finance.gateway import HttpFinanceGateway
 from ai_agent.features.forecast.service import ForecastService
 from ai_agent.features.hr_copilot.engine import HrCopilotEngine
 from ai_agent.features.hr_copilot.gateway import HttpHrGateway
@@ -79,7 +80,7 @@ EVENT_ERROR = "error"
 def _build_runtime(request: Request, session: AsyncSession) -> SupervisorRuntime:
     """Compose the supervisor stack for one request (test-visible seam).
 
-    Every gateway is bound to THIS request's identity (the caller's own JWT —
+    Every gateway is bound to THIS request's identity (the caller's own JWT -
     never service credentials), so each delegated read runs with exactly the
     access the human user already has. RAG and forecast are optional by
     design: the supervisor degrades to live inventory/HR answers without
@@ -136,6 +137,15 @@ def _build_runtime(request: Request, session: AsyncSession) -> SupervisorRuntime
     async def crm_gateway_factory() -> HttpCrmGateway:
         return crm_gateway
 
+    finance_gateway = HttpFinanceGateway(
+        base_url=str(settings.INVENTORY_SERVICE_URL),
+        bearer_token=token,
+        tenant_slug=tenant_slug,
+    )
+
+    async def finance_gateway_factory() -> HttpFinanceGateway:
+        return finance_gateway
+
     from ai_agent.db.memory_repository import MemoryRepository
     from ai_agent.features.crm.memory import MemoryService
 
@@ -151,6 +161,7 @@ def _build_runtime(request: Request, session: AsyncSession) -> SupervisorRuntime
         rag=rag,
         hr_copilot=hr_copilot,
         crm_gateway_factory=crm_gateway_factory,
+        finance_gateway_factory=finance_gateway_factory,
         memory_service=memory_service,
         forecast=ForecastService(gateway_factory=gateway_factory),
         confidence_threshold=settings.CONFIDENCE_THRESHOLD,
@@ -239,7 +250,7 @@ async def _event_stream(
                 done_sent = True
             yield f"event: {name}\ndata: {json.dumps(payload)}\n\n"
     except CancelledError:
-        # Client disconnected — the ASGI server cancelled this task.
+        # Client disconnected - the ASGI server cancelled this task.
         # Do NOT yield here; the generator is being torn down.
         logger.info("chat.stream_cancelled")
     except AiUnavailableError as exc:
@@ -292,5 +303,5 @@ def _to_sse(event: SupervisorEvent) -> tuple[str, dict[str, object]]:
 
 
 def _error_frame(message: str) -> str:
-    """A sanitized error frame — failure MODE, never provider internals."""
+    """A sanitized error frame - failure MODE, never provider internals."""
     return f"event: {EVENT_ERROR}\ndata: {json.dumps({'message': message})}\n\n"

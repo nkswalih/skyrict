@@ -1,13 +1,13 @@
-"""Supervisor graph — routes Agents-shell questions to registered module agents.
+"""Supervisor graph - routes Agents-shell questions to registered module agents.
 
 Composition root for the supervisor feature: reads the global ``agent_registry``
 to decide which leaves are provisioned (enabled), then delegates through the
 leaf services the API layer already composes. Unlike the checkpointed
-:class:`AgentRuntime` (SKY-59) this is a STATELESS streaming facade — no
+:class:`AgentRuntime` (SKY-59) this is a STATELESS streaming facade - no
 checkpointer, no HITL pause; SKY-60 chats render tokens live.
 
 Route contract (SKY-60 Q&A decision #6): registry rows are seeded by migration
-0009 — ``inventory_monitor`` and ``hr_copilot`` start enabled, while
+0009 - ``inventory_monitor`` and ``hr_copilot`` start enabled, while
 ``crm_assistant`` and ``finance_assistant`` start disabled so the supervisor
 streams a clean "not provisioned yet" abstention instead of erroring. Migrations
 flip those flags when the module backends land.
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from ai_agent.core.llm_router import LlmRouter
     from ai_agent.features.crm.gateway import CrmGatewayPort
     from ai_agent.features.crm.memory import MemoryService
+    from ai_agent.features.finance.gateway import FinanceGatewayPort
     from ai_agent.features.hr_copilot.service import HrCopilotService
     from ai_agent.features.nl_query.gateway import InventoryGatewayPort
     from ai_agent.features.rag.retrieval.service import RagRetrievalService
@@ -58,6 +59,7 @@ class SupervisorRuntime:
         rag: RagRetrievalService | None = None,
         hr_copilot: HrCopilotService | None = None,
         crm_gateway_factory: Callable[[], Awaitable[CrmGatewayPort]] | None = None,
+        finance_gateway_factory: Callable[[], Awaitable[FinanceGatewayPort]] | None = None,
         memory_service: MemoryService | None = None,
         forecast: ForecastPort | None = None,
         confidence_threshold: float = 0.75,
@@ -68,6 +70,7 @@ class SupervisorRuntime:
         self._rag = rag
         self._hr_copilot = hr_copilot
         self._crm_gateway_factory = crm_gateway_factory
+        self._finance_gateway_factory = finance_gateway_factory
         self._memory_service = memory_service
         self._forecast = forecast
         self._confidence_threshold = confidence_threshold
@@ -101,6 +104,7 @@ class SupervisorRuntime:
             rag=self._rag,
             hr_copilot=self._hr_copilot,
             crm_gateway_factory=self._crm_gateway_factory,
+            finance_gateway_factory=self._finance_gateway_factory,
             memory_service=self._memory_service,
             forecast=self._forecast,
             conversation_history=ConversationRepository(self._session),
