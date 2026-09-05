@@ -138,6 +138,16 @@ class Settings(BaseSettings):
             "providers must keep this False."
         ),
     )
+    PROVIDER_NATIVE: bool = Field(
+        default=False,
+        description=(
+            "speak the provider's NATIVE (non OpenAI-compatible) chat API. "
+            "Ollama is a known case: its /v1/chat/completions shim splits "
+            "qwen3 reasoning into reasoning_content and returns empty content, "
+            "while /api/chat works and supports think + json grammar. Only "
+            "meaningful with a generic/local provider."
+        ),
+    )
 
     FALLBACK_PROVIDER: str | None = Field(
         default=None,

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         FinanceSignals,
         InventorySignals,
         SalesSignals,
+        StockHealthSignals,
     )
 
 
@@ -41,6 +42,7 @@ def build_signals_dict(
     finance: FinanceSignals,
     sales: SalesSignals,
     inventory: InventorySignals,
+    inventory_health: StockHealthSignals,
     crm: CrmSignals,
 ) -> dict[str, object]:
     """Return a JSON-serializable gold-signal payload (money as strings)."""
@@ -60,6 +62,14 @@ def build_signals_dict(
         "low_stock_count": inventory.low_stock_count,
         "total_sku_count": inventory.total_sku_count,
     }
+    if inventory_health is not None:
+        inventory_payload.update(
+            {
+                "dead_stock_count": inventory_health.dead_stock_count,
+                "slow_mover_count": inventory_health.slow_mover_count,
+                "tied_up_capital": _amount(inventory_health.tied_up_capital),
+            }
+        )
     crm_payload: dict[str, object] = {
         "open_opportunities": crm.open_opportunities,
         "won_recent_days": crm.won_recent_days,
@@ -91,6 +101,8 @@ def has_material_activity(signals: dict[str, object]) -> bool:
     has_inventory_issues = (
         _int_val(inventory.get("stock_out_count")) > 0
         or _int_val(inventory.get("low_stock_count")) > 0
+        or _int_val(inventory.get("dead_stock_count")) > 0
+        or _int_val(inventory.get("slow_mover_count")) > 0
     )
     has_open_deals = (
         _int_val(crm.get("open_opportunities")) > 0 or _int_val(crm.get("won_recent_days")) > 0

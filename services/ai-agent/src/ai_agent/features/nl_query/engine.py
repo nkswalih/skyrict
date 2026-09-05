@@ -33,6 +33,7 @@ from ai_agent.core.providers import LlmRequest
 from ai_agent.features.nl_query.intent import (
     INTENT_SYSTEM_PROMPT,
     IntentAction,
+    ParsedIntent,
     parse_intent_payload,
 )
 from ai_agent.features.nl_query.matcher import resolve_product, resolve_warehouse
@@ -76,6 +77,22 @@ _ABSTENTION = (
     "Bangalore?'"
 )
 
+# Used when the question can't be mapped to any supported action AND the
+# semantic fallback found no related products.
+_CAPABILITIES_HELP = (
+    "I couldn't map that to an inventory question. I can answer stock "
+    "questions like 'how many of X do we have?', 'what's below its reorder "
+    "point?', 'what's the total stock value?', and recent stock movements."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FallbackSearchHit:
+    """One product hit from the semantic fallback (name + sku only, no prices)."""
+
+    name: str
+    sku: str
+
 
 class NlQueryEngine:
     """Parse-resolve-execute-format pipeline over read-only inventory data."""
@@ -86,12 +103,18 @@ class NlQueryEngine:
         llm_router: LlmRouter,
         gateway_factory: Callable[[], Awaitable[InventoryGatewayPort]],
         confidence_threshold: float,
+        search_fallback: (
+            Callable[[str, uuid.UUID, uuid.UUID], Awaitable[Sequence[FallbackSearchHit]]] | None
+        ) = None,
     ) -> None:
         self._llm_router = llm_router
         self._gateway_factory = gateway_factory
         self._confidence_threshold = confidence_threshold
+        self._search_fallback = search_fallback
 
-    async def ask(self, question: str) -> NlQueryResult:
+    async def ask(
+        self, question: str, *, tenant_id: uuid.UUID, user_id: uuid.UUID
+    ) -> NlQueryResult:
         """Answer one natural-language inventory question."""
         started = time.perf_counter()
 
@@ -100,22 +123,26 @@ class NlQueryEngine:
             LlmRequest(
                 system_prompt=INTENT_SYSTEM_PROMPT,
                 user_prompt=question.strip(),
-                max_tokens=256,
+                # Reasoning disabled: structured extraction must be fast and
+                # token-cheap (a reasoning model burns the whole budget on
+                # thinking and returns empty content).
+                think=False,
+                json_mode=True,
+                max_tokens=512,
                 temperature=0.0,
             )
         )
-        try:
-            intent = parse_intent_payload(completion.text)
-        except ValueError:
-            logger.warning("nl_query.unparseable_intent")
-            return _finish(answer=_ABSTENTION, model_used=completion.model_used, started=started)
-        if intent.confidence < self._confidence_threshold:
-            logger.info("nl_query.low_confidence", action=intent.action.value)
-            return _finish(
-                answer=_ABSTENTION,
+        intent = _parse_or_none(completion.text)
+        if intent is None or intent.confidence < self._confidence_threshold:
+            # Fall back to the semantic product index instead of a dead-end
+            # rephrase, so related wording still surfaces the catalog.
+            return await self._fallback_answer(
+                question=question,
+                tenant_id=tenant_id,
+                user_id=user_id,
                 model_used=completion.model_used,
                 started=started,
-                parsed_intent=intent.to_log_dict(),
+                parsed_intent=intent.to_log_dict() if intent is not None else None,
             )
 
         # --- 2. Resolve entities against real catalogs --------------------
@@ -191,6 +218,53 @@ class NlQueryEngine:
             model_used=completion.model_used,
             started=started,
             parsed_intent=intent.to_log_dict(),
+        )
+
+    async def _fallback_answer(
+        self,
+        *,
+        question: str,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+        model_used: str | None,
+        started: float,
+        parsed_intent: dict[str, object] | None,
+    ) -> NlQueryResult:
+        """Answer from the semantic product index when the intent didn't parse.
+
+        Deterministic degradation - never fabricated numbers. When the search
+        finds products matching the question's wording, list them with a
+        concrete follow-up; otherwise fall back to a capabilities message.
+        """
+        if self._search_fallback is None:
+            logger.warning("nl_query.unparseable_intent")
+            return _finish(
+                answer=_ABSTENTION,
+                model_used=model_used,
+                started=started,
+                parsed_intent=parsed_intent,
+            )
+        hits = await self._search_fallback(question.strip(), tenant_id, user_id)
+        if not hits:
+            logger.info("nl_query.fallback_no_hits")
+            return _finish(
+                answer=_CAPABILITIES_HELP,
+                model_used=model_used,
+                started=started,
+                parsed_intent=parsed_intent,
+            )
+        products = ", ".join(f"{hit.name} ({hit.sku})" for hit in hits[:_MAX_ITEMS_SHOWN])
+        answer = (
+            "I couldn't map that to a supported inventory question, but here's "
+            f"what matches: {products}. Ask me e.g. 'how many {hits[0].name} "
+            "are in stock?'"
+        )
+        return _finish(
+            answer=answer,
+            data={"related_products": [h.name for h in hits[:_MAX_ITEMS_SHOWN]]},
+            model_used=model_used,
+            started=started,
+            parsed_intent=parsed_intent,
         )
 
     async def _stock_count_result(
@@ -416,6 +490,43 @@ class NlQueryEngine:
 class _ActionOutcome:
     answer: str
     data: dict[str, object]
+
+
+def _parse_or_none(raw: str) -> ParsedIntent | None:
+    """Strict intent parse with a tolerant extraction fallback.
+
+    Providers may wrap the JSON in markdown fences or reasoning prose; the
+    exact-schema model still applies after the payload is extracted, so an
+    unsalvageable parse returns ``None`` (→ semantic fallback), never executes.
+    """
+    try:
+        return parse_intent_payload(raw)
+    except ValueError:
+        extracted = _extract_json_object(raw)
+        if extracted is None:
+            logger.warning("nl_query.unparseable_intent")
+            return None
+    try:
+        return parse_intent_payload(extracted)
+    except ValueError:
+        logger.warning("nl_query.unparseable_intent")
+        return None
+
+
+def _extract_json_object(raw: str) -> str | None:
+    """Return the first balanced ``{...}`` in ``raw``, or ``None``."""
+    start = raw.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for index in range(start, len(raw)):
+        if raw[index] == "{":
+            depth += 1
+        elif raw[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : index + 1]
+    return None
 
 
 def _as_utc(value: datetime) -> datetime:

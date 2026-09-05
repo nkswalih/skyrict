@@ -1,4 +1,5 @@
 import {
+    Activity,
     AlertTriangle,
     ArrowLeftRight,
     BadgeDollarSign,
@@ -248,6 +249,12 @@ export const erpNavGroups: NavGroup[] = [
                         href: "/dashboard/erp/inventory/abc",
                         label: "ABC Classification",
                         icon: BarChart3,
+                        permission: "erp.inventory.read",
+                    },
+                    {
+                        href: "/dashboard/erp/inventory/health",
+                        label: "Stock Health",
+                        icon: Activity,
                         permission: "erp.inventory.read",
                     },
                 ],

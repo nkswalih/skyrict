@@ -174,12 +174,14 @@ class NarratorService:
         finance = await self._gateway.get_finance(as_of)
         sales = await self._gateway.get_sales(as_of)
         inventory = await self._gateway.get_inventory()
+        inventory_health = await self._gateway.get_inventory_health()
         crm = await self._gateway.get_crm(as_of)
         return build_signals_dict(
             as_of=as_of,
             finance=finance,
             sales=sales,
             inventory=inventory,
+            inventory_health=inventory_health,
             crm=crm,
         )
 

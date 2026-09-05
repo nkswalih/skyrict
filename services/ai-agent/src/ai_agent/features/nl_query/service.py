@@ -62,7 +62,11 @@ class NlQueryService:
             window_seconds=60,
         )
 
-        result = await self._engine.ask(question)
+        result = await self._engine.ask(
+            question,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
 
         summary = result.answer[:200]
         await self._query_logs.add(

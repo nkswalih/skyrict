@@ -206,7 +206,7 @@ async def _assert_upgraded_schema(url: str, tenant_ids: list[str] | None = None)
             version = (
                 await conn.execute(text("SELECT version_num FROM alembic_version_core"))
             ).scalar_one()
-            assert version == "0036", f"head is {version}, expected 0036"
+            assert version == "0037", f"head is {version}, expected 0037"
 
             # 0018: erp.leave.self is a first-class catalog permission.
             perm_row = (
@@ -753,6 +753,32 @@ async def _assert_upgraded_schema(url: str, tenant_ids: list[str] | None = None)
                     assert r[1] == 12, f"tenant {r[0]} has {r[1]} report definitions"
                     assert r[2] == "erp.reports.read", r
                     assert r[3] == "erp.reports.read", r
+
+            # 0037: stock-health analytics (SKY-71) - the movement-trend index
+            # and the erp.inventory.cost permission gate. (Renumbered from
+            # 0031/0032 after merging the reporting data layer in 0036; the
+            # snapshot persistence previously shipped here was dropped because
+            # dev's 0036 owns the erp_report_snapshots table.)
+            mv_index_count = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_indexes "
+                        "WHERE schemaname = 'public' "
+                        "AND tablename = 'erp_stock_movements' "
+                        "AND indexname = 'ix_erp_stock_movements_tenant_wh_type_created'"
+                    )
+                )
+            ).scalar_one()
+            assert mv_index_count == 1, "0037 must create the movement analytics index"
+
+            cost_perm = (
+                await conn.execute(
+                    text(
+                        "SELECT description FROM core_permissions WHERE key = 'erp.inventory.cost'"
+                    )
+                )
+            ).scalar_one_or_none()
+            assert cost_perm is not None, "0037 must register erp.inventory.cost"
     finally:
         await engine.dispose()
 

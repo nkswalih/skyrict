@@ -24,8 +24,10 @@ from ai_agent.features.narrator.gateway import (
     CoreGatewayPort,
     CrmSignals,
     FinanceSignals,
+    HttpCoreGateway,
     InventorySignals,
     SalesSignals,
+    StockHealthSignals,
 )
 from ai_agent.features.narrator.narrate import _parse_digest_json, narrate
 from ai_agent.features.narrator.service import NarratorService
@@ -62,6 +64,17 @@ class FakeGateway(CoreGatewayPort):
             InventorySignals(stock_out_count=1, low_stock_count=2, total_sku_count=10)
             if self.material
             else InventorySignals(0, 0, 0)
+        )
+
+    async def get_inventory_health(self) -> StockHealthSignals:
+        return (
+            StockHealthSignals(
+                dead_stock_count=4,
+                slow_mover_count=3,
+                tied_up_capital=Decimal("2500"),
+            )
+            if self.material
+            else StockHealthSignals(0, 0, Decimal("0"))
         )
 
     async def get_crm(self, as_of: date) -> CrmSignals:
@@ -257,11 +270,15 @@ class TestExtract:
             ),
             sales=SalesSignals(Decimal("500")),
             inventory=InventorySignals(1, 2, 10),
+            inventory_health=StockHealthSignals(4, 3, Decimal("2500")),
             crm=CrmSignals(3, 2, Decimal("0.5")),
         )
         assert signals["as_of"] == "2026-08-27"
         assert signals["finance"]["cash_balance"] == "1000.00"  # type: ignore[index]
         assert signals["inventory"]["stock_out_count"] == 1  # type: ignore[index]
+        assert signals["inventory"]["dead_stock_count"] == 4  # type: ignore[index]
+        assert signals["inventory"]["slow_mover_count"] == 3  # type: ignore[index]
+        assert signals["inventory"]["tied_up_capital"] == "2500.00"  # type: ignore[index]
 
     def test_material_activity_true_when_any_module_nonempty(self) -> None:
         signals = build_signals_dict(
@@ -269,6 +286,7 @@ class TestExtract:
             finance=FinanceSignals(Decimal("0"), Decimal("0"), {}, Decimal("0"), Decimal("0")),
             sales=SalesSignals(Decimal("0")),
             inventory=InventorySignals(0, 0, 0),
+            inventory_health=StockHealthSignals(0, 0, Decimal("0")),
             crm=CrmSignals(3, 0, Decimal("0")),
         )
         assert has_material_activity(signals) is True
@@ -279,9 +297,21 @@ class TestExtract:
             finance=FinanceSignals(Decimal("0"), Decimal("0"), {}, Decimal("0"), Decimal("0")),
             sales=SalesSignals(Decimal("0")),
             inventory=InventorySignals(0, 0, 0),
+            inventory_health=StockHealthSignals(0, 0, Decimal("0")),
             crm=CrmSignals(0, 0, Decimal("0")),
         )
         assert has_material_activity(signals) is False
+
+    def test_material_activity_true_on_health_issues_alone(self) -> None:
+        signals = build_signals_dict(
+            as_of=AS_OF,
+            finance=FinanceSignals(Decimal("0"), Decimal("0"), {}, Decimal("0"), Decimal("0")),
+            sales=SalesSignals(Decimal("0")),
+            inventory=InventorySignals(0, 0, 0),
+            inventory_health=StockHealthSignals(4, 3, Decimal("2500")),
+            crm=CrmSignals(0, 0, Decimal("0")),
+        )
+        assert has_material_activity(signals) is True
 
     def test_build_prompt_contains_signal_keys(self) -> None:
         signals = build_signals_dict(
@@ -289,11 +319,47 @@ class TestExtract:
             finance=FinanceSignals(Decimal("1000"), Decimal("0"), {}, Decimal("0"), Decimal("0")),
             sales=SalesSignals(Decimal("0")),
             inventory=InventorySignals(0, 0, 0),
+            inventory_health=StockHealthSignals(0, 0, Decimal("0")),
             crm=CrmSignals(0, 0, Decimal("0")),
         )
         prompt = build_prompt(signals)
         assert '"finance"' in prompt
         assert '"as_of"' in prompt
+
+
+class TestHttpGateway:
+    def _gateway(self) -> HttpCoreGateway:
+        return HttpCoreGateway(base_url="http://core", bearer_token="t", tenant_slug="acme")
+
+    async def test_get_inventory_health_parses_counts_and_money(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def fake_get_data(
+            self: HttpCoreGateway, path: str, params: dict[str, str]
+        ) -> dict[str, object]:
+            assert path == "/inventory/health/summary"
+            assert params == {"days": "90"}
+            return {"dead_stock_count": 4, "slow_mover_count": 3, "tied_up_capital": [2500, "USD"]}
+
+        monkeypatch.setattr(HttpCoreGateway, "_get_data", fake_get_data)
+        signal = await self._gateway().get_inventory_health()
+        assert signal.dead_stock_count == 4
+        assert signal.slow_mover_count == 3
+        assert signal.tied_up_capital == Decimal("2500")
+
+    async def test_get_inventory_health_tolerates_missing_cost(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def fake_get_data(
+            self: HttpCoreGateway, path: str, params: dict[str, str]
+        ) -> dict[str, object]:
+            return {"dead_stock_count": 2, "slow_mover_count": 0, "tied_up_capital": None}
+
+        monkeypatch.setattr(HttpCoreGateway, "_get_data", fake_get_data)
+        signal = await self._gateway().get_inventory_health()
+        assert signal.dead_stock_count == 2
+        assert signal.slow_mover_count == 0
+        assert signal.tied_up_capital == Decimal("0")
 
 
 class TestNarrate:

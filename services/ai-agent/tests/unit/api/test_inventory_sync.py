@@ -79,6 +79,11 @@ class TestInventorySyncHandler:
     @pytest.mark.anyio
     async def test_applies_batch_and_commits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "INVENTORY_SYNC_TOKEN", "sync-secret")
+        # No embedding provider in the test env, so upserts degrade.
+        monkeypatch.setattr(
+            "ai_agent.api.v1.routers.inventory_sync.build_embedding_provider",
+            lambda settings_obj: None,
+        )
         TenantContext.set(str(TENANT_ID))
         try:
             session = _FakeSession()

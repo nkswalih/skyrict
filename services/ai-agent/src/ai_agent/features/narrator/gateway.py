@@ -59,6 +59,19 @@ class InventorySignals:
 
 
 @dataclass(frozen=True, slots=True)
+class StockHealthSignals:
+    """Dead-stock / slow-mover health read from core's health summary.
+
+    ``tied_up_capital`` is 0 when the caller lacks ``erp.inventory.cost``
+    (core blanks the figure server-side); engines present it as advisory.
+    """
+
+    dead_stock_count: int
+    slow_mover_count: int
+    tied_up_capital: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class CrmSignals:
     open_opportunities: int
     won_recent_days: int
@@ -71,6 +84,7 @@ class CoreGatewayPort(Protocol):
     async def get_finance(self, as_of: date) -> FinanceSignals: ...
     async def get_sales(self, as_of: date) -> SalesSignals: ...
     async def get_inventory(self) -> InventorySignals: ...
+    async def get_inventory_health(self) -> StockHealthSignals: ...
     async def get_crm(self, as_of: date) -> CrmSignals: ...
 
 
@@ -179,6 +193,14 @@ class HttpCoreGateway:
             stock_out_count=stock_out,
             low_stock_count=low_stock,
             total_sku_count=len(products),
+        )
+
+    async def get_inventory_health(self) -> StockHealthSignals:
+        summary = await self._get_data("/inventory/health/summary", {"days": "90"})
+        return StockHealthSignals(
+            dead_stock_count=_to_int(summary.get("dead_stock_count")),
+            slow_mover_count=_to_int(summary.get("slow_mover_count")),
+            tied_up_capital=_money(summary.get("tied_up_capital")),
         )
 
     async def get_crm(self, as_of: date) -> CrmSignals:
@@ -293,6 +315,15 @@ def _parse_dt(value: object) -> datetime | None:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _to_int(value: object) -> int:
+    if isinstance(value, (int, float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def _sum_for_code(lines: object, codes: frozenset[str]) -> Decimal:

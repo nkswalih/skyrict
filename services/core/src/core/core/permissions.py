@@ -26,6 +26,7 @@ ERP_INVENTORY_WRITE = "erp.inventory.write"
 ERP_INVENTORY_ADJUST = "erp.inventory.adjust"
 ERP_INVENTORY_ADJUST_APPROVE = "erp.inventory.adjust.approve"
 ERP_INVENTORY_AI_APPROVE = "erp.inventory.ai.approve"
+ERP_INVENTORY_COST = "erp.inventory.cost"
 
 # Purchasing
 ERP_PURCHASE_READ = "erp.purchase.read"
@@ -109,6 +110,7 @@ CATALOG: tuple[str, ...] = (
     ERP_INVENTORY_ADJUST,
     ERP_INVENTORY_ADJUST_APPROVE,
     ERP_INVENTORY_AI_APPROVE,
+    ERP_INVENTORY_COST,
     ERP_PURCHASE_READ,
     ERP_PURCHASE_WRITE,
     ERP_PURCHASE_APPROVE,
@@ -157,6 +159,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             ERP_INVENTORY_ADJUST,
             ERP_INVENTORY_ADJUST_APPROVE,
             ERP_INVENTORY_AI_APPROVE,
+            ERP_INVENTORY_COST,
         ),
     ),
     ("purchase", "Purchasing", (ERP_PURCHASE_READ, ERP_PURCHASE_WRITE, ERP_PURCHASE_APPROVE)),
@@ -241,6 +244,7 @@ __all__ = [
     "ERP_INVENTORY_ADJUST",
     "ERP_INVENTORY_ADJUST_APPROVE",
     "ERP_INVENTORY_AI_APPROVE",
+    "ERP_INVENTORY_COST",
     "ERP_INVENTORY_READ",
     "ERP_INVENTORY_WRITE",
     "ERP_INVOICE_APPROVE",

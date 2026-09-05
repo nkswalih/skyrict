@@ -9,7 +9,8 @@ token, and the engine wired to the shared LLM router from app.state.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+import uuid
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +24,19 @@ from ai_agent.api.v1.schemas.nl_query import (
 )
 from ai_agent.core.audit_service import AuditService
 from ai_agent.core.config import settings
+from ai_agent.core.embedding import build_embedding_provider
 from ai_agent.core.tenant_context import TenantContext
 from ai_agent.db.audit_repository import AiAuditLogRepository
+from ai_agent.db.inventory_embedding_repository import InventoryEmbeddingRepository
 from ai_agent.db.query_log_repository import QueryLogRepository
-from ai_agent.features.nl_query.engine import NlQueryEngine
+from ai_agent.features.inventory_semantic.search import InventorySearchService
+from ai_agent.features.nl_query.engine import FallbackSearchHit, NlQueryEngine
 from ai_agent.features.nl_query.gateway import HttpInventoryGateway, InventoryGatewayPort
 from ai_agent.features.nl_query.service import NlQueryService
+from ai_agent.features.rag.retrieval import RedisQueryCache
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Sequence
 
 router = APIRouter(prefix="/ai/query", tags=["ai-query"])
 
@@ -49,6 +57,45 @@ def get_inventory_gateway(request: Request) -> InventoryGatewayPort:
     )
 
 
+def _build_search_fallback(
+    session: AsyncSession,
+) -> Callable[[str, uuid.UUID, uuid.UUID], Awaitable[Sequence[FallbackSearchHit]]]:
+    """Semantic catalog fallback for NL-query abstentions.
+
+    Reuses the exact SKY-70 hybrid search as /ai/inventory/search (own Redis
+    key, own rate limit, degrades to exact-only when no embedding provider is
+    configured). No gateway here, so fallback answers never carry warehouse
+    scoping or valuation prices — just product names/SKUs.
+    """
+    search_service = InventorySearchService(
+        embedding_provider=build_embedding_provider(settings),
+        store=InventoryEmbeddingRepository(session),
+        cache=RedisQueryCache(key_prefix="ai:inv:search:cache:"),
+        gateway=None,
+        query_logs=QueryLogRepository(session),
+        limit=settings.INV_SEARCH_DEFAULT_LIMIT,
+        semantic_top_k=settings.INV_SEARCH_SEMANTIC_TOP_K,
+        cache_ttl_seconds=settings.INV_SEARCH_CACHE_TTL_SECONDS,
+        rate_limit_per_minute=settings.RATE_LIMIT_INV_SEARCH_PER_MIN,
+        tenant_limit_per_minute=settings.RATE_LIMIT_TENANT_PER_MIN,
+    )
+
+    async def fallback(
+        query: str,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Sequence[FallbackSearchHit]:
+        result = await search_service.search(
+            query=query,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            valuation_enabled=False,
+        )
+        return [FallbackSearchHit(name=item.name, sku=item.sku) for item in result.data]
+
+    return fallback
+
+
 def _build_service(
     request: Request,
     session: AsyncSession,
@@ -63,6 +110,7 @@ def _build_service(
         llm_router=request.app.state.llm_router,
         gateway_factory=gateway_factory,
         confidence_threshold=settings.CONFIDENCE_THRESHOLD,
+        search_fallback=_build_search_fallback(session),
     )
     return NlQueryService(
         engine=engine,

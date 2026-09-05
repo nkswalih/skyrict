@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+    Activity,
     AlertTriangle,
     ArrowLeftRight,
     BellRing,
@@ -64,6 +65,11 @@ const INVENTORY_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
         href: "/dashboard/erp/inventory/abc",
         label: "ABC",
         icon: BarChart3,
+    },
+    {
+        href: "/dashboard/erp/inventory/health",
+        label: "Health",
+        icon: Activity,
     },
 ];
 

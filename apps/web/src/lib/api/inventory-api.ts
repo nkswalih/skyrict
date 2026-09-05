@@ -10,7 +10,7 @@
  * require erp.inventory.adjust.approve - mirroring the core service default.
  */
 
-import { apiDelete, apiFetchEnvelope, apiPatch, apiPost } from "@/lib/api/http";
+import { apiDelete, apiFetch, apiFetchEnvelope, apiPatch, apiPost } from "@/lib/api/http";
 import { getTenantSlug } from "@/lib/auth/session-store";
 
 /** Mirrors CORE_INVENTORY_ADJUST_APPROVE_THRESHOLD (core settings default). */
@@ -736,6 +736,229 @@ export async function listAlerts(
         fetchOptions,
     );
     return mapList(raw, mapAlert);
+}
+
+// ---------------------------------------------------------------------------
+// Stock-health analytics (INV-ANL-001)
+// ---------------------------------------------------------------------------
+
+export interface DeadStockItem {
+    productId: string;
+    sku: string;
+    name: string;
+    qtyOnHand: string;
+    warehouseId: string | null;
+    costPrice: Money | null;
+    tiedUpValue: Money | null;
+    lastOutboundAt: string | null;
+}
+
+export interface SlowMoverItem {
+    productId: string;
+    sku: string;
+    name: string;
+    qtyOnHand: string;
+    turnoverRatio: string;
+    warehouseId: string | null;
+    costPrice: Money | null;
+    carryingCost: Money | null;
+    lastOutboundAt: string | null;
+    suggestMarkdown: boolean;
+}
+
+export interface MovementTrendPoint {
+    periodStart: string;
+    warehouseId: string | null;
+    receipts: string;
+    issues: string;
+    adjustments: string;
+}
+
+export interface StockHealthSummary {
+    totalSkuCount: number;
+    lowStockCount: number;
+    deadStockCount: number;
+    slowMoverCount: number;
+    tiedUpCapital: Money | null;
+}
+
+interface DeadStockItemPayload {
+    product_id?: unknown;
+    sku?: unknown;
+    name?: unknown;
+    qty_on_hand?: unknown;
+    warehouse_id?: unknown;
+    cost_price?: unknown;
+    tied_up_value?: unknown;
+    last_outbound_at?: unknown;
+}
+
+interface SlowMoverItemPayload {
+    product_id?: unknown;
+    sku?: unknown;
+    name?: unknown;
+    qty_on_hand?: unknown;
+    turnover_ratio?: unknown;
+    warehouse_id?: unknown;
+    cost_price?: unknown;
+    carrying_cost?: unknown;
+    last_outbound_at?: unknown;
+    suggest_markdown?: unknown;
+}
+
+interface MovementTrendPointPayload {
+    period_start?: unknown;
+    warehouse_id?: unknown;
+    receipts?: unknown;
+    issues?: unknown;
+    adjustments?: unknown;
+}
+
+interface StockHealthSummaryPayload {
+    total_sku_count?: unknown;
+    low_stock_count?: unknown;
+    dead_stock_count?: unknown;
+    slow_mover_count?: unknown;
+    tied_up_capital?: unknown;
+}
+
+function toNullableMoney(value: unknown): Money | null {
+    return Array.isArray(value) && value.length >= 2
+        ? [String(value[0] ?? "0"), String(value[1] ?? "USD")]
+        : null;
+}
+
+function mapDeadStockItem(raw: DeadStockItemPayload): DeadStockItem {
+    return {
+        productId: String(raw.product_id ?? ""),
+        sku: String(raw.sku ?? ""),
+        name: String(raw.name ?? ""),
+        qtyOnHand: String(raw.qty_on_hand ?? "0"),
+        warehouseId:
+            typeof raw.warehouse_id === "string" && raw.warehouse_id
+                ? raw.warehouse_id
+                : null,
+        costPrice: toNullableMoney(raw.cost_price),
+        tiedUpValue: toNullableMoney(raw.tied_up_value),
+        lastOutboundAt:
+            typeof raw.last_outbound_at === "string" && raw.last_outbound_at
+                ? raw.last_outbound_at
+                : null,
+    };
+}
+
+function mapSlowMoverItem(raw: SlowMoverItemPayload): SlowMoverItem {
+    return {
+        productId: String(raw.product_id ?? ""),
+        sku: String(raw.sku ?? ""),
+        name: String(raw.name ?? ""),
+        qtyOnHand: String(raw.qty_on_hand ?? "0"),
+        turnoverRatio: String(raw.turnover_ratio ?? "0"),
+        warehouseId:
+            typeof raw.warehouse_id === "string" && raw.warehouse_id
+                ? raw.warehouse_id
+                : null,
+        costPrice: toNullableMoney(raw.cost_price),
+        carryingCost: toNullableMoney(raw.carrying_cost),
+        lastOutboundAt:
+            typeof raw.last_outbound_at === "string" && raw.last_outbound_at
+                ? raw.last_outbound_at
+                : null,
+        suggestMarkdown: raw.suggest_markdown === true,
+    };
+}
+
+function mapMovementTrendPoint(raw: MovementTrendPointPayload): MovementTrendPoint {
+    return {
+        periodStart: String(raw.period_start ?? ""),
+        warehouseId:
+            typeof raw.warehouse_id === "string" && raw.warehouse_id
+                ? raw.warehouse_id
+                : null,
+        receipts: String(raw.receipts ?? "0"),
+        issues: String(raw.issues ?? "0"),
+        adjustments: String(raw.adjustments ?? "0"),
+    };
+}
+
+function mapStockHealthSummary(raw: StockHealthSummaryPayload): StockHealthSummary {
+    return {
+        totalSkuCount: Number(raw.total_sku_count ?? 0),
+        lowStockCount: Number(raw.low_stock_count ?? 0),
+        deadStockCount: Number(raw.dead_stock_count ?? 0),
+        slowMoverCount: Number(raw.slow_mover_count ?? 0),
+        tiedUpCapital: toNullableMoney(raw.tied_up_capital),
+    };
+}
+
+/** Products with stock on hand but no outbound movement in the trailing days. */
+export async function listDeadStock(
+    options: { days?: number; page?: number; pageSize?: number } = {},
+): Promise<ListResponse<DeadStockItem>> {
+    const query = buildListParams(
+        { page: options.page, pageSize: options.pageSize },
+        { days: options.days !== undefined ? String(options.days) : undefined },
+    );
+    const raw = await apiFetchEnvelope<ListPayload>(
+        `/api/v1/inventory/health/dead-stock?${query}`,
+        {},
+    );
+    return mapList(raw, (item) =>
+        mapDeadStockItem(item as DeadStockItemPayload),
+    );
+}
+
+/** Bottom-quartile turnover items with a suggested-markdown advice flag. */
+export async function listSlowMovers(
+    options: { windowDays?: number; page?: number; pageSize?: number } = {},
+): Promise<ListResponse<SlowMoverItem>> {
+    const query = buildListParams(
+        { page: options.page, pageSize: options.pageSize },
+        {
+            window_days:
+                options.windowDays !== undefined
+                    ? String(options.windowDays)
+                    : undefined,
+        },
+    );
+    const raw = await apiFetchEnvelope<ListPayload>(
+        `/api/v1/inventory/health/slow-movers?${query}`,
+        {},
+    );
+    return mapList(raw, (item) =>
+        mapSlowMoverItem(item as SlowMoverItemPayload),
+    );
+}
+
+/** Stacked weekly receipts/issues/adjustments for the trailing weeks. */
+export async function listMovementTrends(
+    options: { weeks?: number; warehouseId?: string } = {},
+): Promise<ListResponse<MovementTrendPoint>> {
+    const query = buildListParams({}, {
+        weeks: options.weeks !== undefined ? String(options.weeks) : undefined,
+        warehouse_id: options.warehouseId,
+    });
+    const raw = await apiFetchEnvelope<ListPayload>(
+        `/api/v1/inventory/health/trends?${query}`,
+        {},
+    );
+    return mapList(raw, (point) =>
+        mapMovementTrendPoint(point as MovementTrendPointPayload),
+    );
+}
+
+/** Aggregate stock-health metrics (also feeds the SKY-63 narrator digest). */
+export async function getStockHealthSummary(
+    options: { days?: number } = {},
+): Promise<StockHealthSummary> {
+    const query = buildListParams({}, {
+        days: options.days !== undefined ? String(options.days) : undefined,
+    });
+    const raw = await apiFetch<StockHealthSummaryPayload>(
+        `/api/v1/inventory/health/summary?${query}`,
+        {},
+    );
+    return mapStockHealthSummary(raw ?? {});
 }
 
 // ---------------------------------------------------------------------------

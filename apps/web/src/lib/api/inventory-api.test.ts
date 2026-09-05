@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getStockHealthSummary,
   listAlerts,
+  listDeadStock,
+  listMovementTrends,
   listMovements,
   listProducts,
+  listSlowMovers,
   listStockLevels,
   listWarehouses,
 } from "@/lib/api/inventory-api";
@@ -212,5 +216,178 @@ describe("inventory list endpoints", () => {
       sku: "SKU-1001",
       qtyOnHand: "4.0000",
     });
+  });
+});
+
+describe("stock-health endpoints", () => {
+  beforeEach(() => {
+    httpMock.mockReset();
+  });
+
+  it("maps the dead-stock envelope (cost fields preserved)", async () => {
+    httpMock.mockResolvedValue({
+      data: [
+        {
+          product_id: "p-1",
+          sku: "SKU-1001",
+          name: "Legacy widget",
+          qty_on_hand: "40.0000",
+          warehouse_id: "w-1",
+          cost_price: ["3.00", "USD"],
+          tied_up_value: ["120.00", "USD"],
+          last_outbound_at: "2026-04-01T10:00:00Z",
+        },
+      ],
+      meta: { total: 1, page: 1, page_size: 20, total_pages: 1 },
+    });
+
+    const result = await listDeadStock({ days: 90 });
+
+    expect(httpMock).toHaveBeenCalledWith(
+      "/api/v1/inventory/health/dead-stock?page=1&page_size=20&days=90",
+      {},
+    );
+    expect(result.data[0]).toMatchObject({
+      productId: "p-1",
+      sku: "SKU-1001",
+      name: "Legacy widget",
+      qtyOnHand: "40.0000",
+      warehouseId: "w-1",
+      costPrice: ["3.00", "USD"],
+      tiedUpValue: ["120.00", "USD"],
+    });
+  });
+
+  it("blanks dead-stock cost fields when the server omits them", async () => {
+    httpMock.mockResolvedValue({
+      data: [
+        {
+          product_id: "p-1",
+          sku: "SKU-1001",
+          name: "Legacy widget",
+          qty_on_hand: "40.0000",
+          warehouse_id: null,
+          last_outbound_at: null,
+        },
+      ],
+      meta: { total: 1, page: 1, page_size: 20, total_pages: 1 },
+    });
+
+    const result = await listDeadStock();
+
+    expect(result.data[0]).toMatchObject({
+      warehouseId: null,
+      costPrice: null,
+      tiedUpValue: null,
+      lastOutboundAt: null,
+    });
+  });
+
+  it("maps the slow-mover envelope with markdown flag", async () => {
+    httpMock.mockResolvedValue({
+      data: [
+        {
+          product_id: "p-2",
+          sku: "SKU-1002",
+          name: "Slow bracket",
+          qty_on_hand: "18.0000",
+          turnover_ratio: "0.1200",
+          warehouse_id: "w-1",
+          cost_price: ["2.00", "USD"],
+          carrying_cost: ["0.60", "USD"],
+          last_outbound_at: "2026-02-01T10:00:00Z",
+          suggest_markdown: true,
+        },
+      ],
+      meta: { total: 1, page: 1, page_size: 20, total_pages: 1 },
+    });
+
+    const result = await listSlowMovers({ windowDays: 180 });
+
+    expect(httpMock).toHaveBeenCalledWith(
+      "/api/v1/inventory/health/slow-movers?page=1&page_size=20&window_days=180",
+      {},
+    );
+    expect(result.data[0]).toMatchObject({
+      productId: "p-2",
+      sku: "SKU-1002",
+      turnoverRatio: "0.1200",
+      costPrice: ["2.00", "USD"],
+      carryingCost: ["0.60", "USD"],
+      suggestMarkdown: true,
+    });
+  });
+
+  it("maps the movement-trends envelope", async () => {
+    httpMock.mockResolvedValue({
+      data: [
+        {
+          period_start: "2026-08-01T00:00:00Z",
+          warehouse_id: "w-1",
+          receipts: "12.0000",
+          issues: "7.0000",
+          adjustments: "1.0000",
+        },
+      ],
+      meta: { total: 1, page: 1, page_size: 1, total_pages: 1 },
+    });
+
+    const result = await listMovementTrends({ weeks: 13 });
+
+    expect(httpMock).toHaveBeenCalledWith(
+      "/api/v1/inventory/health/trends?page=1&page_size=20&weeks=13",
+      {},
+    );
+    expect(result.data[0]).toMatchObject({
+      periodStart: "2026-08-01T00:00:00Z",
+      warehouseId: "w-1",
+      receipts: "12.0000",
+      issues: "7.0000",
+      adjustments: "1.0000",
+    });
+  });
+
+  it("maps the summary envelope and unwraps .data from apiFetch", async () => {
+    httpMock.mockResolvedValue({
+      data: {
+        total_sku_count: 42,
+        low_stock_count: 7,
+        dead_stock_count: 3,
+        slow_mover_count: 5,
+        tied_up_capital: ["240.00", "USD"],
+      },
+      meta: null,
+    });
+
+    const result = await getStockHealthSummary({ days: 90 });
+
+    expect(httpMock).toHaveBeenCalledWith(
+      "/api/v1/inventory/health/summary?page=1&page_size=20&days=90",
+      {},
+    );
+    expect(result).toEqual({
+      totalSkuCount: 42,
+      lowStockCount: 7,
+      deadStockCount: 3,
+      slowMoverCount: 5,
+      tiedUpCapital: ["240.00", "USD"],
+    });
+  });
+
+  it("returns null tied-up capital when the caller lacks cost access", async () => {
+    httpMock.mockResolvedValue({
+      data: {
+        total_sku_count: 42,
+        low_stock_count: 7,
+        dead_stock_count: 3,
+        slow_mover_count: 5,
+        tied_up_capital: null,
+      },
+      meta: null,
+    });
+
+    const result = await getStockHealthSummary();
+
+    expect(result.tiedUpCapital).toBeNull();
   });
 });

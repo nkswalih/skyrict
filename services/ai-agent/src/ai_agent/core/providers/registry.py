@@ -57,6 +57,7 @@ def build_provider(
     base_url_override: str = "",
     api_key: str = "",
     local_only: bool = False,
+    native: bool = False,
     timeout_seconds: float,
 ) -> LlmProvider:
     """Instantiate one provider from its configuration quartet.
@@ -71,6 +72,7 @@ def build_provider(
         base_url=resolve_base_url(provider_key, base_url_override),
         api_key=api_key,
         local_only=local_only,
+        native=native,
         timeout_seconds=timeout_seconds,
     )
 
@@ -90,6 +92,7 @@ def build_providers_from_settings(config: Settings) -> list[LlmProvider]:
                 base_url_override=config.BASE_URL,
                 api_key=config.API_KEY,
                 local_only=config.PROVIDER_LOCAL_ONLY,
+                native=config.PROVIDER_NATIVE,
                 timeout_seconds=config.PROVIDER_TIMEOUT_SECONDS,
             )
         )

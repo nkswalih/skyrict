@@ -16,7 +16,16 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from core.core.config import settings
-from core.domain.entities import Product, StockLevel, StockMovement, Warehouse
+from core.domain.entities import (
+    DeadStockItem,
+    MovementTrendPoint,
+    Product,
+    SlowMoverItem,
+    StockHealthSummary,
+    StockLevel,
+    StockMovement,
+    Warehouse,
+)
 from core.domain.value_objects import Money, StockMovementType
 
 # Request money shape: (amount, currency) e.g. ``[12.50, "USD"]``.
@@ -297,4 +306,111 @@ class AlertResponse(BaseModel):
             name=product.name,
             qty_on_hand=str(level.qty_on_hand),
             reorder_point=str(product.reorder_point),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Stock-health analytics (INV-ANL-001)
+# ---------------------------------------------------------------------------
+
+
+class DeadStockItemResponse(BaseModel):
+    """A product with on-hand stock but no outbound movement in the window.
+
+    Cost fields are only populated when the caller holds ``erp.inventory.cost``
+    (the router blanks them otherwise) — valuations are server-side only.
+    """
+
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    qty_on_hand: str
+    warehouse_id: uuid.UUID | None = None
+    cost_price: MoneyOutput | None = None
+    tied_up_value: MoneyOutput | None = None
+    last_outbound_at: datetime | None = None
+
+    @classmethod
+    def from_entity(cls, item: DeadStockItem, *, include_cost: bool) -> DeadStockItemResponse:
+        return cls(
+            product_id=item.product_id,
+            sku=item.sku,
+            name=item.name,
+            qty_on_hand=str(item.qty_on_hand),
+            warehouse_id=item.warehouse_id,
+            cost_price=money_output(item.cost_price) if include_cost else None,
+            tied_up_value=money_output(item.tied_up_value) if include_cost else None,
+            last_outbound_at=item.last_outbound_at,
+        )
+
+
+class SlowMoverItemResponse(BaseModel):
+    """A bottom-quartile turnover item with a suggested-markdown advice flag."""
+
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    qty_on_hand: str
+    turnover_ratio: str
+    warehouse_id: uuid.UUID | None = None
+    cost_price: MoneyOutput | None = None
+    carrying_cost: MoneyOutput | None = None
+    last_outbound_at: datetime | None = None
+    suggest_markdown: bool = False
+
+    @classmethod
+    def from_entity(cls, item: SlowMoverItem, *, include_cost: bool) -> SlowMoverItemResponse:
+        return cls(
+            product_id=item.product_id,
+            sku=item.sku,
+            name=item.name,
+            qty_on_hand=str(item.qty_on_hand),
+            turnover_ratio=str(item.turnover_ratio),
+            warehouse_id=item.warehouse_id,
+            cost_price=money_output(item.cost_price) if include_cost else None,
+            carrying_cost=money_output(item.carrying_cost) if include_cost else None,
+            last_outbound_at=item.last_outbound_at,
+            suggest_markdown=item.suggest_markdown,
+        )
+
+
+class MovementTrendPointResponse(BaseModel):
+    """One week's stacked receipts/issues/adjustments per warehouse."""
+
+    period_start: datetime
+    warehouse_id: uuid.UUID | None = None
+    receipts: str
+    issues: str
+    adjustments: str
+
+    @classmethod
+    def from_entity(cls, point: MovementTrendPoint) -> MovementTrendPointResponse:
+        return cls(
+            period_start=point.period_start,
+            warehouse_id=point.warehouse_id,
+            receipts=str(point.receipts),
+            issues=str(point.issues),
+            adjustments=str(point.adjustments),
+        )
+
+
+class StockHealthSummaryResponse(BaseModel):
+    """Aggregate stock-health metrics fed to the SKY-63 narrator digest."""
+
+    total_sku_count: int
+    low_stock_count: int
+    dead_stock_count: int
+    slow_mover_count: int
+    tied_up_capital: MoneyOutput | None = None
+
+    @classmethod
+    def from_entity(
+        cls, summary: StockHealthSummary, *, include_cost: bool
+    ) -> StockHealthSummaryResponse:
+        return cls(
+            total_sku_count=summary.total_sku_count,
+            low_stock_count=summary.low_stock_count,
+            dead_stock_count=summary.dead_stock_count,
+            slow_mover_count=summary.slow_mover_count,
+            tied_up_capital=money_output(summary.tied_up_capital) if include_cost else None,
         )

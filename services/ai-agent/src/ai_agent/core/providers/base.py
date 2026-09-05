@@ -34,6 +34,14 @@ class LlmRequest:
     user_prompt: str
     max_tokens: int = 512
     temperature: float = 0.2
+    # Reasoning toggle for models that support it (e.g. Ollama qwen3). ``None``
+    # means "provider default"; ``False`` disables the model's internal chain
+    # of thought for fast, token-cheap structured extraction.
+    think: bool | None = None
+    # Force grammar-constrained JSON output when the provider supports it
+    # (Ollama native ``format: json``; OpenAI-compatible ``json_object``).
+    # ``True`` guarantees the completion is valid JSON, never prose.
+    json_mode: bool = False
     """Optional multimodal content blocks (OpenAI vision format).
 
     When present, the provider sends ``content`` as an array of blocks

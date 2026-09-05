@@ -1214,6 +1214,81 @@ class SalesOrderLine:
     updated_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class DeadStockItem:
+    """A product with stock on hand but no outbound movement in the window.
+
+    Valuation is server-side only at ``cost_price`` (INV-ANL-001): the HTTP
+    layer must gate the ``tied_up_value`` / ``cost`` figures behind the
+    ``erp.inventory.cost`` permission. ``qty_on_hand`` is the current
+    materialized level for the product across its warehouse.
+    """
+
+    tenant_id: uuid.UUID
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    warehouse_id: uuid.UUID | None = None
+    qty_on_hand: Decimal = Decimal("0")
+    cost_price: Money = field(default_factory=lambda: Money.zero("USD"))
+    tied_up_value: Money = field(default_factory=lambda: Money.zero("USD"))
+    last_outbound_at: datetime | None = None
+    id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True)
+class SlowMoverItem:
+    """A bottom-quartile turnover item with a suggested-markdown advice flag.
+
+    ``turnover_ratio`` is outbound qty in the trailing window divided by the
+    current on-hand quantity (clamped to at least 1 to avoid division by
+    zero). ``suggest_markdown`` is advice only — it NEVER triggers a price
+    change (INV-ANL-001 guardrail).
+    """
+
+    tenant_id: uuid.UUID
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    warehouse_id: uuid.UUID | None = None
+    qty_on_hand: Decimal = Decimal("0")
+    turnover_ratio: Decimal = Decimal("0")
+    cost_price: Money = field(default_factory=lambda: Money.zero("USD"))
+    carrying_cost: Money = field(default_factory=lambda: Money.zero("USD"))
+    last_outbound_at: datetime | None = None
+    suggest_markdown: bool = False
+    id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True)
+class MovementTrendPoint:
+    """One week's stacked movement totals per warehouse (receipts/issues/adjustments).
+
+    ``receipts`` / ``issues`` are stored as positive magnitudes for charting;
+    ``issues`` represents outbound volume (positive). ``adjustments`` is the
+    net adjustment quantity (may be negative).
+    """
+
+    tenant_id: uuid.UUID
+    period_start: datetime
+    warehouse_id: uuid.UUID | None = None
+    receipts: Decimal = Decimal("0")
+    issues: Decimal = Decimal("0")
+    adjustments: Decimal = Decimal("0")
+
+
+@dataclass(frozen=True)
+class StockHealthSummary:
+    """Aggregate stock-health metrics consumed by the SKY-63 narrator digest."""
+
+    tenant_id: uuid.UUID
+    total_sku_count: int = 0
+    low_stock_count: int = 0
+    dead_stock_count: int = 0
+    slow_mover_count: int = 0
+    tied_up_capital: Money = field(default_factory=lambda: Money.zero("USD"))
+
+
 # ---------------------------------------------------------------------------
 # Finance automation wave-2 read-models (SKY-66) - derived, never stored.
 # ---------------------------------------------------------------------------

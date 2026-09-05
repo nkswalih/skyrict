@@ -24,19 +24,25 @@ from core.api.deps import (
     get_tenant_context,
     require_ingest_m2m_or_permission,
     require_permission,
+    resolve_permission,
 )
 from core.core.permissions import (
     ERP_INVENTORY_ADJUST,
+    ERP_INVENTORY_COST,
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
 )
 from core.features.inventory.repository import _UNSET
 from core.features.inventory.schemas import (
     AlertResponse,
+    DeadStockItemResponse,
+    MovementTrendPointResponse,
     ProductCreate,
     ProductResponse,
     ProductUpdate,
+    SlowMoverItemResponse,
     StockAdjustmentCreate,
+    StockHealthSummaryResponse,
     StockLevelResponse,
     StockMovementResponse,
     StockReleaseCreate,
@@ -60,6 +66,8 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 _require_inventory_read = require_permission(ERP_INVENTORY_READ)
 _require_inventory_write = require_permission(ERP_INVENTORY_WRITE)
 _require_inventory_adjust = require_permission(ERP_INVENTORY_ADJUST)
+# Non-raising: true only when the caller holds the cost key (INV-ANL-001).
+_resolve_inventory_cost = resolve_permission(ERP_INVENTORY_COST)
 # The catalog list (reindex/ingest target) additionally accepts ai-agent's m2m
 # ingest secret (CORE_AI_INGEST_TOKEN); every other route stays JWT-only.
 _require_catalog_read = require_ingest_m2m_or_permission(ERP_INVENTORY_READ)
@@ -457,4 +465,108 @@ async def list_alerts(
     return ListResponse(
         data=[AlertResponse.from_entities(level, product) for level, product in alerts],
         meta=PaginationMeta.create(total=total, page=params.page, page_size=params.page_size),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stock-health analytics (INV-ANL-001)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/health/dead-stock",
+    response_model=ListResponse[DeadStockItemResponse],
+)
+async def list_dead_stock(
+    days: int = Query(default=90, ge=1),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: dict[str, object] = Depends(_require_inventory_read),
+    has_cost: bool = Depends(_resolve_inventory_cost),
+    tenant_id: str = Depends(get_tenant_context),
+    service: InventoryService = Depends(get_inventory_service),
+) -> ListResponse[DeadStockItemResponse]:
+    """Products with stock on hand but no outbound in the trailing ``days``.
+
+    Cost / tied-up-value figures are only populated when the caller holds
+    ``erp.inventory.cost``; otherwise they are null (server-side gating).
+    """
+    params = PaginationParams.create(page, page_size)
+    items = await service.dead_stock(tenant_id, days=days, offset=params.offset, limit=params.limit)
+    total = await service.count_dead_stock(tenant_id, days=days)
+    return ListResponse(
+        data=[DeadStockItemResponse.from_entity(item, include_cost=has_cost) for item in items],
+        meta=PaginationMeta.create(total=total, page=params.page, page_size=params.page_size),
+    )
+
+
+@router.get(
+    "/health/slow-movers",
+    response_model=ListResponse[SlowMoverItemResponse],
+)
+async def list_slow_movers(
+    window_days: int = Query(default=180, ge=1),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: dict[str, object] = Depends(_require_inventory_read),
+    has_cost: bool = Depends(_resolve_inventory_cost),
+    tenant_id: str = Depends(get_tenant_context),
+    service: InventoryService = Depends(get_inventory_service),
+) -> ListResponse[SlowMoverItemResponse]:
+    """Bottom-quartile turnover items with a suggested-markdown advice flag.
+
+    ``suggest_markdown`` is advice only — it NEVER changes a price.
+    """
+    params = PaginationParams.create(page, page_size)
+    items = await service.slow_movers(
+        tenant_id,
+        window_days=window_days,
+        offset=params.offset,
+        limit=params.limit,
+    )
+    total = await service.count_slow_movers(tenant_id, window_days=window_days)
+    return ListResponse(
+        data=[SlowMoverItemResponse.from_entity(item, include_cost=has_cost) for item in items],
+        meta=PaginationMeta.create(total=total, page=params.page, page_size=params.page_size),
+    )
+
+
+@router.get(
+    "/health/trends",
+    response_model=ListResponse[MovementTrendPointResponse],
+)
+async def list_movement_trends(
+    weeks: int = Query(default=13, ge=1, le=104),
+    warehouse_id: str | None = Query(default=None),
+    _: dict[str, object] = Depends(_require_inventory_read),
+    tenant_id: str = Depends(get_tenant_context),
+    service: InventoryService = Depends(get_inventory_service),
+) -> ListResponse[MovementTrendPointResponse]:
+    """Stacked weekly receipts/issues/adjustments for the trailing ``weeks``."""
+    from uuid import UUID
+
+    wid = UUID(warehouse_id) if warehouse_id else None
+    points = await service.movement_trends(tenant_id, warehouse_id=wid, weeks=weeks)
+    return ListResponse(
+        data=[MovementTrendPointResponse.from_entity(p) for p in points],
+        meta=PaginationMeta.create(total=len(points), page=1, page_size=max(len(points), 1)),
+    )
+
+
+@router.get(
+    "/health/summary",
+    response_model=ResponseEnvelope[StockHealthSummaryResponse],
+)
+async def get_health_summary(
+    days: int = Query(default=90, ge=1),
+    _: dict[str, object] = Depends(_require_inventory_read),
+    has_cost: bool = Depends(_resolve_inventory_cost),
+    tenant_id: str = Depends(get_tenant_context),
+    service: InventoryService = Depends(get_inventory_service),
+) -> ResponseEnvelope[StockHealthSummaryResponse]:
+    """Aggregate stock-health metrics (feeds the SKY-63 narrator digest)."""
+    summary = await service.health_summary(tenant_id, days=days)
+    return ResponseEnvelope(
+        data=StockHealthSummaryResponse.from_entity(summary, include_cost=has_cost),
+        message="Stock health summary",
     )

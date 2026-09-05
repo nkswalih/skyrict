@@ -122,6 +122,8 @@ class LlmRouter:
                 user_prompt=redacted.text,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
+                think=request.think,
+                json_mode=request.json_mode,
                 image_blocks=request.image_blocks,
             )
 
@@ -202,6 +204,8 @@ class LlmRouter:
                 user_prompt=redacted.text,
                 max_tokens=request.max_tokens,
                 temperature=request.temperature,
+                think=request.think,
+                json_mode=request.json_mode,
                 image_blocks=request.image_blocks,
             )
 

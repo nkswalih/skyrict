@@ -59,7 +59,17 @@ from core.core.exceptions import (
     TransferRequiresDistinctWarehousesError,
 )
 from core.core.tenant_context import TenantContext
-from core.domain.entities import Product, SalesOrderLine, StockLevel, StockMovement, Warehouse
+from core.domain.entities import (
+    DeadStockItem,
+    MovementTrendPoint,
+    Product,
+    SalesOrderLine,
+    SlowMoverItem,
+    StockHealthSummary,
+    StockLevel,
+    StockMovement,
+    Warehouse,
+)
 from core.domain.value_objects import Money, StockMovementType
 from core.features.inventory.events.producers import (
     emit_inventory_product_removed,
@@ -1085,3 +1095,55 @@ class InventoryService:
 
     async def count_alerts(self, tenant_id: str | uuid.UUID) -> int:
         return await self.inventory_repo.count_low_stock(_as_uuid(tenant_id))
+
+    # ------------------------------------------------------------------
+    # Stock-health analytics read-forwards (INV-ANL-001).
+    # ------------------------------------------------------------------
+
+    async def dead_stock(
+        self,
+        tenant_id: str | uuid.UUID,
+        *,
+        days: int = 90,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> Sequence[DeadStockItem]:
+        return await self.inventory_repo.dead_stock(
+            _as_uuid(tenant_id), days=days, offset=offset, limit=limit
+        )
+
+    async def count_dead_stock(self, tenant_id: str | uuid.UUID, *, days: int = 90) -> int:
+        return await self.inventory_repo.count_dead_stock(_as_uuid(tenant_id), days=days)
+
+    async def slow_movers(
+        self,
+        tenant_id: str | uuid.UUID,
+        *,
+        window_days: int = 180,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> Sequence[SlowMoverItem]:
+        return await self.inventory_repo.slow_movers(
+            _as_uuid(tenant_id), window_days=window_days, offset=offset, limit=limit
+        )
+
+    async def count_slow_movers(self, tenant_id: str | uuid.UUID, *, window_days: int = 180) -> int:
+        return await self.inventory_repo.count_slow_movers(
+            _as_uuid(tenant_id), window_days=window_days
+        )
+
+    async def movement_trends(
+        self,
+        tenant_id: str | uuid.UUID,
+        *,
+        warehouse_id: uuid.UUID | None = None,
+        weeks: int = 13,
+    ) -> Sequence[MovementTrendPoint]:
+        return await self.inventory_repo.movement_trends(
+            _as_uuid(tenant_id), warehouse_id=warehouse_id, weeks=weeks
+        )
+
+    async def health_summary(
+        self, tenant_id: str | uuid.UUID, *, days: int = 90
+    ) -> StockHealthSummary:
+        return await self.inventory_repo.health_summary(_as_uuid(tenant_id), days=days)

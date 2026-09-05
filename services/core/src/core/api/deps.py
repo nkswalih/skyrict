@@ -194,6 +194,28 @@ def require_all_permissions(*permissions: str) -> Callable[[], Awaitable[dict[st
     return _check
 
 
+def resolve_permission(permission: str) -> Callable[[], Awaitable[bool]]:
+    """Dependency factory — returns whether the caller holds a permission.
+
+    Unlike :func:`require_permission`, this NEVER raises: it resolves the user's
+    grants and returns a boolean so a route can gate optional data (e.g.
+    ``erp.inventory.cost`` figures on the stock-health analytics, INV-ANL-001)
+    behind a permission without making it mandatory for the whole endpoint.
+    """
+
+    async def _check(
+        current_user: dict[str, Any] = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> bool:
+        granted = await RbacRepository(db).resolve_user_permissions(
+            user_id=current_user["user_id"],
+            tenant_id=current_user["tenant_id"],
+        )
+        return bool(grants_permission(granted, permission))
+
+    return _check
+
+
 def require_ingest_m2m_or_permission(
     permission: str,
 ) -> Callable[[], Awaitable[dict[str, Any]]]:
