@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from ai_agent.features.l3.extract import (
+    build_leave_pay_signals,
     build_payroll_cost_signals,
     build_prompt,
     has_material_activity,
@@ -67,16 +68,48 @@ _GOOD_JSON = ('{"title": "Overtime drove payroll cost up {{overtime_delta}}",'
               ' concentrated in Operations"],'
               ' "caveat": "Figures verified against payroll runs."}')
 
+# Twelve completed payroll months with leave_days + overtime chosen to be
+# strongly positively correlated (~linear), mirroring the demo seed schedule.
+_CORRELATION_PAIRS = [
+    {"period_start": "2025-04-01", "run_code": "PR-2025-04", "leave_days": 2, "overtime": "300.00"},
+    {"period_start": "2025-05-01", "run_code": "PR-2025-05", "leave_days": 3, "overtime": "450.00"},
+    {"period_start": "2025-06-01", "run_code": "PR-2025-06", "leave_days": 5, "overtime": "750.00"},
+    {"period_start": "2025-07-01", "run_code": "PR-2025-07", "leave_days": 8, "overtime": "1200.00"},
+    {"period_start": "2025-08-01", "run_code": "PR-2025-08", "leave_days": 9, "overtime": "1350.00"},
+    {"period_start": "2025-09-01", "run_code": "PR-2025-09", "leave_days": 4, "overtime": "600.00"},
+    {"period_start": "2025-10-01", "run_code": "PR-2025-10", "leave_days": 3, "overtime": "450.00"},
+    {"period_start": "2025-11-01", "run_code": "PR-2025-11", "leave_days": 5, "overtime": "750.00"},
+    {"period_start": "2025-12-01", "run_code": "PR-2025-12", "leave_days": 6, "overtime": "900.00"},
+    {"period_start": "2026-01-01", "run_code": "PR-2026-01", "leave_days": 2, "overtime": "300.00"},
+    {"period_start": "2026-02-01", "run_code": "PR-2026-02", "leave_days": 3, "overtime": "450.00"},
+    {"period_start": "2026-03-01", "run_code": "PR-2026-03", "leave_days": 10, "overtime": "1500.00"},
+]
+
+_GOOD_LEAVE_JSON = ('{"title": "Leave and overtime track together {{correlation}}",'
+                    ' "summary": "Across {{sample_size}} months, approved leave and cover'
+                    ' overtime move together (r {{correlation}}), peaking in'
+                    ' {{peak_overtime_month}}.",'
+                    ' "points": ["Highest leave month {{highest_leave_month}}'
+                    ' with {{highest_leave_days}} days", "Overtime peak'
+                    ' {{peak_overtime}} in {{peak_overtime_month}}"],'
+                    ' "caveat": "Correlation is not causation; figures verified'
+                    ' against payroll sources."}')
+
 
 class FakeGateway(L3CoreGatewayPort):
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
+        self.leave_calls: list[object] = []
+        self.leave_payload: dict[str, object] = {
+            "pairs": _CORRELATION_PAIRS
+        }
 
     async def get_payroll_cost_movement(self, as_of: object) -> dict[str, object]:
         return self.payload
 
     async def get_leave_pay_pairs(self, as_of: object) -> dict[str, object]:
-        raise NotImplementedError
+        self.leave_calls.append(as_of)
+        return self.leave_payload
 
     async def get_compliance_risk(self, as_of: object) -> dict[str, object]:
         raise NotImplementedError
@@ -291,3 +324,63 @@ class TestService:
         with pytest.raises(ValueError):
             await svc.generate(kind="nope", tenant_id=TENANT, user_id=USER,
                                as_of=AS_OF, force_refresh=False)
+
+
+class TestLeavePaySignals:
+    def test_correlation_figures_reconcile_to_pairs(self) -> None:
+        signals = build_leave_pay_signals({"pairs": _CORRELATION_PAIRS})
+        figures = signals["figures"]
+        # Correlated series: positive r, figure tokens carry verified values.
+        assert signals["has_material_activity"] is True
+        assert has_material_activity("leave_pay_correlation", signals) is True
+        assert float(figures["{{correlation}}"]) > 0.99
+        assert figures["{{sample_size}}"] == "12"
+        assert figures["{{highest_leave_month}}"] == "PR-2026-03"
+        assert figures["{{highest_leave_days}}"] == "10"
+        assert figures["{{peak_overtime_month}}"] == "PR-2026-03"
+        assert figures["{{peak_overtime}}"] == "1500.00"
+
+    def test_insufficient_history_is_not_material(self) -> None:
+        short = build_leave_pay_signals({"pairs": _CORRELATION_PAIRS[:6]})
+        assert short["has_material_activity"] is False
+        assert short["figures"] == {}
+        assert has_material_activity("leave_pay_correlation", short) is False
+
+    def test_flat_series_r_undefined_is_not_material(self) -> None:
+        flat = [{"period_start": "2025-05-01", "run_code": f"PR-2025-{i:02d}",
+                 "leave_days": 5, "overtime": "100.00"} for i in range(1, 13)]
+        signals = build_leave_pay_signals({"pairs": flat})
+        assert signals["has_material_activity"] is False
+
+
+class TestLeavePayService:
+    async def test_generates_and_audits_leave_pay(self) -> None:
+        gateway = FakeGateway(_SPIKE_PAYLOAD)
+        gateway.leave_payload = {"pairs": _CORRELATION_PAIRS}
+        svc, cache, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_LEAVE_JSON))
+        result = await svc.generate(
+            kind="leave_pay_correlation", tenant_id=TENANT, user_id=USER,
+            as_of=AS_OF, force_refresh=False,
+        )
+        assert result.status == "generated"
+        assert result.source == "live"
+        assert "{{" not in result.title
+        assert "0.99" in result.title or "1.00" in result.title
+        assert result.figures["{{sample_size}}"] == "12"
+        assert result.figures["{{correlation}}"][:4] in ("0.99", "1.00")
+        assert audit.events, "leave-pay generation must audit"
+        assert cache.inserted
+
+    async def test_abstains_when_insufficient_history(self) -> None:
+        gateway = FakeGateway(_SPIKE_PAYLOAD)
+        gateway.leave_payload = {"pairs": _CORRELATION_PAIRS[:5]}
+        svc, cache, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_LEAVE_JSON))
+        result = await svc.generate(
+            kind="leave_pay_correlation", tenant_id=TENANT, user_id=USER,
+            as_of=AS_OF, force_refresh=False,
+        )
+        assert result.status == "abstained"
+        assert result.source == "abstention"
+        assert result.caveat, "abstention sets a caveat"
+        assert result.figures == {}
+        assert audit.events == []

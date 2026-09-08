@@ -7,6 +7,8 @@ LLM output, then substituted at render time from the verified source data.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
+from statistics import StatisticsError, correlation as pearson
 
 _DELTA_KEYS = (
     "headcount_delta",
@@ -21,6 +23,9 @@ _DELTA_KEYS = (
 )
 
 _MATERIAL_DELTA_KEYS = _DELTA_KEYS[:4]
+
+# A leave-pay correlation is only meaningful over a full year of payroll history.
+_CORRELATION_MIN_MONTHS = 12
 
 
 def build_payroll_cost_signals(raw: dict) -> dict:
@@ -62,8 +67,42 @@ def build_prompt(kind: str, signals: dict) -> str:
     )
 
 
+def build_leave_pay_signals(raw: dict) -> dict:
+    """Collapse the core leave-pay series into a gold-signal dict.
+
+    ``raw`` is the core ``LeavePayCorrelationOut`` shape: ``{"pairs": [...]}``
+    newest-first with ``leave_days`` (int) and ``overtime`` (money string) per
+    completed run. Pearson's r is computed on the verified pairs via the stdlib;
+    the figure tokens are the verified r, sample size, and peak/highest months.
+    """
+    rows = [p for p in (raw.get("pairs") or []) if isinstance(p, dict)]
+    if len(rows) < _CORRELATION_MIN_MONTHS:
+        return {"pairs": rows, "figures": {}, "has_material_activity": False}
+
+    leave = [int(p.get("leave_days", 0) or 0) for p in rows]
+    overtime = [Decimal(str(p.get("overtime", "0"))) for p in rows]
+    try:
+        r = pearson(leave, [float(v) for v in overtime])
+    except StatisticsError:
+        # Zero variance in either series leaves r undefined - not a usable signal.
+        return {"pairs": rows, "figures": {}, "has_material_activity": False}
+
+    highest = max(rows, key=lambda p: int(p.get("leave_days", 0) or 0))
+    peak = max(rows, key=lambda p: Decimal(str(p.get("overtime", "0"))))
+    figures = {
+        "{{correlation}}": f"{r:.2f}",
+        "{{sample_size}}": str(len(rows)),
+        "{{highest_leave_month}}": str(highest.get("run_code", "")),
+        "{{highest_leave_days}}": str(highest.get("leave_days", "")),
+        "{{peak_overtime_month}}": str(peak.get("run_code", "")),
+        "{{peak_overtime}}": str(peak.get("overtime", "0")),
+    }
+    return {"pairs": rows, "correlation": f"{r:.2f}", "figures": figures, "has_material_activity": True}
+
+
 def has_material_activity(kind: str, signals: dict) -> bool:
-    """For payroll_cost: true when any movement delta is non-zero."""
-    if kind == "payroll_cost":
+    """Kind-specific gate: payroll-cost needs a non-zero delta; leave-pay
+    needs 12+ completed months with a definable correlation."""
+    if kind in ("payroll_cost", "leave_pay_correlation"):
         return bool(signals.get("has_material_activity"))
     return True

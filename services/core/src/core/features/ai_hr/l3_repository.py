@@ -20,6 +20,7 @@ from sqlalchemy.orm import aliased
 
 from core.features.hr.models.department import DepartmentModel
 from core.features.hr.models.employee import EmployeeModel
+from core.features.hr.models.leave_request import LeaveRequestModel, LeaveRequestStatus
 from core.features.payroll.models.payroll_entry import PayrollEntryModel
 from core.features.payroll.models.payroll_run import PayrollRunModel, PayrollRunStatus
 
@@ -62,6 +63,21 @@ class PayrollCostMovement:
     previous_overtime: Decimal
     overtime_delta: Decimal
     department_breakdown: list[DepartmentCostDelta] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class LeavePayPair:
+    """One monthly observation for the L3 leave-pay correlation (HR-AI-003, C2).
+
+    ``overtime`` is the cover overtime paid in the run; ``leave_days`` is the
+    approved leave falling inside the run's period. The correlation is a
+    derived statistic computed from these pairs (never a stored figure).
+    """
+
+    period_start: date
+    run_code: str
+    leave_days: int
+    overtime: Decimal
 
 
 _OVERTIME_SUM = func.coalesce(
@@ -142,6 +158,69 @@ class L3Repository:
                 for name in sorted(set(current_depts) | set(previous_depts))
             ],
         )
+
+    async def leave_pay_pairs(
+        self, tenant_id: uuid.UUID, *, limit: int = 12
+    ) -> list[LeavePayPair]:
+        """Monthly (approved leave days, overtime paid) over the last runs.
+
+        One row per paid/approved run, newest first, up to ``limit`` months.
+        Leave days are the approved requests overlapping the run's period;
+        overtime is the sum of ``adjustments->>'overtime_amount'`` in the run.
+        Returns an empty list when the tenant has no completed runs.
+        """
+        runs = (
+            (
+                await self.session.execute(
+                    select(PayrollRunModel)
+                    .where(
+                        PayrollRunModel.tenant_id == tenant_id,
+                        PayrollRunModel.status.in_(_PAID_OR_APPROVED),
+                    )
+                    .order_by(PayrollRunModel.period_start.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not runs:
+            return []
+        run_ids = [run.id for run in runs]
+
+        ot_rows = (
+            await self.session.execute(
+                select(PayrollEntryModel.run_id, _OVERTIME_SUM)
+                .where(
+                    PayrollEntryModel.tenant_id == tenant_id,
+                    PayrollEntryModel.run_id.in_(run_ids),
+                )
+                .group_by(PayrollEntryModel.run_id)
+            )
+        ).all()
+        overtime_by_run = {str(r[0]): Decimal(str(r[1])) for r in ot_rows}
+
+        pairs: list[LeavePayPair] = []
+        for run in runs:
+            leave_days = (
+                await self.session.execute(
+                    select(func.coalesce(func.sum(LeaveRequestModel.days), 0)).where(
+                        LeaveRequestModel.tenant_id == tenant_id,
+                        LeaveRequestModel.status == LeaveRequestStatus.APPROVED,
+                        LeaveRequestModel.start_date <= run.period_end,
+                        LeaveRequestModel.end_date >= run.period_start,
+                    )
+                )
+            ).scalar_one()
+            pairs.append(
+                LeavePayPair(
+                    period_start=run.period_start,
+                    run_code=str(run.run_code),
+                    leave_days=int(leave_days),
+                    overtime=overtime_by_run.get(str(run.id), Decimal("0")),
+                )
+            )
+        return pairs
 
     async def _entry_stats(self, tenant_id: uuid.UUID, run_id: uuid.UUID) -> tuple[int, Decimal]:
         """(entry count, overtime sum) for one run."""

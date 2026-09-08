@@ -58,7 +58,12 @@ from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
 from core.features.ai_hr.compliance_service import ComplianceService
 from core.features.ai_hr.eval_repository import EvalRunRepository
 from core.features.ai_hr.l3_repository import L3Repository
-from core.features.ai_hr.l3_schemas import PayrollCostMovementOut, movement_to_out
+from core.features.ai_hr.l3_schemas import (
+    LeavePayCorrelationOut,
+    PayrollCostMovementOut,
+    leave_pay_to_out,
+    movement_to_out,
+)
 from core.features.ai_hr.pattern_data_repository import AiHrPatternDataRepository
 from core.features.ai_hr.payroll_anomaly_service import PayrollAnomalyService
 from core.features.ai_hr.quality_service import QualityService
@@ -746,3 +751,14 @@ async def l3_payroll_cost_movement(
             "Insufficient payroll history for cost movement (need 2+ completed runs)"
         )
     return ResponseEnvelope(success=True, data=movement_to_out(movement))
+
+
+@router.get("/l3/leave-pay-correlation", response_model=ResponseEnvelope[LeavePayCorrelationOut])
+async def l3_leave_pay_correlation(
+    _management: _HrAiManagementDep,
+    current_user: _AiInvokeDep,
+    repo: _L3RepoDep,
+) -> ResponseEnvelope[LeavePayCorrelationOut]:
+    """L3 monthly (leave days, overtime) series for the narrator (HR-AI-003, C2)."""
+    pairs = await repo.leave_pay_pairs(_tenant_id(current_user))
+    return ResponseEnvelope(success=True, data=leave_pay_to_out(pairs))

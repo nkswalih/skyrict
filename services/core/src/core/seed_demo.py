@@ -873,7 +873,74 @@ COMPENSATION_ROWS: tuple[dict[str, object], ...] = (
 )
 
 # Payroll runs: (code, period_start, period_end, status, computed_days_ago)
+# 12 completed paid/approved runs (2025-04..2026-03) feed the L3 leave-pay
+# correlation (HR-AI-003, C2); the 2 most recent also feed the payroll-cost
+# movement (C1). PR-2026-04 (computed) + PR-2026-05 (draft) stay ahead of the
+# completed set for the anomaly fixtures.
 PAYROLL_RUN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "code": "PR-2025-04",
+        "start": "2025-04-01",
+        "end": "2025-04-30",
+        "status": "paid",
+        "days_ago": 500,
+    },
+    {
+        "code": "PR-2025-05",
+        "start": "2025-05-01",
+        "end": "2025-05-31",
+        "status": "paid",
+        "days_ago": 470,
+    },
+    {
+        "code": "PR-2025-06",
+        "start": "2025-06-01",
+        "end": "2025-06-30",
+        "status": "paid",
+        "days_ago": 440,
+    },
+    {
+        "code": "PR-2025-07",
+        "start": "2025-07-01",
+        "end": "2025-07-31",
+        "status": "paid",
+        "days_ago": 410,
+    },
+    {
+        "code": "PR-2025-08",
+        "start": "2025-08-01",
+        "end": "2025-08-31",
+        "status": "paid",
+        "days_ago": 380,
+    },
+    {
+        "code": "PR-2025-09",
+        "start": "2025-09-01",
+        "end": "2025-09-30",
+        "status": "paid",
+        "days_ago": 350,
+    },
+    {
+        "code": "PR-2025-10",
+        "start": "2025-10-01",
+        "end": "2025-10-31",
+        "status": "paid",
+        "days_ago": 320,
+    },
+    {
+        "code": "PR-2025-11",
+        "start": "2025-11-01",
+        "end": "2025-11-30",
+        "status": "paid",
+        "days_ago": 290,
+    },
+    {
+        "code": "PR-2025-12",
+        "start": "2025-12-01",
+        "end": "2025-12-31",
+        "status": "paid",
+        "days_ago": 260,
+    },
     {
         "code": "PR-2026-01",
         "start": "2026-01-01",
@@ -909,6 +976,45 @@ PAYROLL_RUN_ROWS: tuple[dict[str, object], ...] = (
         "status": "draft",
         "days_ago": 0,
     },
+)
+
+# HR-AI-003 (C2): per-completed-run overtime fraction of monthly base. Each
+# completed run pays this "cover overtime", scaled with that month's approved
+# leave (see _L3_LEAVE_BLOCKS below) so the leave-pay correlation resolves to
+# a strong positive r across the 12 months. PR-2026-03's 0.20 peak is also the
+# overhead that drives the payroll-cost overtime delta (C1).
+_L3_OT_PCT: dict[str, Decimal] = {
+    "PR-2025-04": Decimal("0.04"),
+    "PR-2025-05": Decimal("0.06"),
+    "PR-2025-06": Decimal("0.10"),
+    "PR-2025-07": Decimal("0.16"),
+    "PR-2025-08": Decimal("0.18"),
+    "PR-2025-09": Decimal("0.08"),
+    "PR-2025-10": Decimal("0.06"),
+    "PR-2025-11": Decimal("0.10"),
+    "PR-2025-12": Decimal("0.12"),
+    "PR-2026-01": Decimal("0.04"),
+    "PR-2026-02": Decimal("0.06"),
+    "PR-2026-03": Decimal("0.20"),
+}
+
+# HR-AI-003 (C2): one approved leave block per completed payroll month
+# (run_code, start, end, days). Days intentionally scale with _L3_OT_PCT so the
+# 12-month (leave_days, overtime) series has a strong positive correlation.
+# Blocks sit fully inside their run's period - no cross-month overlap.
+_L3_LEAVE_BLOCKS: tuple[tuple[str, date, date, int], ...] = (
+    ("PR-2025-04", date(2025, 4, 14), date(2025, 4, 15), 2),
+    ("PR-2025-05", date(2025, 5, 12), date(2025, 5, 14), 3),
+    ("PR-2025-06", date(2025, 6, 16), date(2025, 6, 20), 5),
+    ("PR-2025-07", date(2025, 7, 7), date(2025, 7, 14), 8),
+    ("PR-2025-08", date(2025, 8, 4), date(2025, 8, 12), 9),
+    ("PR-2025-09", date(2025, 9, 15), date(2025, 9, 18), 4),
+    ("PR-2025-10", date(2025, 10, 13), date(2025, 10, 15), 3),
+    ("PR-2025-11", date(2025, 11, 10), date(2025, 11, 14), 5),
+    ("PR-2025-12", date(2025, 12, 15), date(2025, 12, 20), 6),
+    ("PR-2026-01", date(2026, 1, 12), date(2026, 1, 13), 2),
+    ("PR-2026-02", date(2026, 2, 9), date(2026, 2, 11), 3),
+    ("PR-2026-03", date(2026, 3, 9), date(2026, 3, 20), 10),
 )
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2160,7 +2266,23 @@ async def seed_demo_data(
                 reason="Summer holiday",
             )
         )
-        counts["leave_requests"] = len(LEAVE_REQUEST_ROWS) + 1
+        # HR-AI-003 (C2): approved leave blocks across the 12 completed payroll
+        # months, giving the leave-pay correlation its monthly points. Rows are
+        # rotated across employees so the series reads like real headcount.
+        for _idx, (_code, _start, _end, _days) in enumerate(_L3_LEAVE_BLOCKS):
+            session.add(
+                LeaveRequestModel(
+                    tenant_id=tenant_id,
+                    employee_id=emp_ids[(_idx * 3) % len(emp_ids)],
+                    leave_type="annual",
+                    start_date=_start,
+                    end_date=_end,
+                    days=_days,
+                    status="approved",
+                    reason=f"L3 correlation demo block ({_code})",
+                )
+            )
+        counts["leave_requests"] = len(LEAVE_REQUEST_ROWS) + 1 + len(_L3_LEAVE_BLOCKS)
 
         # ── LEAVE BALANCES ───────────────────────────────────────────
         for emp_idx in range(len(emp_ids)):
@@ -2602,16 +2724,14 @@ async def seed_demo_data(
                     emp_net = base - deductions
                     gross += emp_gross
                     net += emp_net
-                    # HR-AI-003: Ops overtime spike in the most recent
-                    # paid/approved run (PR-2026-03) so the L3 cost movement
-                    # shows an overtime delta vs PR-2026-02. Department index 6
-                    # is Operations (see DEPARTMENT_ROWS).
+                    # HR-AI-003 (C2): each completed run carries the schedule's
+                    # cover-overtime fraction (see _L3_OT_PCT), so a month's
+                    # overtime tracks its approved leave. PR-2026-03's peak also
+                    # produces the payroll-cost overtime delta vs PR-2026-02 (C1).
                     adjustments = None
-                    if (
-                        run_row["code"] == "PR-2026-03"
-                        and employee_rows[emp_idx]["dept"] == 6
-                    ):
-                        adjustments = {"overtime_amount": str(base * Decimal("0.18"))}
+                    ot_frac = _L3_OT_PCT.get(str(run_row["code"]))
+                    if ot_frac is not None:
+                        adjustments = {"overtime_amount": str(base * ot_frac)}
                     entry = PayrollEntryModel(
                         tenant_id=tenant_id,
                         run_id=run.id,

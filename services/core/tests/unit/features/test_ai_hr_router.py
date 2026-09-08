@@ -742,11 +742,17 @@ def test_compliance_status_requires_ack_permission_and_returns_updated() -> None
 class _FakeL3Repository:
     def __init__(self) -> None:
         self.result: object | None = None
+        self.pairs: list[object] = []
         self.calls: list[uuid.UUID] = []
+        self.pair_calls: list[uuid.UUID] = []
 
     async def payroll_cost_movement(self, tenant_id: uuid.UUID) -> object | None:
         self.calls.append(tenant_id)
         return self.result
+
+    async def leave_pay_pairs(self, tenant_id: uuid.UUID, *, limit: int = 12) -> list[object]:
+        self.pair_calls.append(tenant_id)
+        return self.pairs
 
 
 def _l3_movement() -> object:
@@ -826,3 +832,32 @@ def test_l3_payroll_cost_insufficient_history_is_404() -> None:
     resp = client.get("/api/v1/ai/hr/l3/payroll-cost", headers={"authorization": "Bearer tok"})
 
     assert resp.status_code == 404
+
+
+def _l3_pair() -> object:
+    from datetime import date
+    from decimal import Decimal
+
+    from core.features.ai_hr.l3_repository import LeavePayPair
+
+    return LeavePayPair(
+        period_start=date(2026, 3, 1),
+        run_code="PR-2026-03",
+        leave_days=10,
+        overtime=Decimal("1500.00"),
+    )
+
+
+def test_l3_leave_pay_correlation_returns_pairs_with_string_money() -> None:
+    repo = _FakeL3Repository()
+    repo.pairs = [_l3_pair()]
+    client = _l3_app(repo)
+
+    resp = client.get("/api/v1/ai/hr/l3/leave-pay-correlation", headers={"authorization": "Bearer tok"})
+
+    assert resp.status_code == 200
+    assert repo.pair_calls == [TENANT_ID]
+    body = resp.json()["data"]
+    assert body["pairs"][0]["run_code"] == "PR-2026-03"
+    assert body["pairs"][0]["leave_days"] == 10
+    assert body["pairs"][0]["overtime"] == "1500.00"

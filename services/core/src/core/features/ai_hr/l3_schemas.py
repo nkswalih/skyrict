@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from core.features.ai_hr.l3_repository import PayrollCostMovement
+from core.features.ai_hr.l3_repository import LeavePayPair, PayrollCostMovement
 
 
 class DepartmentDeltaOut(BaseModel):
@@ -20,6 +20,21 @@ class DepartmentDeltaOut(BaseModel):
     current_net: str
     previous_net: str
     net_delta: str
+
+
+class LeavePayPairOut(BaseModel):
+    """One month's (approved leave days, overtime paid) observation."""
+
+    period_start: date
+    run_code: str
+    leave_days: int
+    overtime: str
+
+
+class LeavePayCorrelationOut(BaseModel):
+    """The monthly series ai-agent uses to compute the leave-pay correlation."""
+
+    pairs: list[LeavePayPairOut]
 
 
 class PayrollCostMovementOut(BaseModel):
@@ -78,4 +93,19 @@ def movement_to_out(m: PayrollCostMovement) -> PayrollCostMovementOut:
             )
             for d in m.department_breakdown
         ],
+    )
+
+
+def leave_pay_to_out(pairs: list[LeavePayPair]) -> LeavePayCorrelationOut:
+    """Convert leave-pay pairs to the wire response (money as strings)."""
+    return LeavePayCorrelationOut(
+        pairs=[
+            LeavePayPairOut(
+                period_start=p.period_start,
+                run_code=p.run_code,
+                leave_days=p.leave_days,
+                overtime=_money(p.overtime),
+            )
+            for p in pairs
+        ]
     )
