@@ -76,6 +76,8 @@ _AI_TABLES = (
     "ai_lead_scores",
     "ai_deal_health",
     "ai_follow_up_suggestions",
+    # HR-AI-003 L3 narrative snapshots (migration 0020)
+    "ai_l3_narrative_snapshots",
 )
 _TENANT_SCOPED_TABLES = (
     "ai_query_log",
@@ -119,6 +121,8 @@ _TENANT_FK_TABLES = (
     "ai_lead_scores",
     "ai_deal_health",
     "ai_follow_up_suggestions",
+    # HR-AI-003 L3 narrative snapshots are direct children of ``tenants``
+    "ai_l3_narrative_snapshots",
 )
 
 _EXPECTED_CHECKS = {

@@ -2602,6 +2602,16 @@ async def seed_demo_data(
                     emp_net = base - deductions
                     gross += emp_gross
                     net += emp_net
+                    # HR-AI-003: Ops overtime spike in the most recent
+                    # paid/approved run (PR-2026-03) so the L3 cost movement
+                    # shows an overtime delta vs PR-2026-02. Department index 6
+                    # is Operations (see DEPARTMENT_ROWS).
+                    adjustments = None
+                    if (
+                        run_row["code"] == "PR-2026-03"
+                        and employee_rows[emp_idx]["dept"] == 6
+                    ):
+                        adjustments = {"overtime_amount": str(base * Decimal("0.18"))}
                     entry = PayrollEntryModel(
                         tenant_id=tenant_id,
                         run_id=run.id,
@@ -2611,6 +2621,7 @@ async def seed_demo_data(
                         gross=emp_gross,
                         deductions=deductions,
                         net=emp_net,
+                        adjustments=adjustments,
                     )
                     session.add(entry)
 

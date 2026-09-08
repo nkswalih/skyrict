@@ -92,6 +92,7 @@ ERP_HR_AI_INDIVIDUAL = "erp.hr.ai.individual"
 ERP_HR_AI_ACKNOWLEDGE = "erp.hr.ai.acknowledge"
 ERP_HR_AI_COPILOT = "erp.hr.ai.copilot"
 ERP_HR_AI_EVAL = "erp.hr.ai.eval"
+ERP_HR_AI_MANAGEMENT = "erp.hr.ai.management"
 
 # Employee self-service portal (own leave balances/requests only; mirrors
 # identity's catalog so the invite flow can grant it portably)
@@ -151,6 +152,7 @@ CATALOG: tuple[str, ...] = (
     ERP_HR_AI_ACKNOWLEDGE,
     ERP_HR_AI_COPILOT,
     ERP_HR_AI_EVAL,
+    ERP_HR_AI_MANAGEMENT,
     ERP_LEAVE_SELF,
     ERP_PAYROLL_AI_READ,
     ERP_PAYROLL_AI_RUN,
@@ -198,6 +200,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             ERP_HR_AI_ACKNOWLEDGE,
             ERP_HR_AI_COPILOT,
             ERP_HR_AI_EVAL,
+            ERP_HR_AI_MANAGEMENT,
         ),
     ),
     ("leave_self", "Employee self-service", (ERP_LEAVE_SELF,)),
@@ -253,6 +256,7 @@ __all__ = [
     "ERP_HR_AI_COPILOT",
     "ERP_HR_AI_EVAL",
     "ERP_HR_AI_INDIVIDUAL",
+    "ERP_HR_AI_MANAGEMENT",
     "ERP_HR_AI_READ",
     "ERP_HR_APPROVE",
     "ERP_HR_READ",

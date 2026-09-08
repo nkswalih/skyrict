@@ -30,6 +30,7 @@ from core.core.permissions import (
     ERP_CRM_READ,
     ERP_CRM_WRITE,
     ERP_FINANCE_READ,
+    ERP_HR_AI_MANAGEMENT,
     ERP_INVENTORY_AI_APPROVE,
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
@@ -55,6 +56,11 @@ _WriteDep = Annotated[dict[str, Any], Depends(_require_inventory_write)]
 _AIApproveDep = Annotated[dict[str, Any], Depends(_require_inventory_ai_approve)]
 _CrmReadDep = Annotated[dict[str, Any], Depends(_require_crm_read)]
 _CrmWriteDep = Annotated[dict[str, Any], Depends(_require_crm_write)]
+
+# --- L3 HR/Payroll narratives (HR-AI-003) ----------------------------------
+# L3 outputs require erp.hr.ai.management everywhere (spec: management-only).
+_require_hr_ai_management = require_permission(ERP_HR_AI_MANAGEMENT)
+_HrAiManagementDep = Annotated[dict[str, Any], Depends(_require_hr_ai_management)]
 
 # --- Cross-module narrator (SKY-63) strict matrix ---------------------------
 # The digest spans all four ERP domains, so a caller must hold erp.ai.invoke
@@ -285,6 +291,33 @@ async def proxy_narrator_refresh(
 ) -> Response:
     """Force-recompute today's digest -> ai-agent /api/v1/ai/narrator/digest/refresh."""
     return await _proxy(request, client, "/api/v1/ai/narrator/digest/refresh")
+
+
+# --- L3 HR/Payroll narratives (HR-AI-003) -----------------------------------
+# Narration happens in ai-agent; the gate lives HERE at the core edge
+# (erp.hr.ai.management), mirroring the narrator/refresh convention.
+
+
+@router.get("/l3/{kind}")
+async def proxy_l3_narrative(
+    request: Request,
+    kind: str,
+    _management: _HrAiManagementDep,
+    client: _ClientDep,
+) -> Response:
+    """L3 narrative for a kind -> ai-agent /api/v1/ai/l3/{kind}."""
+    return await _proxy(request, client, f"/api/v1/ai/l3/{kind}")
+
+
+@router.post("/l3/{kind}/refresh")
+async def proxy_l3_narrative_refresh(
+    request: Request,
+    kind: str,
+    _management: _HrAiManagementDep,
+    client: _ClientDep,
+) -> Response:
+    """Force-recompute an L3 narrative -> ai-agent /api/v1/ai/l3/{kind}/refresh."""
+    return await _proxy(request, client, f"/api/v1/ai/l3/{kind}/refresh")
 
 
 # --- Demand forecasting (feature 4) ------------------------------------------
