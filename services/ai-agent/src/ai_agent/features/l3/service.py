@@ -12,11 +12,13 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ai_agent.core.audit_events import (
+    AI_L3_COMPLIANCE_DIGESTED,
     AI_L3_LEAVE_PAY_CORRELATED,
     AI_L3_PAYROLL_COST_GENERATED,
 )
 from ai_agent.db.l3_narrative_repository import L3NarrativeRepository
 from ai_agent.features.l3.extract import (
+    build_compliance_digest_signals,
     build_leave_pay_signals,
     build_payroll_cost_signals,
     build_prompt,
@@ -45,6 +47,7 @@ _KIND_GATEWAY_DISPATCH = {
 _KIND_AUDIT_EVENT = {
     "payroll_cost": AI_L3_PAYROLL_COST_GENERATED,
     "leave_pay_correlation": AI_L3_LEAVE_PAY_CORRELATED,
+    "compliance_digest": AI_L3_COMPLIANCE_DIGESTED,
 }
 
 
@@ -202,6 +205,8 @@ class L3NarrativeService:
             return build_payroll_cost_signals(raw)
         if kind == "leave_pay_correlation":
             return build_leave_pay_signals(raw)
+        if kind == "compliance_digest":
+            return build_compliance_digest_signals(raw)
         return raw
 
     async def _persist_abstention(

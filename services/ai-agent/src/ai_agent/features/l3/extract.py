@@ -100,9 +100,38 @@ def build_leave_pay_signals(raw: dict) -> dict:
     return {"pairs": rows, "correlation": f"{r:.2f}", "figures": figures, "has_material_activity": True}
 
 
+def build_compliance_digest_signals(raw: dict) -> dict:
+    """Collapse the core compliance-org response into a gold-signal dict.
+
+    ``raw`` is the core ``ComplianceOrgOut`` shape: aggregate counts by
+    check type / severity with an ``open_findings`` count and narrative.
+    Figure tokens are the verified counts; materiality requires at least
+    one open finding.
+    """
+    by_type = raw.get("by_type") or {}
+    by_severity = raw.get("by_severity") or {}
+    open_findings = int(raw.get("open_findings") or 0)
+    figures = {
+        "{{total_findings}}": str(raw.get("total_findings", 0)),
+        "{{open_findings}}": str(open_findings),
+        "{{document_expiry_count}}": str(by_type.get("document_expiry", 0)),
+        "{{training_overdue_count}}": str(by_type.get("training_overdue", 0)),
+        "{{contract_missing_field_count}}": str(by_type.get("contract_missing_field", 0)),
+        "{{critical_count}}": str(by_severity.get("critical", 0)),
+        "{{high_count}}": str(by_severity.get("high", 0)),
+    }
+    return {
+        "summary": raw.get("narrative", ""),
+        "by_type": by_type,
+        "by_severity": by_severity,
+        "figures": figures,
+        "has_material_activity": open_findings > 0,
+    }
+
+
 def has_material_activity(kind: str, signals: dict) -> bool:
-    """Kind-specific gate: payroll-cost needs a non-zero delta; leave-pay
-    needs 12+ completed months with a definable correlation."""
-    if kind in ("payroll_cost", "leave_pay_correlation"):
+    """Kind-specific gate: payroll-cost and compliance need non-zero deltas;
+    leave-pay needs 12+ completed months with a definable correlation."""
+    if kind in ("payroll_cost", "leave_pay_correlation", "compliance_digest"):
         return bool(signals.get("has_material_activity"))
     return True

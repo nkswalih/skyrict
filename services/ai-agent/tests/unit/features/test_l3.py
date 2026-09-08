@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from ai_agent.features.l3.extract import (
+    build_compliance_digest_signals,
     build_leave_pay_signals,
     build_payroll_cost_signals,
     build_prompt,
@@ -86,14 +87,32 @@ _CORRELATION_PAIRS = [
 ]
 
 _GOOD_LEAVE_JSON = ('{"title": "Leave and overtime track together {{correlation}}",'
-                    ' "summary": "Across {{sample_size}} months, approved leave and cover'
-                    ' overtime move together (r {{correlation}}), peaking in'
-                    ' {{peak_overtime_month}}.",'
-                    ' "points": ["Highest leave month {{highest_leave_month}}'
-                    ' with {{highest_leave_days}} days", "Overtime peak'
-                    ' {{peak_overtime}} in {{peak_overtime_month}}"],'
-                    ' "caveat": "Correlation is not causation; figures verified'
-                    ' against payroll sources."}')
+                     ' "summary": "Across {{sample_size}} months, approved leave and cover'
+                     ' overtime move together (r {{correlation}}), peaking in'
+                     ' {{peak_overtime_month}}.",'
+                     ' "points": ["Highest leave month {{highest_leave_month}}'
+                     ' with {{highest_leave_days}} days", "Overtime peak'
+                     ' {{peak_overtime}} in {{peak_overtime_month}}"],'
+                     ' "caveat": "Correlation is not causation; figures verified'
+                     ' against payroll sources."}')
+
+_COMPLIANCE_ORG_PAYLOAD = {
+    "total_findings": 4,
+    "open_findings": 4,
+    "by_type": {"document_expiry": 2, "training_overdue": 1, "contract_missing_field": 1},
+    "by_severity": {"critical": 0, "high": 1, "medium": 2, "low": 1},
+    "generated_at": "2026-09-08T12:00:00Z",
+    "narrative": "4 open compliance finding(-ies): 2 document expiries, "
+                 "1 overdue training, 1 missing record fields; 1 high, 0 critical.",
+}
+
+_GOOD_COMPLIANCE_JSON = ('{"title": "{{open_findings}} open compliance findings",'
+                         ' "summary": "{{open_findings}} items remain unresolved with'
+                         ' {{high_count}} high severity, including'
+                         ' {{document_expiry_count}} document expiry issues.",'
+                         ' "points": ["{{training_overdue_count}} training overdue",'
+                         ' "{{document_expiry_count}} document expiry finding(s)"],'
+                         ' "caveat": "Figures based on the latest compliance scan."}')
 
 
 class FakeGateway(L3CoreGatewayPort):
@@ -103,6 +122,8 @@ class FakeGateway(L3CoreGatewayPort):
         self.leave_payload: dict[str, object] = {
             "pairs": _CORRELATION_PAIRS
         }
+        self.compliance_calls: list[object] = []
+        self.compliance_payload: dict[str, object] = {**_COMPLIANCE_ORG_PAYLOAD}
 
     async def get_payroll_cost_movement(self, as_of: object) -> dict[str, object]:
         return self.payload
@@ -112,7 +133,8 @@ class FakeGateway(L3CoreGatewayPort):
         return self.leave_payload
 
     async def get_compliance_risk(self, as_of: object) -> dict[str, object]:
-        raise NotImplementedError
+        self.compliance_calls.append(as_of)
+        return self.compliance_payload
 
 
 class FakeLlm:
@@ -382,5 +404,63 @@ class TestLeavePayService:
         assert result.status == "abstained"
         assert result.source == "abstention"
         assert result.caveat, "abstention sets a caveat"
+        assert result.figures == {}
+        assert audit.events == []
+
+
+class TestComplianceDigestSignals:
+    def test_figures_reconcile_to_org_payload(self) -> None:
+        signals = build_compliance_digest_signals(_COMPLIANCE_ORG_PAYLOAD)
+        figures = signals["figures"]
+        assert signals["has_material_activity"] is True
+        assert has_material_activity("compliance_digest", signals) is True
+        assert figures["{{total_findings}}"] == "4"
+        assert figures["{{open_findings}}"] == "4"
+        assert figures["{{document_expiry_count}}"] == "2"
+        assert figures["{{training_overdue_count}}"] == "1"
+        assert figures["{{high_count}}"] == "1"
+        assert figures["{{critical_count}}"] == "0"
+
+    def test_zero_findings_is_not_material(self) -> None:
+        empty = {**_COMPLIANCE_ORG_PAYLOAD, "open_findings": 0, "total_findings": 0,
+                 "by_type": {}, "by_severity": {}}
+        signals = build_compliance_digest_signals(empty)
+        assert signals["has_material_activity"] is False
+        assert signals["figures"]["{{open_findings}}"] == "0"
+        assert has_material_activity("compliance_digest", signals) is False
+
+
+class TestComplianceDigestService:
+    async def test_generates_and_audits_compliance(self) -> None:
+        gateway = FakeGateway(_SPIKE_PAYLOAD)
+        svc, cache, audit, _ = _service(gateway=gateway,
+                                        llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
+        result = await svc.generate(
+            kind="compliance_digest", tenant_id=TENANT, user_id=USER,
+            as_of=AS_OF, force_refresh=False,
+        )
+        assert result.status == "generated"
+        assert result.source == "live"
+        assert "{{" not in result.title
+        assert result.figures["{{open_findings}}"] == "4"
+        assert result.figures["{{document_expiry_count}}"] == "2"
+        assert audit.events, "compliance generation must audit"
+        assert cache.inserted
+
+    async def test_abstains_when_zero_findings(self) -> None:
+        gateway = FakeGateway(_SPIKE_PAYLOAD)
+        gateway.compliance_payload = {
+            "total_findings": 0, "open_findings": 0,
+            "by_type": {}, "by_severity": {},
+            "generated_at": "2026-09-08T12:00:00Z", "narrative": "No findings.",
+        }
+        svc, cache, audit, _ = _service(gateway=gateway,
+                                        llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
+        result = await svc.generate(
+            kind="compliance_digest", tenant_id=TENANT, user_id=USER,
+            as_of=AS_OF, force_refresh=False,
+        )
+        assert result.status == "abstained"
+        assert result.source == "abstention"
         assert result.figures == {}
         assert audit.events == []

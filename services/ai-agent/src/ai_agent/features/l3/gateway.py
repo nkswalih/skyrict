@@ -98,4 +98,24 @@ class HttpL3CoreGateway:
         return data if isinstance(data, dict) else {}
 
     async def get_compliance_risk(self, as_of: object) -> dict[str, object]:
-        raise NotImplementedError("C3 compliance-digest not yet wired")
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.INVENTORY_SERVICE_TIMEOUT_SECONDS,
+            ) as client:
+                response = await client.get(
+                    f"{self._base_url}/api/v1/ai/hr/alerts/compliance",
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("l3_gateway_unreachable", path="/ai/hr/alerts/compliance")
+            raise AiUnavailableError("Core service is temporarily unavailable") from exc
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logger.warning("l3_gateway_bad_body", path="/ai/hr/alerts/compliance")
+            raise AiUnavailableError("Core service returned an unusable response") from exc
+        if not isinstance(payload, dict):
+            raise AiUnavailableError("Core service returned an unusable response")
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
