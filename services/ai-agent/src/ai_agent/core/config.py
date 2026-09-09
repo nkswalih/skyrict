@@ -357,6 +357,32 @@ class Settings(BaseSettings):
         default=True,
         description="whether the L3 service honours force-refresh requests at all",
     )
+    # The weekly compliance digest is a real APScheduler cron over all active
+    # tenants. Authentication mirrors the anomaly scan: the pass presents a
+    # provisioned service token + per-tenant X-Tenant-Slug; empty disables it.
+    L3_WEEKLY_DIGEST_ENABLED: bool = Field(
+        default=False,
+        description="start the weekly compliance-digest cron at boot (HR-AI-003)",
+    )
+    L3_WEEKLY_DIGEST_SERVICE_TOKEN: str = Field(
+        default="",
+        description=(
+            "bearer token the weekly compliance digest presents to core's "
+            "HR/compliance API. A background task has no user JWT, so it "
+            "authenticates with this service token + per-tenant X-Tenant-Slug "
+            "instead. Empty disables the scheduled pass (log-only)."
+        ),
+    )
+    L3_WEEKLY_DIGEST_DAY_OF_WEEK: str = Field(
+        default="mon",
+        description="weekday for the weekly compliance digest (APScheduler day_of_week)",
+    )
+    L3_WEEKLY_DIGEST_HOUR: int = Field(
+        default=8, ge=0, le=23, description="hour of day for the weekly compliance digest"
+    )
+    L3_WEEKLY_DIGEST_MINUTE: int = Field(
+        default=0, ge=0, le=59, description="minute of hour for the weekly compliance digest"
+    )
 
     # --- Email delivery (SMTP) for critical anomaly alerts (spec §4.3) ---
     EMAIL_SMTP_HOST: str = Field(

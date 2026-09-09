@@ -18,7 +18,6 @@ from ai_agent.core.audit_events import (
     AI_L3_LEAVE_PAY_CORRELATED,
     AI_L3_PAYROLL_COST_GENERATED,
 )
-from ai_agent.db.l3_narrative_repository import L3NarrativeRepository
 from ai_agent.features.l3.extract import (
     build_compliance_digest_signals,
     build_leave_pay_signals,
@@ -26,9 +25,8 @@ from ai_agent.features.l3.extract import (
     build_prompt,
     has_material_activity,
 )
-from ai_agent.features.l3.narrate import L3NarrativeText, narrate_l3
+from ai_agent.features.l3.narrate import narrate_l3
 from ai_agent.features.l3.render import render_narrative
-from ai_agent.models.l3_narrative import AiL3NarrativeModel
 from skyrict_common.exceptions import PermissionDeniedError
 
 if TYPE_CHECKING:
@@ -36,7 +34,9 @@ if TYPE_CHECKING:
 
     from ai_agent.core.audit_service import AuditService
     from ai_agent.core.llm_router import LlmRouter
+    from ai_agent.db.l3_narrative_repository import L3NarrativeRepository
     from ai_agent.features.l3.gateway import L3CoreGatewayPort
+    from ai_agent.models.l3_narrative import AiL3NarrativeModel
 
 logger = structlog.get_logger("ai_agent.l3_service")
 
@@ -205,6 +205,14 @@ class L3NarrativeService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    async def commit(self) -> None:
+        """Commit pending snapshot/audit rows.
+
+        Request flows commit via the request-session dependency; background
+        jobs (weekly digest cron) that factory their own session call this.
+        """
+        await self._cache._session.commit()
 
     async def _gather_signals(self, kind: str, as_of: date) -> dict[str, object]:
         method_name = _KIND_GATEWAY_DISPATCH.get(kind)
