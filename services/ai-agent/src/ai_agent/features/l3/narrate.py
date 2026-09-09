@@ -58,6 +58,8 @@ async def narrate_l3(llm_router: LlmRouter, prompt: str) -> L3NarrativeText | No
                 user_prompt=prompt,
                 max_tokens=600,
                 temperature=0.2,
+                think=False,
+                json_mode=True,
             )
         )
     except Exception:
