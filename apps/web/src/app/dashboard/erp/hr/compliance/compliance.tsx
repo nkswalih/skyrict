@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/dashboard/shared/page-header";
 import { FilterChipGroup } from "@/components/dashboard/shared/filter-chip-group";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/dashboard/shared/searchable-select";
 import { StatCard } from "@/components/dashboard/shared/stat-card";
+import { L3NarrativeCard } from "@/components/dashboard/erp/hr/l3-narrative-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -444,6 +445,11 @@ export function ComplianceClient() {
 
       {view.state === "summary" ? (
         <>
+          <L3NarrativeCard
+            kind="compliance_digest"
+            label="Weekly compliance digest"
+            accessibilityLabel="Weekly compliance digest"
+          />
           <SummaryCards summary={view.summary} />
           {empty ? (
             <section

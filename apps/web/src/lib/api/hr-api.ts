@@ -1714,3 +1714,144 @@ export async function setComplianceStatus(
     );
     return mapComplianceFinding(response);
 }
+
+// HR AI — L3 narratives (HR-AI-003): payroll cost, leave-pay correlation,
+// compliance weekly digest. Management-only (erp.hr.ai.management), aggregates
+// only, every access audited. The core edge relays the ai-agent response
+// verbatim (flat body, no `data` envelope).
+// ---------------------------------------------------------------------------
+
+export type L3NarrativeKind =
+    | "payroll_cost"
+    | "leave_pay_correlation"
+    | "compliance_digest";
+
+export interface L3Narrative {
+    status: string;
+    source: string;
+    asOf: string;
+    kind: L3NarrativeKind;
+    title: string | null;
+    summary: string | null;
+    points: string[];
+    caveat: string | null;
+    generatedAt: string | null;
+    modelUsed: string | null;
+    figures: Record<string, string>;
+}
+
+interface L3NarrativePayload {
+    status?: unknown;
+    source?: unknown;
+    as_of?: unknown;
+    kind?: unknown;
+    title?: unknown;
+    summary?: unknown;
+    points?: unknown;
+    caveat?: unknown;
+    generated_at?: unknown;
+    model_used?: unknown;
+    figures?: unknown;
+}
+
+export interface LeavePayPair {
+    periodStart: string;
+    runCode: string;
+    leaveDays: number;
+    overtime: string;
+}
+
+interface LeavePayCorrelationPayload {
+    pairs?: unknown;
+}
+
+function mapL3Narrative(payload: L3NarrativePayload): L3Narrative {
+    return {
+        status: String(payload.status ?? ""),
+        source: String(payload.source ?? ""),
+        asOf: String(payload.as_of ?? ""),
+        kind: String(payload.kind ?? "") as L3NarrativeKind,
+        title: payload.title != null ? String(payload.title) : null,
+        summary: payload.summary != null ? String(payload.summary) : null,
+        points: Array.isArray(payload.points)
+            ? (payload.points as unknown[]).map(String)
+            : [],
+        caveat: payload.caveat != null ? String(payload.caveat) : null,
+        generatedAt:
+            payload.generated_at != null ? String(payload.generated_at) : null,
+        modelUsed: payload.model_used != null ? String(payload.model_used) : null,
+        figures:
+            payload.figures != null && typeof payload.figures === "object"
+                ? Object.fromEntries(
+                      Object.entries(
+                          payload.figures as Record<string, unknown>,
+                      ).map(([key, value]) => [key, String(value)]),
+                  )
+                : {},
+    };
+}
+
+function mapLeavePayPairs(payload: LeavePayCorrelationPayload): LeavePayPair[] {
+    if (!Array.isArray(payload.pairs)) return [];
+    return (payload.pairs as unknown[]).map((raw) => {
+        const pair = raw as {
+            period_start?: unknown;
+            run_code?: unknown;
+            leave_days?: unknown;
+            overtime?: unknown;
+        };
+        return {
+            periodStart: String(pair.period_start ?? ""),
+            runCode: String(pair.run_code ?? ""),
+            leaveDays: Number(pair.leave_days ?? 0),
+            overtime: String(pair.overtime ?? "0"),
+        };
+    });
+}
+
+/** L3 narrative for one kind — cached, aggregate-only, management-gated. */
+export async function getL3Narrative(
+    kind: L3NarrativeKind,
+): Promise<L3Narrative> {
+    const response = await fetchWithSession(`/api/v1/ai/l3/${kind}`, {});
+    if (!response.ok) {
+        throw new ApiError(
+            response.status,
+            response.status === 403
+                ? "erp.hr.ai.management is required to view L3 narratives."
+                : "L3 narrative could not be loaded.",
+        );
+    }
+    const payload = (await response.json().catch(() => ({}))) as L3NarrativePayload;
+    return mapL3Narrative(payload);
+}
+
+/** Force-recompute an L3 narrative (same management gate as the read). */
+export async function refreshL3Narrative(
+    kind: L3NarrativeKind,
+): Promise<L3Narrative> {
+    try {
+        const payload = await apiPost<L3NarrativePayload>(
+            `/api/v1/ai/l3/${kind}/refresh`,
+            {},
+        );
+        return mapL3Narrative(payload);
+    } catch (error) {
+        if (error instanceof ApiError && error.status === 403) {
+            throw new ApiError(
+                403,
+                "erp.hr.ai.management is required to refresh L3 narratives.",
+            );
+        }
+        throw error;
+    }
+}
+
+/** The monthly (leave days, overtime) series the correlation narrates. */
+export async function getLeavePayCorrelation(): Promise<LeavePayPair[]> {
+    const payload = await apiFetch<LeavePayCorrelationPayload>(
+        "/api/v1/ai/hr/l3/leave-pay-correlation",
+        {},
+    );
+    return mapLeavePayPairs(payload);
+}
