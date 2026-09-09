@@ -15,9 +15,12 @@ _DELTA_KEYS = (
     "gross_delta",
     "net_delta",
     "overtime_delta",
+    "benefit_delta",
     "current_gross",
     "current_net",
     "current_overtime",
+    "current_benefit_adjustments",
+    "previous_benefit_adjustments",
     "current_headcount",
     "previous_headcount",
 )
@@ -111,6 +114,7 @@ def build_compliance_digest_signals(raw: dict) -> dict:
     by_type = raw.get("by_type") or {}
     by_severity = raw.get("by_severity") or {}
     open_findings = int(raw.get("open_findings") or 0)
+    ranked = raw.get("risk_ranked") or []
     figures = {
         "{{total_findings}}": str(raw.get("total_findings", 0)),
         "{{open_findings}}": str(open_findings),
@@ -120,10 +124,15 @@ def build_compliance_digest_signals(raw: dict) -> dict:
         "{{critical_count}}": str(by_severity.get("critical", 0)),
         "{{high_count}}": str(by_severity.get("high", 0)),
     }
+    for rank, group in enumerate(ranked[:3], start=1):
+        figures[f"{{{{rank_{rank}_type}}}}"] = str(group.get("check_type", ""))
+        figures[f"{{{{rank_{rank}_score}}}}"] = str(group.get("weighted_open_score", 0))
+        figures[f"{{{{rank_{rank}_open_count}}}}"] = str(group.get("open_count", 0))
     return {
         "summary": raw.get("narrative", ""),
         "by_type": by_type,
         "by_severity": by_severity,
+        "risk_ranked": ranked[:3],
         "figures": figures,
         "has_material_activity": open_findings > 0,
     }

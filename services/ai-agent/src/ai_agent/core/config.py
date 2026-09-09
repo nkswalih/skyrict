@@ -349,6 +349,15 @@ class Settings(BaseSettings):
         default=0, ge=0, le=59, description="minute of hour for the daily narrator digest"
     )
 
+    # --- L3 HR/Payroll narratives (HR-AI-003) ---
+    # Authorization for refresh lives at the core edge (erp.hr.ai.management +
+    # erp.ai.l3.refresh). This deployment flag is the service-level second gate:
+    # when False the L3 /refresh endpoints are refused here even if core permits.
+    L3_ALLOW_REFRESH: bool = Field(
+        default=True,
+        description="whether the L3 service honours force-refresh requests at all",
+    )
+
     # --- Email delivery (SMTP) for critical anomaly alerts (spec §4.3) ---
     EMAIL_SMTP_HOST: str = Field(
         default="",

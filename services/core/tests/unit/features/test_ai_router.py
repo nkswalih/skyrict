@@ -23,6 +23,7 @@ from core.api.deps import get_current_user, get_db
 from core.core.exceptions import SkyrictError, skyrict_error_handler
 from core.core.permissions import (
     ERP_AI_INVOKE,
+    ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
     ERP_CRM_READ,
     ERP_FINANCE_READ,
@@ -222,7 +223,7 @@ class TestL3Narratives:
         assert seen[0].url.query == b"as_of=2026-09-08"
 
     def test_refresh_forwards(self) -> None:
-        self._grant(ERP_HR_AI_MANAGEMENT)
+        self._grant(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
         seen: list[httpx.Request] = []
 
         response = self._app(seen).post(
@@ -234,8 +235,12 @@ class TestL3Narratives:
         assert len(seen) == 1
         assert seen[0].url.path == "/api/v1/ai/l3/payroll_cost/refresh"
 
-    def test_refresh_gated_by_management(self) -> None:
+    def test_refresh_requires_dedicated_key_in_addition_to_management(self) -> None:
         self._grant(ERP_HR_AI_MANAGEMENT)
+        assert self._app([]).post("/api/v1/ai/l3/payroll_cost/refresh").status_code == 403
+
+    def test_refresh_gated_by_management_plus_refresh_key(self) -> None:
+        self._grant(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
         assert self._app([]).post("/api/v1/ai/l3/payroll_cost/refresh").status_code == 200
 
     def test_without_management_denied(self) -> None:

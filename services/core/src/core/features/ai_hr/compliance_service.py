@@ -44,6 +44,8 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     ComplianceStatus.RESOLVED: frozenset(),
 }
 
+_SEVERITY_WEIGHTS: dict[str, int] = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
 
 class AiHrComplianceRepositoryPort(Protocol):
     async def latest_generated_at(self, tenant_id: uuid.UUID) -> datetime | None: ...
@@ -73,6 +75,16 @@ class AiHrComplianceRepositoryPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ComplianceRiskGroup:
+    """Severity-weighted risk for one check type — drives the L3 rank order."""
+
+    check_type: str
+    weighted_open_score: int
+    open_count: int
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class ComplianceOrgSummary:
     """L1 aggregates across the tenant (no per-person data)."""
 
@@ -80,6 +92,7 @@ class ComplianceOrgSummary:
     open_findings: int
     by_type: dict[str, int]
     by_severity: dict[str, int]
+    risk_ranked: list[ComplianceRiskGroup]
     generated_at: datetime
     narrative: str
 
@@ -158,6 +171,25 @@ class ComplianceService:
         by_type = Counter(f.check_type for f in findings)
         by_severity = Counter(f.severity for f in findings)
         open_count = sum(1 for f in findings if f.status == ComplianceStatus.OPEN)
+
+        groups: dict[str, list[int]] = {}
+        for f in findings:
+            groups.setdefault(f.check_type, []).append(
+                _SEVERITY_WEIGHTS.get(f.severity, 1) if f.status == ComplianceStatus.OPEN else 0
+            )
+        risk_ranked = sorted(
+            (
+                ComplianceRiskGroup(
+                    check_type=check_type,
+                    weighted_open_score=sum(scores),
+                    open_count=sum(1 for s in scores if s),
+                    total_count=len(scores),
+                )
+                for check_type, scores in groups.items()
+            ),
+            key=lambda g: (-g.weighted_open_score, g.check_type),
+        )
+
         narrative = (
             f"{open_count} open compliance finding(-ies): "
             f"{by_type.get('document_expiry', 0)} document expiries, "
@@ -171,6 +203,7 @@ class ComplianceService:
             open_findings=open_count,
             by_type=dict(by_type),
             by_severity=dict(by_severity),
+            risk_ranked=risk_ranked,
             generated_at=findings[0].created_at if findings else datetime.now(UTC),
             narrative=narrative,
         )
@@ -180,5 +213,6 @@ __all__ = [
     "AiHrComplianceRepositoryPort",
     "ComplianceFindingRow",
     "ComplianceOrgSummary",
+    "ComplianceRiskGroup",
     "ComplianceService",
 ]

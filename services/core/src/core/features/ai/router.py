@@ -26,6 +26,7 @@ from fastapi.responses import Response
 from core.api.deps import require_all_permissions, require_permission
 from core.core.permissions import (
     ERP_AI_INVOKE,
+    ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
     ERP_CRM_READ,
     ERP_CRM_WRITE,
@@ -65,8 +66,12 @@ _require_reports_create = require_all_permissions(ERP_REPORTS_READ, ERP_REPORTS_
 
 # --- L3 HR/Payroll narratives (HR-AI-003) ----------------------------------
 # L3 outputs require erp.hr.ai.management everywhere (spec: management-only).
+# Force-refresh adds erp.ai.l3.refresh - the same two-tier convention as the
+# SKY-63 narrator (reads + a dedicated refresh key).
 _require_hr_ai_management = require_permission(ERP_HR_AI_MANAGEMENT)
 _HrAiManagementDep = Annotated[dict[str, Any], Depends(_require_hr_ai_management)]
+_require_hr_ai_l3_refresh = require_all_permissions(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
+_HrAiL3RefreshDep = Annotated[dict[str, Any], Depends(_require_hr_ai_l3_refresh)]
 
 # --- Cross-module narrator (SKY-63) strict matrix ---------------------------
 # The digest spans all four ERP domains, so a caller must hold erp.ai.invoke
@@ -322,10 +327,14 @@ async def proxy_l3_narrative(
 async def proxy_l3_narrative_refresh(
     request: Request,
     kind: str,
-    _management: _HrAiManagementDep,
+    _refresh: _HrAiL3RefreshDep,
     client: _ClientDep,
 ) -> Response:
-    """Force-recompute an L3 narrative -> ai-agent /api/v1/ai/l3/{kind}/refresh."""
+    """Force-recompute an L3 narrative -> ai-agent /api/v1/ai/l3/{kind}/refresh.
+
+    Two-tier gate: erp.hr.ai.management (read) AND erp.ai.l3.refresh (refresh),
+    mirroring the narrator/refresh convention.
+    """
     return await _proxy(request, client, f"/api/v1/ai/l3/{kind}/refresh")
 
 

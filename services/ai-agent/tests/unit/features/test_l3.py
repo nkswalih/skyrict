@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from ai_agent.core.audit_events import AI_L3_ABSTAINED, AI_L3_ACCESSED
 from ai_agent.features.l3.extract import (
     build_compliance_digest_signals,
     build_leave_pay_signals,
@@ -50,6 +51,9 @@ _SPIKE_PAYLOAD = {
     "current_overtime": "21600.00",
     "previous_overtime": "0.00",
     "overtime_delta": "21600.00",
+    "current_benefit_adjustments": "500.00",
+    "previous_benefit_adjustments": "0.00",
+    "benefit_delta": "500.00",
     "department_breakdown": [
         {"department_name": "Operations", "current_net": "52060.00", "previous_net": "41400.00",
          "net_delta": "10660.00"},
@@ -101,6 +105,11 @@ _COMPLIANCE_ORG_PAYLOAD = {
     "open_findings": 4,
     "by_type": {"document_expiry": 2, "training_overdue": 1, "contract_missing_field": 1},
     "by_severity": {"critical": 0, "high": 1, "medium": 2, "low": 1},
+    "risk_ranked": [
+        {"check_type": "document_expiry", "weighted_open_score": 5, "open_count": 2, "total_count": 2},
+        {"check_type": "training_overdue", "weighted_open_score": 2, "open_count": 1, "total_count": 1},
+        {"check_type": "contract_missing_field", "weighted_open_score": 1, "open_count": 1, "total_count": 1},
+    ],
     "generated_at": "2026-09-08T12:00:00Z",
     "narrative": "4 open compliance finding(-ies): 2 document expiries, "
                  "1 overdue training, 1 missing record fields; 1 high, 0 critical.",
@@ -231,6 +240,8 @@ class TestPayrollCostSignals:
         figures = signals["figures"]
         # Every figure token carries the EXACT string from the source payload.
         assert figures["{{overtime_delta}}"] == "21600.00"
+        assert figures["{{benefit_delta}}"] == "500.00"
+        assert figures["{{current_benefit_adjustments}}"] == "500.00"
         assert figures["{{net_delta}}"] == "9120.00"
         assert figures["{{gross_delta}}"] == "14400.00"
         assert figures["{{headcount_delta}}"] == "0"
@@ -312,6 +323,7 @@ class TestService:
                                     user_id=USER, as_of=AS_OF, force_refresh=False)
         assert result.source == "cache"
         assert len(cache.inserted) == 1
+        assert audit.events[-1]["action"] == AI_L3_ACCESSED
 
     async def test_force_refresh_allowed_when_gate_open(self) -> None:
         svc, cache, _, _ = _service()
@@ -332,7 +344,7 @@ class TestService:
                                     user_id=USER, as_of=AS_OF, force_refresh=False)
         assert result.status == "abstained"
         assert result.source == "llm_disabled"
-        assert audit.events == []
+        assert [e["action"] for e in audit.events] == [AI_L3_ABSTAINED]
 
     async def test_unparseable_llm_abstains(self) -> None:
         svc, _, audit, _ = _service(llm=FakeLlm(text="not json at all"))
@@ -405,7 +417,7 @@ class TestLeavePayService:
         assert result.source == "abstention"
         assert result.caveat, "abstention sets a caveat"
         assert result.figures == {}
-        assert audit.events == []
+        assert [e["action"] for e in audit.events] == [AI_L3_ABSTAINED]
 
 
 class TestComplianceDigestSignals:
@@ -420,10 +432,15 @@ class TestComplianceDigestSignals:
         assert figures["{{training_overdue_count}}"] == "1"
         assert figures["{{high_count}}"] == "1"
         assert figures["{{critical_count}}"] == "0"
+        assert figures["{{rank_1_type}}"] == "document_expiry"
+        assert figures["{{rank_1_score}}"] == "5"
+        assert figures["{{rank_1_open_count}}"] == "2"
+        assert figures["{{rank_2_type}}"] == "training_overdue"
+        assert figures["{{rank_3_type}}"] == "contract_missing_field"
 
     def test_zero_findings_is_not_material(self) -> None:
         empty = {**_COMPLIANCE_ORG_PAYLOAD, "open_findings": 0, "total_findings": 0,
-                 "by_type": {}, "by_severity": {}}
+                 "by_type": {}, "by_severity": {}, "risk_ranked": []}
         signals = build_compliance_digest_signals(empty)
         assert signals["has_material_activity"] is False
         assert signals["figures"]["{{open_findings}}"] == "0"
@@ -463,4 +480,4 @@ class TestComplianceDigestService:
         assert result.status == "abstained"
         assert result.source == "abstention"
         assert result.figures == {}
-        assert audit.events == []
+        assert [e["action"] for e in audit.events] == [AI_L3_ABSTAINED]

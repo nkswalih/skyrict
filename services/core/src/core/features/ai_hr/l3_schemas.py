@@ -56,6 +56,9 @@ class PayrollCostMovementOut(BaseModel):
     current_overtime: str
     previous_overtime: str
     overtime_delta: str
+    current_benefit_adjustments: str
+    previous_benefit_adjustments: str
+    benefit_delta: str
     department_breakdown: list[DepartmentDeltaOut]
 
 
@@ -84,6 +87,9 @@ def movement_to_out(m: PayrollCostMovement) -> PayrollCostMovementOut:
         current_overtime=_money(m.current_overtime),
         previous_overtime=_money(m.previous_overtime),
         overtime_delta=_money(m.overtime_delta),
+        current_benefit_adjustments=_money(m.current_benefit_adjustments),
+        previous_benefit_adjustments=_money(m.previous_benefit_adjustments),
+        benefit_delta=_money(m.benefit_delta),
         department_breakdown=[
             DepartmentDeltaOut(
                 department_name=d.department_name,

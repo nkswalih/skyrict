@@ -62,6 +62,9 @@ class PayrollCostMovement:
     current_overtime: Decimal
     previous_overtime: Decimal
     overtime_delta: Decimal
+    current_benefit_adjustments: Decimal
+    previous_benefit_adjustments: Decimal
+    benefit_delta: Decimal
     department_breakdown: list[DepartmentCostDelta] = field(default_factory=list)
 
 
@@ -82,6 +85,22 @@ class LeavePayPair:
 
 _OVERTIME_SUM = func.coalesce(
     func.sum(text("(erp_payroll_entries.adjustments->>'overtime_amount')::numeric")), 0
+)
+
+# Benefit adjustments: an allowlist over the existing ``adjustments`` JSONB so
+# the L3 cost movement exposes a benefit figure without inventing a second
+# "benefit" domain conflicting with HR benefit plans/elections. The domain's
+# adjustment keys are overtime_amount/amount/bonus/other_deduction/reason and
+# the seed only writes overtime_amount, so a demo benefit_delta is normally 0
+# until real data populates amount/bonus.
+_BENEFIT_ADJUSTMENT_KEYS = ("bonus", "amount")
+
+_BENEFIT_SUM = func.coalesce(
+    func.sum(
+        func.coalesce(text("(erp_payroll_entries.adjustments->>'bonus')::numeric"), 0)
+        + func.coalesce(text("(erp_payroll_entries.adjustments->>'amount')::numeric"), 0)
+    ),
+    0,
 )
 
 _PAID_OR_APPROVED = (PayrollRunStatus.PAID, PayrollRunStatus.APPROVED)
@@ -117,8 +136,16 @@ class L3Repository:
             return None
         current, previous = runs
 
-        current_count, current_overtime = await self._entry_stats(tenant_id, current.id)
-        previous_count, previous_overtime = await self._entry_stats(tenant_id, previous.id)
+        (
+            current_count,
+            current_overtime,
+            current_benefit,
+        ) = await self._entry_stats(tenant_id, current.id)
+        (
+            previous_count,
+            previous_overtime,
+            previous_benefit,
+        ) = await self._entry_stats(tenant_id, previous.id)
 
         current_gross = Decimal(str(current.total_gross or 0))
         current_net = Decimal(str(current.total_net or 0))
@@ -147,6 +174,9 @@ class L3Repository:
             current_overtime=current_overtime,
             previous_overtime=previous_overtime,
             overtime_delta=current_overtime - previous_overtime,
+            current_benefit_adjustments=current_benefit,
+            previous_benefit_adjustments=previous_benefit,
+            benefit_delta=current_benefit - previous_benefit,
             department_breakdown=[
                 DepartmentCostDelta(
                     department_name=name,
@@ -222,17 +252,19 @@ class L3Repository:
             )
         return pairs
 
-    async def _entry_stats(self, tenant_id: uuid.UUID, run_id: uuid.UUID) -> tuple[int, Decimal]:
-        """(entry count, overtime sum) for one run."""
+    async def _entry_stats(
+        self, tenant_id: uuid.UUID, run_id: uuid.UUID
+    ) -> tuple[int, Decimal, Decimal]:
+        """(entry count, overtime sum, benefit-adjustment sum) for one run."""
         row = (
             await self.session.execute(
-                select(func.count(PayrollEntryModel.id), _OVERTIME_SUM).where(
+                select(func.count(PayrollEntryModel.id), _OVERTIME_SUM, _BENEFIT_SUM).where(
                     PayrollEntryModel.tenant_id == tenant_id,
                     PayrollEntryModel.run_id == run_id,
                 )
             )
         ).one()
-        return int(row[0]), Decimal(str(row[1]))
+        return int(row[0]), Decimal(str(row[1])), Decimal(str(row[2]))
 
     async def _dept_nets(self, tenant_id: uuid.UUID, run_id: uuid.UUID) -> dict[str, Decimal]:
         """Run net totals bucketed by department, ``(name, net)`` by name."""

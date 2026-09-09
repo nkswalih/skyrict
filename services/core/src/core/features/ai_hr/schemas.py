@@ -642,6 +642,15 @@ class ComplianceFindingOut(BaseModel):
     created_at: datetime
 
 
+class ComplianceRiskGroupOut(BaseModel):
+    """One check type's severity-weighted risk (open findings only)."""
+
+    check_type: str
+    weighted_open_score: int
+    open_count: int
+    total_count: int
+
+
 class ComplianceOrgOut(BaseModel):
     """L1 aggregate response — never carries an employee identifier/name."""
 
@@ -649,6 +658,7 @@ class ComplianceOrgOut(BaseModel):
     open_findings: int
     by_type: dict[str, int]
     by_severity: dict[str, int]
+    risk_ranked: list[ComplianceRiskGroupOut]
     generated_at: datetime
     narrative: str
 
@@ -687,6 +697,15 @@ def compliance_org_to_out(summary: ComplianceOrgSummary) -> ComplianceOrgOut:
         open_findings=summary.open_findings,
         by_type=summary.by_type,
         by_severity=summary.by_severity,
+        risk_ranked=[
+            ComplianceRiskGroupOut(
+                check_type=g.check_type,
+                weighted_open_score=g.weighted_open_score,
+                open_count=g.open_count,
+                total_count=g.total_count,
+            )
+            for g in summary.risk_ranked
+        ],
         generated_at=summary.generated_at,
         narrative=summary.narrative,
     )
@@ -698,6 +717,7 @@ __all__ = [
     "AttritionSummaryOut",
     "ComplianceFindingOut",
     "ComplianceOrgOut",
+    "ComplianceRiskGroupOut",
     "ComplianceStatusWrite",
     "DepartmentCount",
     "DepartmentCountOut",

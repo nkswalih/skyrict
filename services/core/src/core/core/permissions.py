@@ -84,6 +84,12 @@ ERP_AI_INVOKE = "erp.ai.invoke"
 # the daily digest out of turn; plain reads need the strict narrator matrix.
 ERP_AI_NARRATOR_REFRESH = "erp.ai.narrator.refresh"
 
+# L3 HR/Payroll narratives (HR-AI-003): force-refresh gate on the
+# /api/v1/ai/l3/{kind}/refresh proxy. Mirrors the narrator convention - a
+# caller must hold the L3 read gate (erp.hr.ai.management) AND this refresh
+# key to force LLM narration out of turn; plain reads need management only.
+ERP_AI_L3_REFRESH = "erp.ai.l3.refresh"
+
 # HR & Payroll AI slice (docs/modules/skyrict-ai/hr-payroll-ai-features.md §3).
 # Checked at the core edge for /api/v1/ai/hr/*. Same strings as identity's
 # catalog so role grants stay portable across the platform.
@@ -151,6 +157,7 @@ CATALOG: tuple[str, ...] = (
     ERP_PAYROLL_APPROVE,
     ERP_AI_INVOKE,
     ERP_AI_NARRATOR_REFRESH,
+    ERP_AI_L3_REFRESH,
     ERP_HR_AI_READ,
     ERP_HR_AI_INDIVIDUAL,
     ERP_HR_AI_ACKNOWLEDGE,
@@ -195,7 +202,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("fx", "FX rates", (CORE_FX_READ, CORE_FX_WRITE)),
     ("hr", "HR", (ERP_HR_READ, ERP_HR_WRITE, ERP_HR_APPROVE)),
     ("payroll", "Payroll", (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE)),
-    ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH)),
+    ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH, ERP_AI_L3_REFRESH)),
     (
         "hr_ai",
         "HR & Payroll AI",
@@ -249,6 +256,7 @@ __all__ = [
     "CORE_FX_READ",
     "CORE_FX_WRITE",
     "ERP_AI_INVOKE",
+    "ERP_AI_L3_REFRESH",
     "ERP_AI_NARRATOR_REFRESH",
     "ERP_CRM_READ",
     "ERP_CRM_WRITE",

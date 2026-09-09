@@ -1,8 +1,10 @@
 """/ai/l3 endpoints - L3 HR/Payroll narrative feature.
 
 Authentication happens here; authorization happens upstream at the core
-monolith proxy. The force-refresh action is gated by
-``erp.ai.l3.refresh`` at the same edge.
+monolith proxy. The force-refresh action is AND-gated there by
+``erp.hr.ai.management`` (read) plus ``erp.ai.l3.refresh`` (refresh) - the
+same two-tier convention as the SKY-63 narrator. As a second gate, the
+service honours force-refresh only while ``settings.L3_ALLOW_REFRESH`` is set.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ def _get_gateway(request: Request) -> L3CoreGatewayPort:
 
 
 def _get_refresh_allowed() -> bool:
-    return True
+    return settings.L3_ALLOW_REFRESH
 
 
 def _build_service(

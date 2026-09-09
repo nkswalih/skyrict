@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ai_agent.core.audit_events import (
+    AI_L3_ABSTAINED,
+    AI_L3_ACCESSED,
     AI_L3_COMPLIANCE_DIGESTED,
     AI_L3_LEAVE_PAY_CORRELATED,
     AI_L3_PAYROLL_COST_GENERATED,
@@ -102,6 +104,15 @@ class L3NarrativeService:
             cached = await self._cache.latest_for_kind(tenant_id, kind, as_of)
             if cached is not None and self._cache.is_fresh_for(cached, as_of):
                 logger.info("l3.cache_hit", tenant_id=tenant_id, kind=kind)
+                await self._audit.log(
+                    action=AI_L3_ACCESSED,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    input_payload={"as_of": as_of.isoformat(), "kind": kind, "force_refresh": False},
+                    output_payload={"status": cached.status, "generated_at": (cached.generated_at or "").isoformat()}
+                    if cached.generated_at
+                    else {"status": cached.status},
+                )
                 return _from_row(cached, kind=kind, source="cache")
 
         if force_refresh and not self._allow_refresh:
@@ -221,6 +232,13 @@ class L3NarrativeService:
         user_id: uuid.UUID | None,
     ) -> L3NarrativeResult:
         generated_at = datetime.now(tz=UTC)
+        await self._audit.log(
+            action=AI_L3_ABSTAINED,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            input_payload={"as_of": as_of.isoformat(), "kind": kind, "source": source},
+            output_payload={"reason": reason},
+        )
         await self._cache.insert(
             tenant_id=tenant_id,
             kind=kind,

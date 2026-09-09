@@ -80,6 +80,12 @@ AI_L3_LEAVE_PAY_CORRELATED = "ai.l3.leave_pay.correlated"
 AI_L3_COMPLIANCE_DIGESTED = "ai.l3.compliance.digested"
 """The L3 compliance-digest narrative was generated."""
 
+AI_L3_ACCESSED = "ai.l3.accessed"
+"""An L3 narrative was retrieved from cache (every read is audited)."""
+
+AI_L3_ABSTAINED = "ai.l3.abstained"
+"""The L3 narrator abstained (no material activity, LLM disabled, or unusable output)."""
+
 AI_REPORT_GENERATED = "ai.report.generated"
 """The NL report builder generated (and ran) a report from free text (SKY-80)."""
 
@@ -110,6 +116,8 @@ ALL_AI_AUDIT_EVENTS = frozenset(
         AI_L3_PAYROLL_COST_GENERATED,
         AI_L3_LEAVE_PAY_CORRELATED,
         AI_L3_COMPLIANCE_DIGESTED,
+        AI_L3_ACCESSED,
+        AI_L3_ABSTAINED,
         AI_REPORT_GENERATED,
         AI_REPORT_SAVED,
     }

@@ -604,7 +604,7 @@ class _FakeComplianceService:
 
     async def org_feed(self, tenant_id: uuid.UUID) -> object:
         self.org_calls.append(tenant_id)
-        from core.features.ai_hr.compliance_service import ComplianceOrgSummary
+        from core.features.ai_hr.compliance_service import ComplianceOrgSummary, ComplianceRiskGroup
 
         return ComplianceOrgSummary(
             total_findings=3,
@@ -615,6 +615,20 @@ class _FakeComplianceService:
                 "contract_missing_field": 1,
             },
             by_severity={"high": 1, "medium": 1, "low": 1},
+            risk_ranked=[
+                ComplianceRiskGroup(
+                    check_type="document_expiry",
+                    weighted_open_score=3,
+                    open_count=1,
+                    total_count=1,
+                ),
+                ComplianceRiskGroup(
+                    check_type="training_overdue",
+                    weighted_open_score=1,
+                    open_count=1,
+                    total_count=1,
+                ),
+            ],
             generated_at=datetime(2026, 1, 1, tzinfo=UTC),
             narrative="2 open compliance finding(-ies) ...",
         )
@@ -685,6 +699,9 @@ def test_compliance_org_feed_returns_l1_aggregate() -> None:
     assert body["by_type"]["contract_missing_field"] == 1
     assert body["by_severity"]["high"] == 1
     assert "narrative" in body
+    assert body["risk_ranked"][0]["check_type"] == "document_expiry"
+    assert body["risk_ranked"][0]["weighted_open_score"] == 3
+    assert body["risk_ranked"][1]["check_type"] == "training_overdue"
 
 
 def test_compliance_employee_feed_403_without_individual() -> None:
@@ -780,6 +797,9 @@ def _l3_movement() -> object:
         current_overtime=Decimal("21600.00"),
         previous_overtime=Decimal("0.00"),
         overtime_delta=Decimal("21600.00"),
+        current_benefit_adjustments=Decimal("500.00"),
+        previous_benefit_adjustments=Decimal("0.00"),
+        benefit_delta=Decimal("500.00"),
         department_breakdown=[
             DepartmentCostDelta("Operations", Decimal("52060.00"), Decimal("41400.00"),
                                 Decimal("10660.00")),
@@ -819,6 +839,8 @@ def test_l3_payroll_cost_returns_movement_with_string_money() -> None:
     assert body["previous_run_code"] == "PR-2026-02"
     assert body["net_delta"] == "9120.00"
     assert body["overtime_delta"] == "21600.00"
+    assert body["benefit_delta"] == "500.00"
+    assert body["current_benefit_adjustments"] == "500.00"
     assert body["headcount_delta"] == 0
     assert body["department_breakdown"][0]["department_name"] == "Operations"
     assert body["department_breakdown"][0]["net_delta"] == "10660.00"

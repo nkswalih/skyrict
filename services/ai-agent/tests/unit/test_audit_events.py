@@ -23,6 +23,8 @@ from ai_agent.core.audit_events import (
     AI_FOLLOW_UP_GENERATED,
     AI_HR_COPILOT_EXCHANGE,
     AI_LEAD_SCORED,
+    AI_L3_ABSTAINED,
+    AI_L3_ACCESSED,
     AI_L3_COMPLIANCE_DIGESTED,
     AI_L3_LEAVE_PAY_CORRELATED,
     AI_L3_PAYROLL_COST_GENERATED,
@@ -73,6 +75,10 @@ class TestAppendixBVocabulary:
         assert AI_L3_LEAVE_PAY_CORRELATED == "ai.l3.leave_pay.correlated"
         assert AI_L3_COMPLIANCE_DIGESTED == "ai.l3.compliance.digested"
 
+        # HR-AI-003 every access / abstention is audited.
+        assert AI_L3_ACCESSED == "ai.l3.accessed"
+        assert AI_L3_ABSTAINED == "ai.l3.abstained"
+
     def test_all_events_covers_exactly_the_documented_constants(self) -> None:
         expected = {
             audit_events.AI_QUERY_EXECUTED,
@@ -97,6 +103,8 @@ class TestAppendixBVocabulary:
             audit_events.AI_L3_PAYROLL_COST_GENERATED,
             audit_events.AI_L3_LEAVE_PAY_CORRELATED,
             audit_events.AI_L3_COMPLIANCE_DIGESTED,
+            audit_events.AI_L3_ACCESSED,
+            audit_events.AI_L3_ABSTAINED,
             audit_events.AI_REPORT_GENERATED,
             audit_events.AI_REPORT_SAVED,
         }
