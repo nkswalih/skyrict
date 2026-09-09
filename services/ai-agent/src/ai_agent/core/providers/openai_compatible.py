@@ -111,9 +111,21 @@ class OpenAiCompatibleProvider:
             ],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
+            # Explicit, not implicit: OpenAI defaults to non-stream, but some
+            # OpenAI-compatible gateways (e.g. self-hosted omniroute) stream
+            # SSE by default and only return a JSON completion when asked.
+            "stream": False,
         }
-        if request.think is not None:
-            payload["think"] = request.think
+        # ``think`` is NOT part of the OpenAI chat-completions dialect - some
+        # gateways add it (OmniRoute), others reject it outright (Groq returns
+        # 400 "property 'think' is unsupported"). Forward it only when
+        # explicitly requested: think=False means "no reasoning", which is the
+        # default on every OpenAI-compatible endpoint, so omitting the field
+        # is semantically identical and keeps the request portable. The native
+        # Ollama dialect keeps explicit false because its qwen3 defaults DO
+        # reason unless told not to.
+        if request.think is True:
+            payload["think"] = True
         if request.json_mode:
             payload["response_format"] = {"type": "json_object"}
         headers: dict[str, str] = {}
@@ -242,8 +254,10 @@ class OpenAiCompatibleProvider:
             "max_tokens": request.max_tokens,
             "stream": True,
         }
-        if request.think is not None:
-            payload["think"] = request.think
+        # Same portability rule as complete(): think only when explicitly
+        # requested; never send think=False to OpenAI-compatible endpoints.
+        if request.think is True:
+            payload["think"] = True
         headers: dict[str, str] = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"

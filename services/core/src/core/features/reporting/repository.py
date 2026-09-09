@@ -236,6 +236,65 @@ class ReportRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_definition_any(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        slug: str,
+    ) -> ErpReportDefinitionModel | None:
+        """Return a definition by slug regardless of active state, or None.
+
+        Used by the create path so a soft-deleted definition with the same slug
+        still blocks reuse (a slug is unique per tenant forever - the tenant's
+        run history stays meaningful if it were ever re-run).
+        """
+        result = await self._session.execute(
+            select(ErpReportDefinitionModel).where(
+                ErpReportDefinitionModel.tenant_id == tenant_id,
+                ErpReportDefinitionModel.slug == slug,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def create_definition(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        slug: str,
+        title: str,
+        module: str,
+        description: str | None,
+        sql: str,
+        params: list[str],
+        permission_key: str,
+    ) -> ErpReportDefinitionModel:
+        """Persist a new (user-created) report definition for the tenant.
+
+        The create path is authoritative here: unlike the seed catalog helper
+        (which returns the row object), the repository inserts the row and
+        returns the freshly-created model so the service can audit and return
+        a runnable definition in one unit of work. ``id`` and the audit
+        columns take server defaults.
+        """
+        definition = ErpReportDefinitionModel(
+            tenant_id=tenant_id,
+            slug=slug,
+            title=title,
+            module=module,
+            description=description,
+            sql=sql,
+            params=params,
+            permission_key=permission_key,
+        )
+        self._session.add(definition)
+        await self._session.flush()
+        # ``updated_at`` is server-side (default now()); refresh it inside the
+        # awaited context so a post-flush read by the caller (the router
+        # serialising ReportDefinitionRead) cannot trigger a lazy refresh
+        # (MissingGreenlet in the async engine).
+        await self._session.refresh(definition, attribute_names=["updated_at"])
+        return definition
+
     async def run_query(
         self,
         *,

@@ -59,12 +59,18 @@ services:
       # Security-alert CTAs auto-derive as http://{slug}.localhost:3000 in dev.
     volumes:
       - ../../services/identity/src:/app/services/identity/src
+      - ../../services/identity/alembic:/app/services/identity/alembic
+      - ../../services/identity/alembic.ini:/app/services/identity/alembic.ini:ro
       - ../../libs/skyrict-common/src:/app/libs/skyrict-common/src
       - ../../libs/skyrict-events/src:/app/libs/skyrict-events/src
       # JWT RSA keys (generate with `uv run python -m skyrict_testing.generate_keys`).
       # The dev CMD runs from /app/services/identity, so the relative key
       # paths in services/identity/.env resolve to /app/services/identity/.dev/keys.
       - ../../.dev/keys:/app/services/identity/.dev/keys:ro
+    # Dev boot: migrate the DB before uvicorn starts so the database can never
+    # silently drift behind the code. Production runs migrations out-of-band;
+    # this override is dev-only.
+    command: ["sh", "-c", "uv run --directory services/identity alembic upgrade head && uv run --directory services/identity uvicorn identity.main:app --reload --host 0.0.0.0 --port 8000 --no-proxy-headers"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,6 +114,11 @@ services:
       # Outbound payment-reminder email -> Mailpit container (Web UI: http://localhost:8025).
       CORE_EMAIL_SMTP_HOST: mailpit
       CORE_EMAIL_SMTP_PORT: "1025"
+    # Dev boot: migrate the DB before uvicorn starts so the database can never
+    # silently drift behind the code (a stale upgrade head left the reports
+    # permission and other tables missing, breaking generate/save). Production
+    # runs migrations out-of-band; this override is dev-only.
+    command: ["sh", "-c", "uv run --directory services/core alembic upgrade head && uv run --directory services/core uvicorn core.main:app --reload --host 0.0.0.0 --port 8001"]
     volumes:
       - ../../services/core/src:/app/services/core/src
       - ../../services/core/alembic:/app/services/core/alembic
@@ -152,13 +163,28 @@ services:
       # identity/core; migrates under its own alembic_version_ai table.
       AI_DATABASE_URL: postgresql+asyncpg://skyrict:skyrict@skyrict-postgres:5432/skyrict_identity
       AI_REDIS_URL: redis://skyrict-redis:6379/0
-      # The groq fallback model was renamed - llama-3.1-8b-instant no longer
-      # exists. qwen/qwen3.8-27b is a 131k-context model that supports tools.
+      # --- Dev LLM chain (in-container contract) ---
+      # Provider/keys come from services/ai-agent/.env (env_file). Two
+      # container-only corrections keep that env reachable from inside the
+      # compose network:
+      # 1. PRIMARY: host-run .env points omniroute at http://localhost:20128/v1,
+      #    but localhost inside the container is the container itself. Override
+      #    to the Docker Desktop host alias so the host gateway is reached.
+      # 2. FALLBACK: keep groq (from env_file) with its real base URL and a
+      #    current groq model - llama-3.1-8b-instant no longer exists (404) and
+      #    the previous openrouter model was being sent to groq's endpoint (400).
+      AI_BASE_URL: http://host.docker.internal:20128/v1
+      AI_FALLBACK_PROVIDER: groq
       AI_FALLBACK_MODEL: qwen/qwen3.8-27b
-      AI_FALLBACK_PROVIDER: openrouter
+      AI_FALLBACK_BASE_URL: https://api.groq.com/openai/v1
+      AI_FALLBACK_LOCAL_ONLY: "false"
       # Core data plane for the inventory AI engines - the core container
       # serves on port 8001 internally.
       INVENTORY_SERVICE_URL: http://skyrict-core:8001
+      # Core reporting data plane for the NL report builder (SKY-80) - same
+      # monolith, same port. Must be set explicitly: the host-friendly default
+      # (http://localhost:8001) would point at this container's own localhost.
+      REPORT_SERVICE_URL: http://skyrict-core:8001
       # Host-run .env uses ../../.dev/keys (host cwd = services/ai-agent); the
       # container mounts the same keys at /app/services/ai-agent/.dev/keys so
       # the path must be container-relative here.
@@ -171,6 +197,10 @@ services:
       # The dev CMD runs from /app/services/ai-agent, so the relative key path
       # in services/ai-agent/.env resolves to /app/services/ai-agent/.dev/keys.
       - ../../.dev/keys:/app/services/ai-agent/.dev/keys:ro
+    # Dev boot: migrate the DB before uvicorn starts so the database can never
+    # silently drift behind the code. Production runs migrations out-of-band;
+    # this override is dev-only.
+    command: ["sh", "-c", "uv run --directory services/ai-agent alembic upgrade head && uv run --directory services/ai-agent uvicorn ai_agent.main:app --reload --host 0.0.0.0 --port 8000"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -184,9 +214,8 @@ services:
       retries: 3
 
   # ---------- Ollama (local embedding provider - SKY-58 / SKY-70) ----------
-  # Free, local, keyless. Start alongside with `up -d ollama`; the ai-agent
-  # only talks to it when AI_EMBEDDING_PROVIDER=ollama (boot never pings it,
-  # so no depends_on is needed). One-time model pull:
+  # Free, local, keyless. Optional: the ai-agent only talks to it when
+  # AI_EMBEDDING_PROVIDER=ollama (boot never pings it). One-time model pull:
   #   docker exec skyrict-ollama ollama pull nomic-embed-text
   ollama:
     image: ollama/ollama:latest

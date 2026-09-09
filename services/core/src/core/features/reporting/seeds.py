@@ -22,6 +22,13 @@ The 12 reports mirror ``docs/architecture/erp-phase1.md`` §M-RPT exactly:
 Column names reference the real ERP tables (``erp_*``) and their tenant
 composite keys, so a report is always tenant-filtered and joins never cross
 tenants.
+
+NL-builder semantics (RPT-AI-001, SKY-80): every seed carries ``dataset``,
+``dimensions`` and ``measures`` - the selectable vocabulary the LLM may choose
+from when interpreting a natural-language request. These are pure metadata
+(no schema column): the catalog is the whitelist, and the API surface exposes
+them so the AI agent never invents datasets, grouping dimensions, or numeric
+measures that the reviewed templates do not provide.
 """
 
 from __future__ import annotations
@@ -38,6 +45,12 @@ class ReportDefinitionSeed:
     ``params`` is the allow-list of ``:name`` bind parameters the query may
     use (every bind in ``sql`` must be listed here; unused declarations are
     a catalog error caught by the seed test).
+
+    ``dataset``, ``dimensions`` and ``measures`` are the NL report builder's
+    selectable vocabulary (RPT-AI-001, SKY-80) - the only datasets, grouping
+    dimensions, and numeric measures an LLM may pick for this report. They
+    mirror the query's output columns so validation can never accept a
+    dimension/measure the template does not actually produce.
     """
 
     slug: str
@@ -46,6 +59,9 @@ class ReportDefinitionSeed:
     description: str
     sql: str
     params: tuple[str, ...]
+    dataset: str
+    dimensions: tuple[str, ...]
+    measures: tuple[str, ...]
     permission_key: str = ERP_REPORTS_READ
     version: int = 1
 
@@ -79,6 +95,9 @@ SELECT coa.code,
  ORDER BY coa.account_type, coa.code
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="profit and loss journal entries",
+        dimensions=("account code", "account name", "account type"),
+        measures=("total debit", "total credit"),
     ),
     ReportDefinitionSeed(
         slug="ar_aging",
@@ -113,6 +132,9 @@ GROUP BY i.invoice_number, i.invoice_date, i.due_date, i.total
   ORDER BY i.due_date, i.invoice_number
 """.strip(),
         params=("tenant_id", "as_of_date"),
+        dataset="open invoices",
+        dimensions=("invoice number", "aging bucket"),
+        measures=("invoice total", "paid total", "outstanding balance"),
         version=2,
     ),
     ReportDefinitionSeed(
@@ -133,6 +155,9 @@ SELECT DATE(p.paid_at) AS payment_date,
  ORDER BY payment_date, p.method
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="applied payments",
+        dimensions=("payment date", "payment method"),
+        measures=("payment count", "total received"),
     ),
     # ------------------------------------------------------------------ #
     # Sales / CRM                                                         #
@@ -153,6 +178,9 @@ SELECT stage,
  ORDER BY pipeline_value DESC
 """.strip(),
         params=("tenant_id",),
+        dataset="open crm opportunities",
+        dimensions=("stage",),
+        measures=("opportunity count", "pipeline value"),
     ),
     ReportDefinitionSeed(
         slug="orders_by_period",
@@ -171,6 +199,9 @@ SELECT DATE(created_at) AS order_date,
  ORDER BY order_date
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="sales orders",
+        dimensions=("order date",),
+        measures=("order count", "order value"),
     ),
     ReportDefinitionSeed(
         slug="top_customers",
@@ -194,6 +225,9 @@ GROUP BY c.customer_code, c.name
   LIMIT 10
 """.strip(),
         params=("tenant_id",),
+        dataset="customers with confirmed and fulfilled orders",
+        dimensions=("customer code", "customer name"),
+        measures=("order count", "lifetime value"),
         version=2,
     ),
     # ------------------------------------------------------------------ #
@@ -220,6 +254,9 @@ WHERE p.tenant_id = :tenant_id
   ORDER BY gap_to_reorder DESC
 """.strip(),
         params=("tenant_id",),
+        dataset="products at or below their reorder point",
+        dimensions=("sku", "product name"),
+        measures=("qty on hand", "reorder point", "gap to reorder"),
         version=2,
     ),
     ReportDefinitionSeed(
@@ -238,6 +275,9 @@ SELECT movement_type,
  ORDER BY movement_count DESC
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="stock movements",
+        dimensions=("movement type",),
+        measures=("movement count", "net qty"),
     ),
     ReportDefinitionSeed(
         slug="slow_movers",
@@ -269,6 +309,9 @@ WHERE p.tenant_id = :tenant_id
   LIMIT 10
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="products with no stock movements",
+        dimensions=("sku", "product name"),
+        measures=("qty on hand", "movement count"),
         version=2,
     ),
     # ------------------------------------------------------------------ #
@@ -292,6 +335,9 @@ SELECT d.name AS department_name,
  ORDER BY headcount DESC
 """.strip(),
         params=("tenant_id",),
+        dataset="current employees",
+        dimensions=("department name",),
+        measures=("headcount",),
     ),
     ReportDefinitionSeed(
         slug="leave_usage",
@@ -314,6 +360,9 @@ GROUP BY lt.code, lt.name
   ORDER BY days_used DESC
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="approved leave requests",
+        dimensions=("leave type code", "leave type name"),
+        measures=("days used", "request count"),
         version=2,
     ),
     ReportDefinitionSeed(
@@ -340,6 +389,9 @@ GROUP BY pr.period_start, pr.period_end, pr.run_code
   ORDER BY pr.period_start, pr.run_code
 """.strip(),
         params=("tenant_id", "from_date", "to_date"),
+        dataset="payroll runs",
+        dimensions=("period start", "period end", "run code"),
+        measures=("employee count", "total gross", "total deductions", "total net"),
         version=2,
     ),
 )
@@ -359,12 +411,50 @@ def is_seed_stale(seed: ReportDefinitionSeed, *, version: int, sql: str) -> bool
     """
     if version < seed.version:
         return True
-    return _normalize_sql(sql) != _normalize_sql(seed.sql)
+    return normalize_sql(sql) != normalize_sql(seed.sql)
 
 
-def _normalize_sql(sql: str) -> str:
+def normalize_sql(sql: str) -> str:
     """Collapse whitespace for content comparison (whitespace != drift)."""
     return " ".join(sql.split())
 
 
-__all__ = ["PHASE_1_REPORT_SEEDS", "ReportDefinitionSeed", "is_seed_stale"]
+def find_seed_by_slug(slug: str) -> ReportDefinitionSeed | None:
+    """Return the canonical seed for a slug, or None when not a whitelisted report.
+
+    The NL report builder (RPT-AI-001, SKY-80) only ever persists a new
+    definition whose SQL is EXACTLY one of these whitelisted templates - the
+    create path resolves the template by this lookup so no arbitrary or
+    AI-generated SQL can reach the database.
+    """
+    for seed in PHASE_1_REPORT_SEEDS:
+        if seed.slug == slug:
+            return seed
+    return None
+
+
+def find_seed_for_sql(sql: str) -> ReportDefinitionSeed | None:
+    """Return the canonical seed whose SQL matches *sql* (whitespace-insensitive).
+
+    Stored rows may collapse whitespace (the legacy write paths did), so the
+    match normalizes both sides. Saved reports created by the NL builder carry
+    the user's own slug but their SQL is byte-for-byte one of the whitelisted
+    templates, so the API surface can enrich a user-created definition with
+    the template's dataset/dimensions/measures semantics by matching on SQL
+    content when the slug does not resolve.
+    """
+    target = normalize_sql(sql)
+    for seed in PHASE_1_REPORT_SEEDS:
+        if normalize_sql(seed.sql) == target:
+            return seed
+    return None
+
+
+__all__ = [
+    "PHASE_1_REPORT_SEEDS",
+    "ReportDefinitionSeed",
+    "find_seed_by_slug",
+    "find_seed_for_sql",
+    "is_seed_stale",
+    "normalize_sql",
+]

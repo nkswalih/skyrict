@@ -88,6 +88,9 @@ FINANCE_AI_REMINDER_GENERATED = "finance.ai.reminder.generated"
 # Reports (RPT-BE-001)
 # ---------------------------------------------------------------------------
 REPORT_EXPORTED = "report.exported"
+# RPT-AI-001 (SKY-80): a generated report spec was persisted as a new
+# erp_report_definitions row via POST /api/v1/reports.
+REPORT_CREATED = "report.created"
 
 # Every catalogued audit event, in catalog order.
 CATALOG: tuple[str, ...] = (
@@ -148,6 +151,7 @@ CATALOG: tuple[str, ...] = (
     FINANCE_AI_ANOMALY_NARRATED,
     FINANCE_AI_REMINDER_GENERATED,
     REPORT_EXPORTED,
+    REPORT_CREATED,
 )
 
 ALL_AUDIT_EVENTS: frozenset[str] = frozenset(CATALOG)
@@ -232,7 +236,7 @@ AUDIT_EVENT_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "reports",
         "Reports",
-        (REPORT_EXPORTED,),
+        (REPORT_EXPORTED, REPORT_CREATED),
     ),
 )
 
@@ -312,5 +316,6 @@ __all__ = [
     "PAYROLL_RUN_PAID",
     "PAYROLL_RUN_VOIDED",
     "PAYROLL_SETTINGS_UPDATED",
+    "REPORT_CREATED",
     "REPORT_EXPORTED",
 ]

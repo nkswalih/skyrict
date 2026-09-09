@@ -8,8 +8,9 @@ from typing import Any
 
 import pytest
 
+from core.features.reporting.seeds import find_seed_by_slug
 from core.features.reporting.service import ReportService
-from skyrict_common.exceptions import NotFoundError, ValidationError
+from skyrict_common.exceptions import ConflictError, NotFoundError, ValidationError
 
 
 class FakeRepo:
@@ -28,6 +29,33 @@ class FakeRepo:
         if definition is None:
             return None
         return definition if definition.tenant_id == tenant_id and definition.is_active else None
+
+    async def get_definition_any(self, *, tenant_id: uuid.UUID, slug: str) -> Any | None:
+        definition = self.definitions.get(slug)
+        if definition is None:
+            return None
+        return definition if definition.tenant_id == tenant_id else None
+
+    async def create_definition(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        slug: str,
+        title: str,
+        module: str,
+        description: str | None,
+        sql: str,
+        params: list[str],
+        permission_key: str,
+    ) -> Any:
+        definition = _definition(tenant_id=tenant_id, slug=slug, params=tuple(params))
+        definition.title = title
+        definition.module = module
+        definition.description = description
+        definition.sql = sql
+        definition.permission_key = permission_key
+        self.definitions[slug] = definition
+        return definition
 
     async def run_query(
         self,
@@ -307,3 +335,241 @@ class TestPruneSnapshots:
         total = await service.prune_snapshots(tenant_id=tenant_id, keep_n=3)
 
         assert total == 6  # 3 pruned per definition, two definitions
+
+
+class TestCreateDefinition:
+    """RPT-AI-001 (SKY-80): the create path accepts ONLY whitelisted template SQL.
+
+    Every security property of the NL report builder lives in these tests: the
+    template lookup, the exact-match SQL gate, param allow-list equality, the
+    defense-in-depth read-only revalidation, slug uniqueness, and the audit
+    event.
+    """
+
+    def _persist_kwargs(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+        slug: str = "ar_aging_90plus",
+        source_slug: str = "ar_aging",
+        sql: str | None = None,
+        params: list[str] | None = None,
+        default_params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        seed = find_seed_by_slug(source_slug)
+        resolved_sql = seed.sql if seed is not None and sql is None else (sql or "SELECT 1")
+        resolved_params = (
+            list(seed.params) if seed is not None and params is None else (params or [])
+        )
+        return {
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "actor_ip": "203.0.113.9",
+            "actor_agent": "pytest",
+            "slug": slug,
+            "title": "AR aging 90+ focus",
+            "module": "finance",
+            "description": "Generated from the canonical AR aging template.",
+            "sql": resolved_sql,
+            "params": resolved_params,
+            "source_slug": source_slug,
+            "default_params": default_params
+            if default_params is not None
+            else {"as_of_date": "2026-09-30"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_create_persists_definition_with_template_sql_and_audits(self) -> None:
+        tenant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        fake_audit = FakeAudit()
+        repo = FakeRepo()
+        service = ReportService(repository=repo, audit=fake_audit)  # type: ignore[arg-type]
+
+        result = await service.create_definition(
+            **self._persist_kwargs(tenant_id=tenant_id, user_id=user_id)
+        )
+
+        definition = repo.definitions["ar_aging_90plus"]
+        assert definition.slug == "ar_aging_90plus"
+        assert definition.module == "finance"
+        assert definition.permission_key == "erp.reports.read"
+        assert definition.is_active is True
+
+        assert result["default_params"] == {"as_of_date": "2026-09-30"}
+        assert len(fake_audit.entries) == 1
+        entry = fake_audit.entries[0]
+        assert entry["action"] == "report.created"
+        assert entry["target"] == "report:ar_aging_90plus"
+        assert entry["tenant_id"] == tenant_id
+        assert entry["user_id"] == user_id
+        assert entry["details"]["source_slug"] == "ar_aging"
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_unknown_template(self) -> None:
+        service = _make_service({})
+
+        with pytest.raises(ValidationError):
+            await service.create_definition(
+                **self._persist_kwargs(
+                    tenant_id=uuid.uuid4(),
+                    user_id=uuid.uuid4(),
+                    source_slug="not_a_whitelisted_report",
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_arbitrary_sql_even_with_valid_source(self) -> None:
+        tenant_id = uuid.uuid4()
+        service = _make_service({})
+
+        with pytest.raises(ValidationError):
+            await service.create_definition(
+                **self._persist_kwargs(
+                    tenant_id=tenant_id,
+                    user_id=uuid.uuid4(),
+                    sql="SELECT pg_sleep(999); DROP TABLE erp_report_definitions; --",
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_non_matching_sql_whitespace_insensitive(self) -> None:
+        tenant_id = uuid.uuid4()
+        seed = find_seed_by_slug("ar_aging")
+        assert seed is not None
+        service = _make_service({})
+
+        # A semantically-different template SQL (different WHERE) must be
+        # rejected even though it is still structurally "read-only".
+        doctored = seed.sql.replace("i.status IN ('issued', 'approved')", "1 = 1")
+        with pytest.raises(ValidationError):
+            await service.create_definition(
+                **self._persist_kwargs(tenant_id=tenant_id, user_id=uuid.uuid4(), sql=doctored)
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_accepts_whitespace_only_variance_of_template(self) -> None:
+        tenant_id = uuid.uuid4()
+        seed = find_seed_by_slug("ar_aging")
+        assert seed is not None
+        repo = FakeRepo()
+        service = ReportService(repository=repo)  # type: ignore[arg-type]
+
+        reflowed = "   ".join(seed.sql.splitlines())
+        await service.create_definition(
+            **self._persist_kwargs(tenant_id=tenant_id, user_id=uuid.uuid4(), sql=reflowed)
+        )
+
+        assert "ar_aging_90plus" in repo.definitions
+        assert repo.definitions["ar_aging_90plus"].sql == seed.sql
+
+    @pytest.mark.asyncio
+    async def test_create_resolves_template_sql_when_sql_omitted(self) -> None:
+        """The NL builder never has the SQL: omitting it must resolve the
+        template SQL from source_slug and persist it byte-for-byte."""
+        tenant_id = uuid.uuid4()
+        seed = find_seed_by_slug("ar_aging")
+        assert seed is not None
+        repo = FakeRepo()
+        service = ReportService(repository=repo)  # type: ignore[arg-type]
+
+        await service.create_definition(
+            **self._persist_kwargs(
+                tenant_id=tenant_id,
+                user_id=uuid.uuid4(),
+                sql=None,
+            )
+        )
+
+        persisted = repo.definitions["ar_aging_90plus"]
+        assert persisted.sql == seed.sql
+        assert persisted.params == list(seed.params)
+        assert persisted.permission_key == "erp.reports.read"
+
+    @pytest.mark.asyncio
+    async def test_create_with_omitted_sql_on_user_defined_slug(self) -> None:
+        """Even with a brand-new user slug, omitting sql persists exactly the
+        template SQL of the named source - never anything the builder crafted."""
+        tenant_id = uuid.uuid4()
+        seed = find_seed_by_slug("cash_received")
+        assert seed is not None
+        repo = FakeRepo()
+        service = ReportService(repository=repo)  # type: ignore[arg-type]
+
+        await service.create_definition(
+            **self._persist_kwargs(
+                tenant_id=tenant_id,
+                user_id=uuid.uuid4(),
+                slug="my_cash_focus",
+                source_slug="cash_received",
+                sql=None,
+            )
+        )
+
+        persisted = repo.definitions["my_cash_focus"]
+        assert persisted.sql == seed.sql
+        assert persisted.params == list(seed.params)
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_mismatched_param_allowlist(self) -> None:
+        tenant_id = uuid.uuid4()
+        service = _make_service({})
+
+        with pytest.raises(ValidationError):
+            await service.create_definition(
+                **self._persist_kwargs(
+                    tenant_id=tenant_id,
+                    user_id=uuid.uuid4(),
+                    params=["tenant_id", "as_of_date", "evil_param"],
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_conflicts_when_slug_already_exists(self) -> None:
+        tenant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        repo = FakeRepo()
+        repo.definitions["ar_aging_90plus"] = _definition(
+            tenant_id=tenant_id, slug="ar_aging_90plus", params=("tenant_id",)
+        )
+        service = ReportService(repository=repo, audit=FakeAudit())  # type: ignore[arg-type]
+
+        with pytest.raises(ConflictError):
+            await service.create_definition(
+                **self._persist_kwargs(tenant_id=tenant_id, user_id=user_id)
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_conflicts_on_soft_deleted_slug(self) -> None:
+        tenant_id = uuid.uuid4()
+        repo = FakeRepo()
+        stale = _definition(tenant_id=tenant_id, slug="ar_aging_90plus", params=("tenant_id",))
+        stale.is_active = False
+        repo.definitions["ar_aging_90plus"] = stale
+        service = ReportService(repository=repo)  # type: ignore[arg-type]
+
+        with pytest.raises(ConflictError):
+            await service.create_definition(
+                **self._persist_kwargs(tenant_id=tenant_id, user_id=uuid.uuid4())
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_never_persists_default_params(self) -> None:
+        tenant_id = uuid.uuid4()
+        repo = FakeRepo()
+        service = ReportService(repository=repo)  # type: ignore[arg-type]
+
+        result = await service.create_definition(
+            **self._persist_kwargs(
+                tenant_id=tenant_id,
+                user_id=uuid.uuid4(),
+                default_params={"as_of_date": "2026-09-30", "extra": "x"},
+            )
+        )
+
+        assert result["default_params"] == {"as_of_date": "2026-09-30", "extra": "x"}
+        assert repo.definitions["ar_aging_90plus"].description is not None
+        # No default_params attribute on the persisted model: the schema has no
+        # column for it by design.
+        assert not hasattr(repo.definitions["ar_aging_90plus"], "default_params")

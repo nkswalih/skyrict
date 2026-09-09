@@ -16,7 +16,9 @@ from core.core.exceptions import (
     skyrict_error_handler,
 )
 from core.features.reporting import reports_router
+from core.features.reporting.seeds import PHASE_1_REPORT_SEEDS
 from skyrict_common.exceptions import (
+    ConflictError,
     NotFoundError,
     PermissionDeniedError,
     SkyrictError,
@@ -42,8 +44,8 @@ def _app_with_mocks() -> tuple[TestClient, AsyncMock]:
     return TestClient(app), mock_service
 
 
-def _definition(slug: str, module: str = "finance") -> dict[str, Any]:
-    return {
+def _definition(slug: str, module: str = "finance", sql: str | None = None) -> dict[str, Any]:
+    definition = {
         "id": uuid.uuid4(),
         "slug": slug,
         "title": slug.replace("_", " ").title(),
@@ -54,6 +56,9 @@ def _definition(slug: str, module: str = "finance") -> dict[str, Any]:
         "version": 1,
         "updated_at": datetime(2026, 9, 5, 9, 0, 0, tzinfo=UTC),
     }
+    if sql is not None:
+        definition["sql"] = sql
+    return definition
 
 
 def test_list_reports_route_200() -> None:
@@ -208,3 +213,189 @@ def test_router_requires_permission() -> None:
 
     assert response.status_code == 403, response.text
     assert response.json()["type"].endswith("/permission-denied")
+
+
+def _app_with_create_mocks() -> tuple[TestClient, AsyncMock]:
+    app = FastAPI()
+    app.include_router(reports_router.router, prefix="/api/v1")
+    app.add_exception_handler(SkyrictError, skyrict_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)  # type: ignore[arg-type]
+
+    mock_service = AsyncMock()
+    tenant_id = uuid.uuid4()
+
+    app.dependency_overrides[reports_router._get_service] = lambda: mock_service
+    app.dependency_overrides[reports_router._require_reports_create] = lambda: {
+        "user_id": uuid.uuid4(),
+        "tenant_id": tenant_id,
+    }
+
+    return TestClient(app), mock_service
+
+
+def _create_payload() -> dict[str, Any]:
+    return {
+        "slug": "ar_aging_90plus",
+        "title": "AR aging 90+ focus",
+        "module": "finance",
+        "description": "Generated from the canonical AR aging template.",
+        "sql": "SELECT 1",
+        "source_slug": "ar_aging",
+        "params": ["tenant_id", "as_of_date"],
+        "default_params": {"as_of_date": "2026-09-30"},
+    }
+
+
+def test_create_report_route_201() -> None:
+    client, service = _app_with_create_mocks()
+    service.create_definition.return_value = {
+        "definition": _definition("ar_aging_90plus"),
+        "default_params": {"as_of_date": "2026-09-30"},
+    }
+
+    response = client.post("/api/v1/reports", json=_create_payload())
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["definition"]["slug"] == "ar_aging_90plus"
+    assert body["data"]["default_params"] == {"as_of_date": "2026-09-30"}
+    service.create_definition.assert_awaited_once()
+    assert service.create_definition.await_args.kwargs["source_slug"] == "ar_aging"
+    assert service.create_definition.await_args.kwargs["slug"] == "ar_aging_90plus"
+    assert service.create_definition.await_args.kwargs["actor_ip"] is not None
+
+
+def test_create_report_route_422_on_custom_sql() -> None:
+    client, service = _app_with_create_mocks()
+    service.create_definition.side_effect = ValidationError(
+        "Report SQL must exactly match the whitelisted template 'ar_aging'; custom SQL is not allowed"
+    )
+
+    response = client.post("/api/v1/reports", json=_create_payload())
+
+    assert response.status_code == 422, response.text
+    assert response.json()["type"].endswith("/validation-error")
+
+
+def test_create_report_route_409_on_existing_slug() -> None:
+    client, service = _app_with_create_mocks()
+    service.create_definition.side_effect = ConflictError("Report 'ar_aging_90plus' already exists")
+
+    response = client.post("/api/v1/reports", json=_create_payload())
+
+    assert response.status_code == 409, response.text
+    assert response.json()["type"].endswith("/conflict")
+
+
+def test_create_report_route_422_on_invalid_slug() -> None:
+    client, service = _app_with_create_mocks()
+    payload = _create_payload()
+    payload["slug"] = "AR AGING 90+"  # uppercase + spaces violate the slug pattern
+
+    response = client.post("/api/v1/reports", json=payload)
+
+    assert response.status_code == 422, response.text
+    service.create_definition.assert_not_awaited()
+
+
+def test_create_report_route_accepts_omitted_sql() -> None:
+    """The ai-agent never has the SQL; Core resolves it from source_slug."""
+    client, service = _app_with_create_mocks()
+    service.create_definition.return_value = {
+        "definition": _definition("ar_aging_90plus", sql=_AR_AGING_SEED.sql),
+        "default_params": {"as_of_date": "2026-09-30"},
+    }
+
+    payload = _create_payload()
+    payload.pop("sql")
+    response = client.post("/api/v1/reports", json=payload)
+
+    assert response.status_code == 201, response.text
+    kwargs = service.create_definition.await_args.kwargs
+    assert kwargs["sql"] is None
+    assert kwargs["source_slug"] == "ar_aging"
+
+
+def test_create_route_requires_create_permission() -> None:
+    app = FastAPI()
+    app.include_router(reports_router.router, prefix="/api/v1")
+    app.add_exception_handler(SkyrictError, skyrict_error_handler)  # type: ignore[arg-type]
+
+    async def deny() -> None:
+        raise PermissionDeniedError("Missing required permission: erp.reports.create")
+
+    app.dependency_overrides[reports_router._require_reports_create] = deny
+
+    client = TestClient(app)
+    response = client.post("/api/v1/reports", json=_create_payload())
+
+    assert response.status_code == 403, response.text
+    assert response.json()["type"].endswith("/permission-denied")
+
+
+# ---------------------------------------------------------------------------
+# NL report builder vocabulary (RPT-AI-001, SKY-80)
+# ---------------------------------------------------------------------------
+
+_AR_AGING_SEED = next(s for s in PHASE_1_REPORT_SEEDS if s.slug == "ar_aging")
+
+
+def test_list_reports_includes_nl_vocabulary() -> None:
+    client, service = _app_with_mocks()
+    service.list_reports.return_value = [_definition("ar_aging", sql=_AR_AGING_SEED.sql)]
+
+    response = client.get("/api/v1/reports")
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"][0]
+    assert data["dataset"] == _AR_AGING_SEED.dataset
+    assert data["dimensions"] == list(_AR_AGING_SEED.dimensions)
+    assert data["measures"] == list(_AR_AGING_SEED.measures)
+
+
+def test_get_report_inherits_template_vocabulary_via_sql_match() -> None:
+    """A user-created report with a different slug but the same whitelisted
+    SQL inherits the template's selectable dimensions/measures."""
+    client, service = _app_with_mocks()
+    service.get_report.return_value = _definition("my_ar_focus", sql=_AR_AGING_SEED.sql)
+
+    response = client.get("/api/v1/reports/my_ar_focus")
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["slug"] == "my_ar_focus"
+    assert data["dataset"] == _AR_AGING_SEED.dataset
+    assert data["dimensions"] == list(_AR_AGING_SEED.dimensions)
+    assert data["measures"] == list(_AR_AGING_SEED.measures)
+
+
+def test_definition_without_matching_template_has_no_vocabulary() -> None:
+    """A definition with SQL that matches no whitelisted template keeps the
+    schema defaults (no dimensions, no measures)."""
+    client, service = _app_with_mocks()
+    service.list_reports.return_value = [_definition("custom_report", sql="SELECT 1")]
+
+    response = client.get("/api/v1/reports")
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"][0]
+    assert data["dataset"] is None
+    assert data["dimensions"] == []
+    assert data["measures"] == []
+
+
+def test_create_report_response_inherits_template_vocabulary() -> None:
+    client, service = _app_with_create_mocks()
+    service.create_definition.return_value = {
+        "definition": _definition("ar_aging_90plus", sql=_AR_AGING_SEED.sql),
+        "default_params": {"as_of_date": "2026-09-30"},
+    }
+
+    response = client.post("/api/v1/reports", json=_create_payload())
+
+    assert response.status_code == 201, response.text
+    definition = response.json()["data"]["definition"]
+    assert definition["dataset"] == _AR_AGING_SEED.dataset
+    assert definition["dimensions"] == list(_AR_AGING_SEED.dimensions)
+    assert definition["measures"] == list(_AR_AGING_SEED.measures)

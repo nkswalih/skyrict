@@ -48,6 +48,21 @@ def test_inventory_service_url_accepted_without_prefix(monkeypatch, tmp_path) ->
     assert settings.INVENTORY_SERVICE_URL == "http://skyrict-core:8001"
 
 
+def test_report_service_url_accepted_without_prefix(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "public.pem"
+    key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+    for key, value in _base_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+    # Compose contract (spec §6.4 / SKY-80): the unprefixed variable name.
+    monkeypatch.setenv("REPORT_SERVICE_URL", "http://skyrict-core:8001")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.REPORT_SERVICE_URL == "http://skyrict-core:8001"
+    assert settings.REPORT_SERVICE_TIMEOUT_SECONDS == 10.0
+
+
 def test_provider_without_model_rejected(monkeypatch, tmp_path) -> None:
     key_file = tmp_path / "public.pem"
     key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")

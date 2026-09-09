@@ -80,6 +80,12 @@ AI_L3_LEAVE_PAY_CORRELATED = "ai.l3.leave_pay.correlated"
 AI_L3_COMPLIANCE_DIGESTED = "ai.l3.compliance.digested"
 """The L3 compliance-digest narrative was generated."""
 
+AI_REPORT_GENERATED = "ai.report.generated"
+"""The NL report builder generated (and ran) a report from free text (SKY-80)."""
+
+AI_REPORT_SAVED = "ai.report.saved"
+"""The NL report builder persisted a generated report as a saved definition (SKY-80)."""
+
 ALL_AI_AUDIT_EVENTS = frozenset(
     {
         AI_QUERY_EXECUTED,
@@ -104,6 +110,8 @@ ALL_AI_AUDIT_EVENTS = frozenset(
         AI_L3_PAYROLL_COST_GENERATED,
         AI_L3_LEAVE_PAY_CORRELATED,
         AI_L3_COMPLIANCE_DIGESTED,
+        AI_REPORT_GENERATED,
+        AI_REPORT_SAVED,
     }
 )
 """The complete, closed vocabulary accepted by the AuditService."""

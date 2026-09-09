@@ -8,6 +8,7 @@ header and never leaks into results, logs, or exception strings.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -90,9 +91,83 @@ class TestOpenAiCompatibleProvider:
         assert captured["auth"] == "Bearer sk-secret-key"
         body = captured["body"]
         assert body["model"] == "test-model-1"
+        assert body["stream"] is False
         assert body["messages"][0]["role"] == "system"
         assert body["messages"][0]["content"] == "be terse"
         assert body["messages"][1]["content"] == "say hi"
+
+    async def test_non_stream_retry_when_gateway_streams_by_default(self) -> None:
+        """A gateway that streams unless told not to must get a clean 200.
+
+        Some OpenAI-compatible gateways (self-hosted omniroute) answer SSE
+        frames even for a non-stream request unless ``stream: false`` is
+        explicit. The adapter must send it so a JSON completion (184) is not
+        misparsed as a schema failure (502).
+        """
+        captured: dict[str, Any] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}], "model": "m"},
+            )
+
+        provider, _ = _make_provider(handler)
+        completion = await provider.complete(_REQUEST)
+
+        assert captured["body"]["stream"] is False
+        assert completion.text == "ok"
+
+    async def test_think_false_omitted_from_openai_payload(self) -> None:
+        """``think=False`` must NOT be sent to OpenAI-compatible endpoints.
+
+        Regression: the report builder always sends ``think=False`` (and
+        json_mode=True). Groq's chat-completions API has no ``think`` field
+        and rejects the request with 400 "property 'think' is unsupported",
+        killing the fallback chain when the primary gateway is unreachable.
+        ``think=False`` is the endpoint default anyway (no reasoning), so
+        omitting it is semantically identical and keeps the request portable.
+        """
+        captured: dict[str, Any] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}], "model": "m"},
+            )
+
+        provider, _ = _make_provider(handler)
+        request = LlmRequest(
+            system_prompt="You are a report spec extractor. Reply in JSON.",
+            user_prompt="sales orders by day for last quarter",
+            temperature=0.0,
+            max_tokens=512,
+            json_mode=True,
+            think=False,
+        )
+        await provider.complete(request)
+
+        body = captured["body"]
+        assert "think" not in body
+        assert body["response_format"] == {"type": "json_object"}
+
+    async def test_think_true_is_forwarded_to_supporting_gateway(self) -> None:
+        """Explicit ``think=True`` is a supported extension (OmniRoute etc.)."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}], "model": "m"},
+            )
+
+        captured: dict[str, Any] = {}
+        provider, _ = _make_provider(handler)
+        await provider.complete(LlmRequest(system_prompt="s", user_prompt="u", think=True))
+
+        assert captured["body"]["think"] is True
 
     async def test_http_error_maps_to_unavailable(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -180,6 +255,24 @@ class TestOpenAiCompatibleProviderStream:
         assert body["model"] == "test-model-1"
         assert body["messages"][1]["content"] == "say hi"
 
+    async def test_stream_omits_think_false_from_payload(self) -> None:
+        """The streaming path must obey the same think portability rule."""
+        captured: dict[str, Any] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content)
+            return _sse_stream("ok")
+
+        provider, _ = _make_provider(handler)
+        _ = [
+            c
+            async for c in provider.stream(
+                LlmRequest(system_prompt="s", user_prompt="u", think=False)
+            )
+        ]
+
+        assert "think" not in captured["body"]
+
     async def test_stream_http_error_maps_to_unavailable(self) -> None:
         provider, _ = _make_provider(
             lambda request: httpx.Response(503, json={"error": "overloaded"})
@@ -259,3 +352,66 @@ class TestRegistryFactory:
 
         assert [p.name for p in providers] == ["openrouter", "omniroute"]
         assert providers[0].local_only is False
+
+    def test_compose_llm_chain_contract(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """docker-compose.dev.yml keeps env_file providers, corrects two ends.
+
+        Value of this test is the CONTRACT, not the providers: the container
+        must pair the env_file's omniroute primary with a reachable base URL
+        (host.docker.internal, since localhost inside a container is the
+        container itself) and keep the groq fallback coherent (a current
+        model on groq's own endpoint - the old llama-3.1-8b-instant no longer
+        exists, and an openrouter model on groq's URL is a 400).
+        """
+        monkeypatch.setenv("AI_PROVIDER", "omniroute")
+        monkeypatch.setenv("AI_MODEL", "openlad")
+        monkeypatch.setenv("AI_BASE_URL", "http://host.docker.internal:20128/v1")
+        monkeypatch.setenv("AI_FALLBACK_PROVIDER", "groq")
+        monkeypatch.setenv("AI_FALLBACK_MODEL", "qwen/qwen3.8-27b")
+        monkeypatch.setenv("AI_FALLBACK_BASE_URL", "https://api.groq.com/openai/v1")
+        monkeypatch.setenv("AI_FALLBACK_LOCAL_ONLY", "false")
+        from ai_agent.core.config import Settings
+
+        config = Settings(_env_file=None)  # type: ignore[call-arg]
+        providers = build_providers_from_settings(config)
+
+        assert [p.name for p in providers] == ["omniroute", "groq"]
+        assert providers[0].model == "openlad"
+        # Omniroute has no preset - the bare override IS the effective URL.
+        assert resolve_base_url("omniroute", "http://host.docker.internal:20128/v1") == (
+            "http://host.docker.internal:20128/v1"
+        )
+        assert providers[1].model == "qwen/qwen3.8-27b"
+        assert providers[1].local_only is False
+        assert resolve_base_url("groq", "https://api.groq.com/openai/v1") == (
+            "https://api.groq.com/openai/v1"
+        )
+
+    def test_compose_boot_runs_migrations(self) -> None:
+        """docker-compose.dev.yml must migrate each service's DB before boot.
+
+        Regression for SKY-80: stale dev DBs (core three heads behind, ai-agent
+        three heads behind, identity stamped under a revision the built-in
+        alembic tree could not find) silently broke the NL report builder's
+        generate/save. Each dev service therefore prepends
+        `alembic upgrade head` to its CMD and mounts the `alembic` tree so the
+        container sees the repo's revision scripts. If either half of that
+        contract regresses, the stack can drift again without any CI signal.
+        """
+        import yaml
+
+        repo_root = Path(__file__).resolve().parents[4]
+        compose_file = repo_root / "infra" / "docker" / "docker-compose.dev.yml"
+        compose = yaml.safe_load(compose_file.read_text(encoding="utf-8"))
+
+        for service in ("identity", "core", "ai-agent"):
+            service_def = compose["services"][service]
+            command = " ".join(service_def["command"])
+            assert "alembic upgrade head" in command, (
+                f"{service} dev CMD must migrate before boot: {command}"
+            )
+            assert "uvicorn" in command
+            volume_specs = [str(v) for v in service_def["volumes"]]
+            assert any("alembic" in v for v in volume_specs), (
+                f"{service} dev volumes must mount the alembic tree: {volume_specs}"
+            )

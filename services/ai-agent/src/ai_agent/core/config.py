@@ -109,6 +109,24 @@ class Settings(BaseSettings):
         description="per-call timeout for core inventory reads",
     )
 
+    # --- Core (reporting) service - data plane for the NL report builder (SKY-80) ---
+    REPORT_SERVICE_URL: str = Field(
+        default="http://localhost:8001",
+        validation_alias="REPORT_SERVICE_URL",
+        description=(
+            "base URL of the core monolith (reporting endpoints, /api/v1/reports). "
+            "Accepts the UNPREFIXED REPORT_SERVICE_URL per compose contract; in "
+            "docker networks set REPORT_SERVICE_URL=http://skyrict-core:8001. "
+            "Defaults to the same host as INVENTORY_SERVICE_URL because both "
+            "APIs live on the core monolith."
+        ),
+    )
+    REPORT_SERVICE_TIMEOUT_SECONDS: float = Field(
+        default=10.0,
+        gt=0,
+        description="per-call timeout for core reporting reads",
+    )
+
     # --- Provider configuration (ALL optional - see module docstring) ---
     PROVIDER: str | None = Field(
         default=None,
@@ -411,6 +429,9 @@ class Settings(BaseSettings):
     )
     RATE_LIMIT_RAG_SEARCH_PER_MIN: int = Field(
         default=30, ge=1, description="RAG semantic searches per minute per user"
+    )
+    RATE_LIMIT_REPORT_BUILDER_PER_MIN: int = Field(
+        default=20, ge=1, description="NL report builder generations per minute per user (SKY-80)"
     )
     RATE_LIMIT_INV_SEARCH_PER_MIN: int = Field(
         default=30, ge=1, description="inventory product searches per minute per user"

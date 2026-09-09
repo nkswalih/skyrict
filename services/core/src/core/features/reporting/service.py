@@ -7,11 +7,13 @@ from typing import Any
 
 import structlog
 
-from core.core.audit_events import REPORT_EXPORTED
+from core.core.audit_events import REPORT_CREATED, REPORT_EXPORTED
 from core.features.reporting.params import build_report_binds, resolve_period
 from core.features.reporting.repository import DashboardRepository, ReportRepository
 from core.features.reporting.runner import csv_buffer
-from skyrict_common.exceptions import NotFoundError
+from core.features.reporting.seeds import find_seed_by_slug, normalize_sql
+from core.features.reporting.validation import require_tenant_filter, validate_read_only_sql
+from skyrict_common.exceptions import ConflictError, NotFoundError, ValidationError
 
 logger = structlog.get_logger("core.reporting.service")
 
@@ -169,6 +171,110 @@ class ReportService:
         if definition is None:
             raise NotFoundError(f"Report {slug!r} was not found")
         return definition
+
+    async def create_definition(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+        actor_ip: str | None,
+        actor_agent: str | None,
+        slug: str,
+        title: str,
+        module: str,
+        description: str | None,
+        params: list[str],
+        source_slug: str,
+        default_params: dict[str, Any] | None = None,
+        sql: str | None = None,
+    ) -> Any:
+        """Persist a new report definition whose SQL is a whitelisted template.
+
+        The NL report builder (RPT-AI-001, SKY-80) hands us a spec that names
+        the canonical template it matched (``source_slug``) but never the SQL.
+        This method is the security boundary that guarantees NO arbitrary or
+        AI-generated SQL can reach the database:
+
+        1. Resolve the canonical seed by ``source_slug`` - unknown template is
+           422 (we only ever accept known whitelisted reports).
+        2. Require the ``sql`` (when supplied) to normalize-match the template
+           EXACTLY (whitespace-insensitive). When omitted - the normal NL
+           builder path - the template SQL is resolved server-side, so the
+           stored definition is byte-for-byte the reviewed read-only template.
+        3. Defense-in-depth re-validation: the resolved template SQL must still
+           pass ``validate_read_only_sql`` + ``require_tenant_filter`` (fail
+           closed at create time, not just at run time).
+        4. The declared ``params`` allow-list must equal the template's declared
+           params - no new/optional/unknown bind parameters.
+        5. Enforce slug uniqueness tenant-wide (active OR soft-deleted), 409.
+        6. Create the row with the template's own ``permission_key``, then write
+           an immutable ``REPORT_CREATED`` audit event.
+
+        ``default_params`` (the resolved values the builder produced) are NOT
+        persisted - the schema has no default-params column and this ticket
+        deliberately adds none. They are returned so the web client can
+        pre-fill the run form for the just-created report.
+        """
+        seed = find_seed_by_slug(source_slug)
+        if seed is None:
+            raise ValidationError(f"Report template {source_slug!r} is not whitelisted")
+        resolved_sql = seed.sql if sql is None else sql
+        if normalize_sql(resolved_sql) != normalize_sql(seed.sql):
+            raise ValidationError(
+                "Report SQL must exactly match the whitelisted template "
+                f"{source_slug!r}; custom SQL is not allowed"
+            )
+        if sorted(params) != sorted(seed.params):
+            raise ValidationError(
+                "Declared parameters must match the whitelisted template's parameters"
+            )
+
+        # Fail closed: never persist a definition that could not be run safely.
+        validate_read_only_sql(seed.sql, seed.params)
+        require_tenant_filter(seed.sql)
+
+        existing = await self._repo.get_definition_any(tenant_id=tenant_id, slug=slug)
+        if existing is not None:
+            raise ConflictError(f"Report {slug!r} already exists")
+
+        definition = await self._repo.create_definition(
+            tenant_id=tenant_id,
+            slug=slug,
+            title=title,
+            module=module,
+            description=description,
+            sql=seed.sql,
+            params=list(seed.params),
+            permission_key=seed.permission_key,
+        )
+        if self._audit is not None:
+            await self._audit.log(
+                action=REPORT_CREATED,
+                target=f"report:{slug}",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                ip_address=actor_ip,
+                user_agent=actor_agent,
+                details={
+                    "report": slug,
+                    "source_slug": source_slug,
+                    "module": module,
+                    "permission_key": seed.permission_key,
+                },
+            )
+        logger.info(
+            "report.created",
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+            slug=slug,
+            source_slug=source_slug,
+            module=module,
+            definition_id=str(definition.id),
+        )
+        return {
+            "definition": definition,
+            "default_params": default_params or {},
+        }
 
     async def run_report(
         self,

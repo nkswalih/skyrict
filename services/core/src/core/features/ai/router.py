@@ -34,6 +34,8 @@ from core.core.permissions import (
     ERP_INVENTORY_AI_APPROVE,
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
+    ERP_REPORTS_CREATE,
+    ERP_REPORTS_READ,
     ERP_SALES_READ,
 )
 from core.core.tenant_resolver import derive_tenant_slug
@@ -56,6 +58,10 @@ _WriteDep = Annotated[dict[str, Any], Depends(_require_inventory_write)]
 _AIApproveDep = Annotated[dict[str, Any], Depends(_require_inventory_ai_approve)]
 _CrmReadDep = Annotated[dict[str, Any], Depends(_require_crm_read)]
 _CrmWriteDep = Annotated[dict[str, Any], Depends(_require_crm_write)]
+_require_reports_read = require_permission(ERP_REPORTS_READ)
+# The save path persists a NEW definition, so the caller must hold the create
+# gate IN ADDITION to the read gate every reporting endpoint enforces.
+_require_reports_create = require_all_permissions(ERP_REPORTS_READ, ERP_REPORTS_CREATE)
 
 # --- L3 HR/Payroll narratives (HR-AI-003) ----------------------------------
 # L3 outputs require erp.hr.ai.management everywhere (spec: management-only).
@@ -79,6 +85,9 @@ _require_narrator_refresh = require_all_permissions(*_NARRATOR_READS, ERP_AI_NAR
 
 _NarratorDep = Annotated[dict[str, Any], Depends(_require_narrator_reads)]
 _NarratorRefreshDep = Annotated[dict[str, Any], Depends(_require_narrator_refresh)]
+
+_ReportsReadDep = Annotated[dict[str, Any], Depends(_require_reports_read)]
+_ReportsCreateDep = Annotated[dict[str, Any], Depends(_require_reports_create)]
 
 
 def get_ai_client(request: Request) -> httpx.AsyncClient:
@@ -437,3 +446,33 @@ async def proxy_crm_deal_health(
 ) -> Response:
     """CRM deal health assessment -> ai-agent /api/v1/ai/crm/opportunities/{id}/health."""
     return await _proxy(request, client, f"/api/v1/ai/crm/opportunities/{opportunity_id}/health")
+
+
+# --- NL report builder (SKY-80) ---------------------------------------------
+
+# generate builds a preview from report definitions the caller can already
+# read (erp.reports.read); save persists a NEW definition and additionally
+# requires erp.reports.create. The AI service is still only a proxy: Core
+# authorizes first, then forwards the caller's JWT + tenant slug verbatim.
+
+
+@router.post("/report-builder/generate")
+async def proxy_report_builder_generate(
+    request: Request,
+    _invoke: _InvokeDep,
+    _reports_read: _ReportsReadDep,
+    client: _ClientDep,
+) -> Response:
+    """NL report generation -> ai-agent /api/v1/ai/report-builder/generate."""
+    return await _proxy(request, client, "/api/v1/ai/report-builder/generate")
+
+
+@router.post("/report-builder/save")
+async def proxy_report_builder_save(
+    request: Request,
+    _invoke: _InvokeDep,
+    _reports_create: _ReportsCreateDep,
+    client: _ClientDep,
+) -> Response:
+    """Persist a generated report spec -> ai-agent /api/v1/ai/report-builder/save."""
+    return await _proxy(request, client, "/api/v1/ai/report-builder/save")

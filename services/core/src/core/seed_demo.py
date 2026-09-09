@@ -1310,7 +1310,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("0"),
         "tax": Decimal("2500"),
         "total": Decimal("27500"),
-        "days_ago": 60,
+        "days_ago": 75,
         "lines": [
             {
                 "prod": 0,
@@ -1332,7 +1332,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("500"),
         "tax": Decimal("1550"),
         "total": Decimal("17050"),
-        "days_ago": 45,
+        "days_ago": 88,
         "lines": [
             {
                 "prod": 1,
@@ -1374,7 +1374,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("2000"),
         "tax": Decimal("4000"),
         "total": Decimal("44000"),
-        "days_ago": 30,
+        "days_ago": 120,
         "lines": [
             {
                 "prod": 0,
@@ -1416,7 +1416,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("0"),
         "tax": Decimal("870"),
         "total": Decimal("9570"),
-        "days_ago": 10,
+        "days_ago": 5,
         "lines": [
             {
                 "prod": 11,
@@ -1448,7 +1448,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("1000"),
         "tax": Decimal("1880"),
         "total": Decimal("20680"),
-        "days_ago": 25,
+        "days_ago": 160,
         "lines": [
             {
                 "prod": 8,
@@ -1480,7 +1480,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("0"),
         "tax": Decimal("540"),
         "total": Decimal("5940"),
-        "days_ago": 50,
+        "days_ago": 4,
         "lines": [
             {
                 "prod": 6,
@@ -1502,7 +1502,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("3000"),
         "tax": Decimal("3300"),
         "total": Decimal("36300"),
-        "days_ago": 5,
+        "days_ago": 30,
         "lines": [
             {
                 "prod": 0,
@@ -1534,7 +1534,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("0"),
         "tax": Decimal("800"),
         "total": Decimal("8800"),
-        "days_ago": 40,
+        "days_ago": 12,
         "lines": [
             {
                 "prod": 1,
@@ -1556,7 +1556,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("500"),
         "tax": Decimal("1400"),
         "total": Decimal("15400"),
-        "days_ago": 18,
+        "days_ago": 20,
         "lines": [
             {
                 "prod": 5,
@@ -1598,7 +1598,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("0"),
         "tax": Decimal("650"),
         "total": Decimal("7150"),
-        "days_ago": 55,
+        "days_ago": 95,
         "lines": [
             {
                 "prod": 2,
@@ -1652,7 +1652,7 @@ SALES_ORDER_ROWS: tuple[dict[str, object], ...] = (
         "discount": Decimal("5000"),
         "tax": Decimal("4700"),
         "total": Decimal("51700"),
-        "days_ago": 12,
+        "days_ago": 260,
         "lines": [
             {
                 "prod": 0,
@@ -2908,6 +2908,12 @@ async def seed_demo_data(
 
         # ── SALES ORDERS + LINES ─────────────────────────────────────
         for idx, row in enumerate(SALES_ORDER_ROWS):
+            # created_at MUST follow days_ago, not the DB default now():
+            # the reporting engine groups sales by DATE(created_at), and a
+            # seed-day timestamp collapses every order onto one date (and
+            # empties any historical window). updated_at mirrors it so audit
+            # columns stay coherent. confirmed_at lags creation by ~6h.
+            so_created_at = _ago(float(str(row["days_ago"])))
             so = ErpSalesOrderModel(
                 tenant_id=tenant_id,
                 order_number=row["number"],
@@ -2919,7 +2925,9 @@ async def seed_demo_data(
                 tax=row["tax"],
                 total=row["total"],
                 currency_code="USD",
-                confirmed_at=_ago(float(str(row["days_ago"])))
+                created_at=so_created_at,
+                updated_at=so_created_at,
+                confirmed_at=so_created_at + timedelta(hours=6)
                 if row["status"] in (OrderStatus.CONFIRMED, OrderStatus.FULFILLED)
                 else None,
             )

@@ -28,6 +28,8 @@ from core.core.permissions import (
     ERP_FINANCE_READ,
     ERP_HR_AI_MANAGEMENT,
     ERP_INVENTORY_READ,
+    ERP_REPORTS_CREATE,
+    ERP_REPORTS_READ,
     ERP_SALES_READ,
 )
 from core.features.ai import router as ai_router
@@ -48,6 +50,8 @@ def _app_with_recorder(seen: list[httpx.Request]) -> TestClient:
     app.dependency_overrides[ai_router._require_inventory_ai_approve] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_narrator_reads] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_narrator_refresh] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_reports_read] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_reports_create] = lambda: {"sub": "u1"}
     client_factory = lambda: httpx.AsyncClient(  # noqa: E731
         transport=httpx.MockTransport(handler), base_url="http://ai.test"
     )
@@ -327,3 +331,95 @@ class TestNarratorPermissionGate:
             ERP_AI_NARRATOR_REFRESH,
         )
         assert self._app().post("/api/v1/ai/narrator/digest/refresh").status_code == 200
+
+
+class TestReportBuilderForwarding:
+    """SKY-80 proxy: generate/save must reach ai-agent unchanged."""
+
+    def test_generate_forwards_path_and_body(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+
+        response = client.post(
+            "/api/v1/ai/report-builder/generate",
+            json={"prompt": "margin by region"},
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert len(seen) == 1
+        assert seen[0].url.path == "/api/v1/ai/report-builder/generate"
+        assert seen[0].read() == b'{"prompt":"margin by region"}'
+
+    def test_save_forwards_path_and_body(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+
+        response = client.post(
+            "/api/v1/ai/report-builder/save",
+            json={"source_slug": "margin-by-region", "params": {}},
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert len(seen) == 1
+        assert seen[0].url.path == "/api/v1/ai/report-builder/save"
+
+
+class TestReportBuilderPermissionGate:
+    """generate needs invoke + reports read; save adds erp.reports.create."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_rbac(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        grants: list[str] = []
+        self._grants_box = grants
+
+        class _FakeRbac:
+            def __init__(self, session: object) -> None:
+                self.session = session
+
+            async def resolve_user_permissions(
+                self, *, user_id: object, tenant_id: object
+            ) -> list[str]:
+                return grants
+
+        monkeypatch.setattr(api_deps, "RbacRepository", _FakeRbac)
+
+    def _app(self) -> TestClient:
+        app = FastAPI()
+        app.add_exception_handler(SkyrictError, skyrict_error_handler)
+        app.include_router(ai_router.router, prefix="/api/v1")
+        app.dependency_overrides[get_current_user] = lambda: {
+            "user_id": uuid.uuid4(),
+            "tenant_id": uuid.uuid4(),
+        }
+        app.dependency_overrides[get_db] = lambda: object()
+        app.dependency_overrides[ai_router.get_ai_client] = lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"ok": True})),
+            base_url="http://ai.test",
+        )
+        return TestClient(app)
+
+    def _grant(self, *keys: str) -> None:
+        self._grants_box[:] = list(keys)
+
+    def test_generate_with_invoke_and_read(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_REPORTS_READ)
+        assert self._app().post("/api/v1/ai/report-builder/generate").status_code == 200
+
+    def test_generate_without_reports_read_denied(self) -> None:
+        self._grant(ERP_AI_INVOKE)
+        assert self._app().post("/api/v1/ai/report-builder/generate").status_code == 403
+
+    def test_save_requires_create_gate(self) -> None:
+        # Read alone lets you generate but not persist a new definition.
+        self._grant(ERP_AI_INVOKE, ERP_REPORTS_READ)
+        assert self._app().post("/api/v1/ai/report-builder/save").status_code == 403
+
+    def test_save_with_create_gate(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_REPORTS_READ, ERP_REPORTS_CREATE)
+        assert self._app().post("/api/v1/ai/report-builder/save").status_code == 200
+
+    def test_missing_invoke_denied(self) -> None:
+        self._grant(ERP_REPORTS_READ, ERP_REPORTS_CREATE)
+        assert self._app().post("/api/v1/ai/report-builder/save").status_code == 403

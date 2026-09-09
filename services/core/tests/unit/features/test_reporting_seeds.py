@@ -23,6 +23,7 @@ import pytest
 from core.core.permissions import CATALOG, ERP_REPORTS_READ
 from core.features.reporting.seeds import (
     PHASE_1_REPORT_SEEDS,
+    find_seed_for_sql,
     is_seed_stale,
 )
 from core.features.reporting.validation import (
@@ -73,6 +74,32 @@ class TestCatalogShape:
     def test_every_seed_declares_a_version(self) -> None:
         for seed in PHASE_1_REPORT_SEEDS:
             assert seed.version >= 1
+
+    def test_every_seed_declares_nl_vocabulary(self) -> None:
+        """RPT-AI-001: every template must expose the selectable dataset,
+        dimensions and measures the NL report builder is allowed to use."""
+        for seed in PHASE_1_REPORT_SEEDS:
+            assert seed.dataset
+            assert seed.dimensions
+            assert seed.measures
+
+
+class TestFindSeedForSql:
+    """The enrichment key that recovers template semantics for saved reports."""
+
+    def test_matches_by_exact_sql(self) -> None:
+        seed = next(s for s in PHASE_1_REPORT_SEEDS if s.slug == "ar_aging")
+        assert find_seed_for_sql(seed.sql) is seed
+
+    def test_matches_whitespace_collapsed_sql(self) -> None:
+        """Legacy write paths collapse whitespace; stored rows must still
+        resolve back to their template."""
+        seed = next(s for s in PHASE_1_REPORT_SEEDS if s.slug == "ar_aging")
+        collapsed = " ".join(seed.sql.split())
+        assert find_seed_for_sql(collapsed) is seed
+
+    def test_returns_none_for_unknown_sql(self) -> None:
+        assert find_seed_for_sql("SELECT 1") is None
 
 
 class TestSeedVersioning:

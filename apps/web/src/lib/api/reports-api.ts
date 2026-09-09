@@ -1,4 +1,11 @@
-import { ApiError, apiFetch, apiFetchRaw, apiPost, buildQueryString } from "@/lib/api/http";
+import {
+  ApiError,
+  apiFetch,
+  apiFetchRaw,
+  apiPost,
+  apiPostBody,
+  buildQueryString,
+} from "@/lib/api/http";
 
 /*
  * Typed client for the Core reporting feature through the BFF proxy at
@@ -20,6 +27,13 @@ export interface ReportDefinition {
   module: string;
   description: string | null;
   params: string[];
+  /** NL-builder selectable vocabulary (SKY-80): the dataset the template
+   *  reads from and the grouping dimensions / numeric measures an LLM may
+   *  pick. Populated from the canonical seed, so saved reports inherit
+   *  their template's semantics. */
+  dataset: string | null;
+  dimensions: string[];
+  measures: string[];
   permission_key: string;
   version: number;
   updated_at: string;
@@ -134,4 +148,92 @@ export async function listReportsWithProvenance(
     reports: payload.data ?? [],
     mockFallback: res.headers.get("x-mock-fallback")?.toLowerCase() === "true",
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * NL report builder (SKY-80 / RPT-AI-001)
+ *
+ * The builder lives on the ai-agent behind the same BFF catch-all: /ai/**
+ * is proxied to the Core monolith, which forwards it to the ai-agent with
+ * the caller's session scope intact. The generate response echoes the
+ * resolved template slug + params (server-validated), which is exactly what
+ * the save flow needs - the client holds no SQL and invents nothing.
+ * ------------------------------------------------------------------------- */
+
+const AI_BASE = "/api/v1/ai";
+
+/** The structured report a successful generate produced. */
+export interface GeneratedReportData {
+  /** Slug of the canonical template the builder resolved to. */
+  slug: string;
+  title: string;
+  module: string;
+  columns: string[];
+  rows: Record<string, string>[];
+  truncated: boolean;
+  /** Backend mirror of planChart() on the user's chosen dimensions. */
+  chart_hint: "line" | "bar" | null;
+  /** Server-resolved bind values (ISO dates), safe for the save echo. */
+  params: Record<string, string>;
+}
+
+export interface ReportBuilderGenerateResponse {
+  answer: string;
+  /** Absent when the builder abstained or asked for clarification. */
+  data: GeneratedReportData | null;
+  model_used: string | null;
+  latency_ms: number;
+}
+
+export interface ReportBuilderSaveRequest {
+  slug: string;
+  title: string;
+  description?: string | null;
+  template_slug: string;
+  params: Record<string, string>;
+}
+
+export interface ReportBuilderSaveResponse {
+  slug: string;
+  title: string;
+  module: string;
+  answer: string;
+  default_params: Record<string, string>;
+}
+
+/** Ask the builder to turn a natural-language prompt into a report run. */
+export async function generateReport(prompt: string): Promise<ReportBuilderGenerateResponse> {
+  // The generate endpoint is NOT an envelope: it returns the full result
+  // object {answer, data, model_used, latency_ms} at top level. apiPost
+  // would unwrap the payload's `data` key, silently dropping answer and
+  // collapsing a successful report into a messageless clarification. Use the
+  // raw-body client so the whole response surfaces to the workspace.
+  return apiPostBody<ReportBuilderGenerateResponse>(
+    `${AI_BASE}/report-builder/generate`,
+    { prompt },
+  );
+}
+
+/** Persist a generated report as a new runnable definition (Core endorses the SQL). */
+export async function saveGeneratedReport(
+  body: ReportBuilderSaveRequest,
+): Promise<ReportBuilderSaveResponse> {
+  // Like /generate, /save answers with the bare model (no {data: ...}
+  // envelope), so the raw-body client is required - apiPost would unwrap and
+  // shape-misroute the response.
+  return apiPostBody<ReportBuilderSaveResponse>(
+    `${AI_BASE}/report-builder/save`,
+    body,
+  );
+}
+
+/** A display slug for the save flow, honoring Core's [a-z0-9_-] pattern. */
+export function toReportSlug(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/g, "");
+  return slug || "report";
 }

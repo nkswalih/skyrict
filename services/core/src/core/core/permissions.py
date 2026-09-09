@@ -110,6 +110,10 @@ ERP_PAYROLL_AI_APPROVE = "erp.payroll.ai.approve"
 # Read gate for every /api/v1/reporting/* endpoint and the report snapshot
 # queries; seeded into core_permissions by migration 0036.
 ERP_REPORTS_READ = "erp.reports.read"
+# Create gate for POST /api/v1/reports (RPT-AI-001, SKY-80): lets an authorised
+# user persist a generated report spec as a new erp_report_definitions row.
+# Always paired with ERP_REPORTS_READ so a creator can run what they create.
+ERP_REPORTS_CREATE = "erp.reports.create"
 
 # Every catalogued permission, in catalog order.
 CATALOG: tuple[str, ...] = (
@@ -159,6 +163,7 @@ CATALOG: tuple[str, ...] = (
     ERP_PAYROLL_AI_NOTIFY,
     ERP_PAYROLL_AI_APPROVE,
     ERP_REPORTS_READ,
+    ERP_REPORTS_CREATE,
 )
 # Permission module groupings.
 # Each entry: (module_key, module_label, (permission_keys, ...))
@@ -217,7 +222,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "reporting",
         "Reporting & analytics",
-        (ERP_REPORTS_READ,),
+        (ERP_REPORTS_READ, ERP_REPORTS_CREATE),
     ),
 )
 
@@ -283,6 +288,7 @@ __all__ = [
     "ERP_PURCHASE_APPROVE",
     "ERP_PURCHASE_READ",
     "ERP_PURCHASE_WRITE",
+    "ERP_REPORTS_CREATE",
     "ERP_REPORTS_READ",
     "ERP_SALES_APPROVE",
     "ERP_SALES_READ",
