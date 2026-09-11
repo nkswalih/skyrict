@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import structlog
 
@@ -115,7 +115,11 @@ class L3NarrativeService:
                     },
                     output_payload={
                         "status": cached.status,
-                        "generated_at": (cached.generated_at or "").isoformat(),
+                        "generated_at": (
+                            cached.generated_at.isoformat()
+                            if isinstance(cached.generated_at, datetime)
+                            else str(cached.generated_at)
+                        ),
                     }
                     if cached.generated_at
                     else {"status": cached.status},
@@ -161,7 +165,7 @@ class L3NarrativeService:
                 user_id=user_id,
             )
 
-        figures = signals.get("figures", {})
+        figures = cast("dict[str, str]", signals.get("figures", {}))
         rendered = render_narrative(text, figures)
 
         audit_action = _KIND_AUDIT_EVENT.get(kind)
@@ -237,7 +241,7 @@ class L3NarrativeService:
             return build_leave_pay_signals(raw)
         if kind == "compliance_digest":
             return build_compliance_digest_signals(raw)
-        return raw
+        return cast("dict[str, object]", raw)
 
     async def _persist_abstention(
         self,

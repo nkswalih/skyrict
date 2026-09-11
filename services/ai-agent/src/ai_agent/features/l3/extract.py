@@ -10,6 +10,7 @@ import json
 from decimal import Decimal
 from statistics import StatisticsError
 from statistics import correlation as pearson
+from typing import Any
 
 _DELTA_KEYS = (
     "headcount_delta",
@@ -32,7 +33,7 @@ _MATERIAL_DELTA_KEYS = _DELTA_KEYS[:4]
 _CORRELATION_MIN_MONTHS = 12
 
 
-def build_payroll_cost_signals(raw: dict) -> dict:
+def build_payroll_cost_signals(raw: dict[str, Any]) -> dict[str, Any]:
     """Transform the core payroll-cost response into a gold-signal dict.
 
     ``raw`` is the core ``PayrollCostMovementOut`` data (flat fields, money as
@@ -56,7 +57,7 @@ def build_payroll_cost_signals(raw: dict) -> dict:
     }
 
 
-def build_prompt(kind: str, signals: dict) -> str:
+def build_prompt(kind: str, signals: dict[str, Any]) -> str:
     """Build a user prompt that tells the LLM to narrate using token references."""
     return (
         f"You are writing an executive narrative for L3 HR/Payroll metric: {kind}.\n"
@@ -67,7 +68,7 @@ def build_prompt(kind: str, signals: dict) -> str:
     )
 
 
-def build_leave_pay_signals(raw: dict) -> dict:
+def build_leave_pay_signals(raw: dict[str, Any]) -> dict[str, Any]:
     """Collapse the core leave-pay series into a gold-signal dict.
 
     ``raw`` is the core ``LeavePayCorrelationOut`` shape: ``{"pairs": [...]}``
@@ -105,7 +106,7 @@ def build_leave_pay_signals(raw: dict) -> dict:
     }
 
 
-def build_compliance_digest_signals(raw: dict) -> dict:
+def build_compliance_digest_signals(raw: dict[str, Any]) -> dict[str, Any]:
     """Collapse the core compliance-org response into a gold-signal dict.
 
     ``raw`` is the core ``ComplianceOrgOut`` shape: aggregate counts by
@@ -140,7 +141,7 @@ def build_compliance_digest_signals(raw: dict) -> dict:
     }
 
 
-def has_material_activity(kind: str, signals: dict) -> bool:
+def has_material_activity(kind: str, signals: dict[str, Any]) -> bool:
     """Kind-specific gate: payroll-cost and compliance need non-zero deltas;
     leave-pay needs 12+ completed months with a definable correlation."""
     if kind in ("payroll_cost", "leave_pay_correlation", "compliance_digest"):
