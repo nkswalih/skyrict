@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
-from statistics import StatisticsError, correlation as pearson
+from statistics import StatisticsError
+from statistics import correlation as pearson
 
 _DELTA_KEYS = (
     "headcount_delta",

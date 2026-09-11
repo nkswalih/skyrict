@@ -27,10 +27,10 @@ from ai_agent.api.v1.routers.finance_ai import (
 from ai_agent.api.v1.routers.finance_lines import router as finance_lines_router
 from ai_agent.api.v1.routers.forecast import router as forecast_router
 from ai_agent.api.v1.routers.guardian import router as guardian_router
-from ai_agent.api.v1.routers.l3 import router as l3_router
 from ai_agent.api.v1.routers.hr_copilot import router as hr_copilot_router
 from ai_agent.api.v1.routers.inventory_search import router as inventory_search_router
 from ai_agent.api.v1.routers.inventory_sync import router as inventory_sync_router
+from ai_agent.api.v1.routers.l3 import router as l3_router
 from ai_agent.api.v1.routers.narrator import router as narrator_router
 from ai_agent.api.v1.routers.nl_query import router as nl_query_router
 from ai_agent.api.v1.routers.rag import router as rag_router
