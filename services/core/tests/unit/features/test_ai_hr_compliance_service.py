@@ -155,8 +155,10 @@ async def test_org_feed_aggregates_types_severity_and_open() -> None:
     }
     assert summary.by_severity == {"medium": 1, "high": 1, "low": 1}
     assert "1 open compliance finding" in summary.narrative
-    assert [(g.check_type, g.weighted_open_score, g.open_count, g.total_count)
-            for g in summary.risk_ranked] == [
+    assert [
+        (g.check_type, g.weighted_open_score, g.open_count, g.total_count)
+        for g in summary.risk_ranked
+    ] == [
         ("document_expiry", 2, 1, 1),
         ("contract_missing_field", 0, 0, 1),
         ("training_overdue", 0, 0, 1),

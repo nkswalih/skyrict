@@ -223,7 +223,9 @@ class TestL3Narratives:
         }
         app.dependency_overrides[get_db] = lambda: object()
         app.dependency_overrides[ai_router.get_ai_client] = lambda: httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda request: (seen.append(request), httpx.Response(200, json={"ok": True}))[1]),
+            transport=httpx.MockTransport(
+                lambda request: (seen.append(request), httpx.Response(200, json={"ok": True}))[1]
+            ),
             base_url="http://ai.test",
         )
         return TestClient(app)

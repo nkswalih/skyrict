@@ -29,7 +29,7 @@ class _FakeL3Service:
         user_id: uuid.UUID | None,
         as_of: date,
         force_refresh: bool,
-) -> None:
+    ) -> None:
         self._record["calls"].append(
             {
                 "kind": kind,

@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("narrator.agent_registration_failed")
 
-# Weekly L3 compliance digest (HR-AI-003): optional APScheduler cron over
+    # Weekly L3 compliance digest (HR-AI-003): optional APScheduler cron over
     # all active tenants. Disabled by default; starts only when enabled AND a
     # service token is provisioned AND a provider is configured (the digest
     # requires the LLM to narrate).

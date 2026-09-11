@@ -28,9 +28,7 @@ _PERMISSIONS: tuple[tuple[str, str], ...] = (
 )
 
 # Roles granted each key when migrating (owner is covered by its "*" grant).
-_GRANTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("erp.ai.l3.refresh", ("tenant_owner",)),
-)
+_GRANTS: tuple[tuple[str, tuple[str, ...]], ...] = (("erp.ai.l3.refresh", ("tenant_owner",)),)
 
 
 def _append_permissions(role_names: tuple[str, ...], permission_keys: tuple[str, ...]) -> None:

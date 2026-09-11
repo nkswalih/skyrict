@@ -28,12 +28,12 @@ from ai_agent.core.audit_events import (
     AI_GUARDIAN_EVENT_FLAGGED,
     AI_GUARDIAN_REPORT_GENERATED,
     AI_HR_COPILOT_EXCHANGE,
-    AI_LEAD_SCORED,
     AI_L3_ABSTAINED,
     AI_L3_ACCESSED,
     AI_L3_COMPLIANCE_DIGESTED,
     AI_L3_LEAVE_PAY_CORRELATED,
     AI_L3_PAYROLL_COST_GENERATED,
+    AI_LEAD_SCORED,
     AI_NARRATOR_GENERATED,
     AI_NARRATOR_REFRESHED,
     AI_QUERY_EXECUTED,
@@ -76,7 +76,7 @@ class TestAppendixBVocabulary:
         # SKY-80 NL report builder events.
         assert AI_REPORT_GENERATED == "ai.report.generated"
         assert AI_REPORT_SAVED == "ai.report.saved"
-# HR-AI-003 L3 HR/Payroll narrative events.
+        # HR-AI-003 L3 HR/Payroll narrative events.
         assert AI_L3_PAYROLL_COST_GENERATED == "ai.l3.payroll_cost.generated"
         assert AI_L3_LEAVE_PAY_CORRELATED == "ai.l3.leave_pay.correlated"
         assert AI_L3_COMPLIANCE_DIGESTED == "ai.l3.compliance.digested"

@@ -108,8 +108,15 @@ class L3NarrativeService:
                     action=AI_L3_ACCESSED,
                     tenant_id=tenant_id,
                     user_id=user_id,
-                    input_payload={"as_of": as_of.isoformat(), "kind": kind, "force_refresh": False},
-                    output_payload={"status": cached.status, "generated_at": (cached.generated_at or "").isoformat()}
+                    input_payload={
+                        "as_of": as_of.isoformat(),
+                        "kind": kind,
+                        "force_refresh": False,
+                    },
+                    output_payload={
+                        "status": cached.status,
+                        "generated_at": (cached.generated_at or "").isoformat(),
+                    }
                     if cached.generated_at
                     else {"status": cached.status},
                 )
@@ -163,7 +170,11 @@ class L3NarrativeService:
                 action=audit_action,
                 tenant_id=tenant_id,
                 user_id=user_id,
-                input_payload={"as_of": as_of.isoformat(), "kind": kind, "force_refresh": force_refresh},
+                input_payload={
+                    "as_of": as_of.isoformat(),
+                    "kind": kind,
+                    "force_refresh": force_refresh,
+                },
                 output_payload={
                     "title": rendered.title,
                     "model_used": rendered.model_used,

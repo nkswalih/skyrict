@@ -10,7 +10,7 @@ never a number the model typed).
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -23,7 +23,7 @@ from ai_agent.features.l3.extract import (
     has_material_activity,
 )
 from ai_agent.features.l3.gateway import L3CoreGatewayPort
-from ai_agent.features.l3.narrate import _parse_json, narrate_l3
+from ai_agent.features.l3.narrate import _parse_json
 from ai_agent.features.l3.render import render_narrative
 from ai_agent.features.l3.service import L3NarrativeService
 from skyrict_common.exceptions import PermissionDeniedError
@@ -55,23 +55,35 @@ _SPIKE_PAYLOAD = {
     "previous_benefit_adjustments": "0.00",
     "benefit_delta": "500.00",
     "department_breakdown": [
-        {"department_name": "Operations", "current_net": "52060.00", "previous_net": "41400.00",
-         "net_delta": "10660.00"},
-        {"department_name": "Engineering", "current_net": "53460.00", "previous_net": "55000.00",
-         "net_delta": "-1540.00"},
+        {
+            "department_name": "Operations",
+            "current_net": "52060.00",
+            "previous_net": "41400.00",
+            "net_delta": "10660.00",
+        },
+        {
+            "department_name": "Engineering",
+            "current_net": "53460.00",
+            "previous_net": "55000.00",
+            "net_delta": "-1540.00",
+        },
     ],
 }
 
-_FLAT_PAYLOAD = {**dict(_SPIKE_PAYLOAD), **{key: ("0" if key.endswith("_delta") else value)
-                                             for key, value in _SPIKE_PAYLOAD.items()}}
+_FLAT_PAYLOAD = {
+    **dict(_SPIKE_PAYLOAD),
+    **{key: ("0" if key.endswith("_delta") else value) for key, value in _SPIKE_PAYLOAD.items()},
+}
 
-_GOOD_JSON = ('{"title": "Overtime drove payroll cost up {{overtime_delta}}",'
-              ' "summary": "March payroll rose {{net_delta}} headcount-flat,'
-              ' led by a {{overtime_delta}} overtime spike in Operations.",'
-              ' "points": ["Net pay up {{net_delta}} with headcount unchanged'
-              ' ({{headcount_delta}})", "Overtime spike of {{overtime_delta}}'
-              ' concentrated in Operations"],'
-              ' "caveat": "Figures verified against payroll runs."}')
+_GOOD_JSON = (
+    '{"title": "Overtime drove payroll cost up {{overtime_delta}}",'
+    ' "summary": "March payroll rose {{net_delta}} headcount-flat,'
+    ' led by a {{overtime_delta}} overtime spike in Operations.",'
+    ' "points": ["Net pay up {{net_delta}} with headcount unchanged'
+    ' ({{headcount_delta}})", "Overtime spike of {{overtime_delta}}'
+    ' concentrated in Operations"],'
+    ' "caveat": "Figures verified against payroll runs."}'
+)
 
 # Twelve completed payroll months with leave_days + overtime chosen to be
 # strongly positively correlated (~linear), mirroring the demo seed schedule.
@@ -79,26 +91,43 @@ _CORRELATION_PAIRS = [
     {"period_start": "2025-04-01", "run_code": "PR-2025-04", "leave_days": 2, "overtime": "300.00"},
     {"period_start": "2025-05-01", "run_code": "PR-2025-05", "leave_days": 3, "overtime": "450.00"},
     {"period_start": "2025-06-01", "run_code": "PR-2025-06", "leave_days": 5, "overtime": "750.00"},
-    {"period_start": "2025-07-01", "run_code": "PR-2025-07", "leave_days": 8, "overtime": "1200.00"},
-    {"period_start": "2025-08-01", "run_code": "PR-2025-08", "leave_days": 9, "overtime": "1350.00"},
+    {
+        "period_start": "2025-07-01",
+        "run_code": "PR-2025-07",
+        "leave_days": 8,
+        "overtime": "1200.00",
+    },
+    {
+        "period_start": "2025-08-01",
+        "run_code": "PR-2025-08",
+        "leave_days": 9,
+        "overtime": "1350.00",
+    },
     {"period_start": "2025-09-01", "run_code": "PR-2025-09", "leave_days": 4, "overtime": "600.00"},
     {"period_start": "2025-10-01", "run_code": "PR-2025-10", "leave_days": 3, "overtime": "450.00"},
     {"period_start": "2025-11-01", "run_code": "PR-2025-11", "leave_days": 5, "overtime": "750.00"},
     {"period_start": "2025-12-01", "run_code": "PR-2025-12", "leave_days": 6, "overtime": "900.00"},
     {"period_start": "2026-01-01", "run_code": "PR-2026-01", "leave_days": 2, "overtime": "300.00"},
     {"period_start": "2026-02-01", "run_code": "PR-2026-02", "leave_days": 3, "overtime": "450.00"},
-    {"period_start": "2026-03-01", "run_code": "PR-2026-03", "leave_days": 10, "overtime": "1500.00"},
+    {
+        "period_start": "2026-03-01",
+        "run_code": "PR-2026-03",
+        "leave_days": 10,
+        "overtime": "1500.00",
+    },
 ]
 
-_GOOD_LEAVE_JSON = ('{"title": "Leave and overtime track together {{correlation}}",'
-                     ' "summary": "Across {{sample_size}} months, approved leave and cover'
-                     ' overtime move together (r {{correlation}}), peaking in'
-                     ' {{peak_overtime_month}}.",'
-                     ' "points": ["Highest leave month {{highest_leave_month}}'
-                     ' with {{highest_leave_days}} days", "Overtime peak'
-                     ' {{peak_overtime}} in {{peak_overtime_month}}"],'
-                     ' "caveat": "Correlation is not causation; figures verified'
-                     ' against payroll sources."}')
+_GOOD_LEAVE_JSON = (
+    '{"title": "Leave and overtime track together {{correlation}}",'
+    ' "summary": "Across {{sample_size}} months, approved leave and cover'
+    " overtime move together (r {{correlation}}), peaking in"
+    ' {{peak_overtime_month}}.",'
+    ' "points": ["Highest leave month {{highest_leave_month}}'
+    ' with {{highest_leave_days}} days", "Overtime peak'
+    ' {{peak_overtime}} in {{peak_overtime_month}}"],'
+    ' "caveat": "Correlation is not causation; figures verified'
+    ' against payroll sources."}'
+)
 
 _COMPLIANCE_ORG_PAYLOAD = {
     "total_findings": 4,
@@ -106,31 +135,46 @@ _COMPLIANCE_ORG_PAYLOAD = {
     "by_type": {"document_expiry": 2, "training_overdue": 1, "contract_missing_field": 1},
     "by_severity": {"critical": 0, "high": 1, "medium": 2, "low": 1},
     "risk_ranked": [
-        {"check_type": "document_expiry", "weighted_open_score": 5, "open_count": 2, "total_count": 2},
-        {"check_type": "training_overdue", "weighted_open_score": 2, "open_count": 1, "total_count": 1},
-        {"check_type": "contract_missing_field", "weighted_open_score": 1, "open_count": 1, "total_count": 1},
+        {
+            "check_type": "document_expiry",
+            "weighted_open_score": 5,
+            "open_count": 2,
+            "total_count": 2,
+        },
+        {
+            "check_type": "training_overdue",
+            "weighted_open_score": 2,
+            "open_count": 1,
+            "total_count": 1,
+        },
+        {
+            "check_type": "contract_missing_field",
+            "weighted_open_score": 1,
+            "open_count": 1,
+            "total_count": 1,
+        },
     ],
     "generated_at": "2026-09-08T12:00:00Z",
     "narrative": "4 open compliance finding(-ies): 2 document expiries, "
-                 "1 overdue training, 1 missing record fields; 1 high, 0 critical.",
+    "1 overdue training, 1 missing record fields; 1 high, 0 critical.",
 }
 
-_GOOD_COMPLIANCE_JSON = ('{"title": "{{open_findings}} open compliance findings",'
-                         ' "summary": "{{open_findings}} items remain unresolved with'
-                         ' {{high_count}} high severity, including'
-                         ' {{document_expiry_count}} document expiry issues.",'
-                         ' "points": ["{{training_overdue_count}} training overdue",'
-                         ' "{{document_expiry_count}} document expiry finding(s)"],'
-                         ' "caveat": "Figures based on the latest compliance scan."}')
+_GOOD_COMPLIANCE_JSON = (
+    '{"title": "{{open_findings}} open compliance findings",'
+    ' "summary": "{{open_findings}} items remain unresolved with'
+    " {{high_count}} high severity, including"
+    ' {{document_expiry_count}} document expiry issues.",'
+    ' "points": ["{{training_overdue_count}} training overdue",'
+    ' "{{document_expiry_count}} document expiry finding(s)"],'
+    ' "caveat": "Figures based on the latest compliance scan."}'
+)
 
 
 class FakeGateway(L3CoreGatewayPort):
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
         self.leave_calls: list[object] = []
-        self.leave_payload: dict[str, object] = {
-            "pairs": _CORRELATION_PAIRS
-        }
+        self.leave_payload: dict[str, object] = {"pairs": _CORRELATION_PAIRS}
         self.compliance_calls: list[object] = []
         self.compliance_payload: dict[str, object] = {**_COMPLIANCE_ORG_PAYLOAD}
 
@@ -163,9 +207,7 @@ class FakeCache:
         self.rows: dict[tuple[uuid.UUID, str, date], object] = {}
         self.inserted: list[object] = []
 
-    async def latest_for_kind(
-        self, tenant_id: uuid.UUID, kind: str, as_of: date
-    ) -> object | None:
+    async def latest_for_kind(self, tenant_id: uuid.UUID, kind: str, as_of: date) -> object | None:
         return self.rows.get((tenant_id, kind, as_of))
 
     async def insert(
@@ -216,10 +258,13 @@ class FakeCacheWithFreshness(FakeCache):
         return isinstance(row, object) and getattr(row, "as_of", None) == as_of
 
 
-def _service(*, gateway: FakeGateway | None = None, llm: FakeLlm | None = None,
-             allow_llm: bool = True, allow_refresh: bool = True) -> tuple[
-                 L3NarrativeService, FakeCache, FakeAudit, FakeLlm
-             ]:
+def _service(
+    *,
+    gateway: FakeGateway | None = None,
+    llm: FakeLlm | None = None,
+    allow_llm: bool = True,
+    allow_refresh: bool = True,
+) -> tuple[L3NarrativeService, FakeCache, FakeAudit, FakeLlm]:
     cache = FakeCacheWithFreshness()
     audit = FakeAudit()
     fake_llm = llm or FakeLlm(text=_GOOD_JSON)
@@ -305,7 +350,10 @@ class TestService:
     async def test_generates_and_persists(self) -> None:
         svc, cache, audit, _ = _service()
         result = await svc.generate(
-            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF,
+            kind="payroll_cost",
+            tenant_id=TENANT,
+            user_id=USER,
+            as_of=AS_OF,
             force_refresh=False,
         )
         assert result.status == "generated"
@@ -317,47 +365,54 @@ class TestService:
 
     async def test_cache_hit_skips_llm(self) -> None:
         svc, cache, audit, _ = _service()
-        await svc.generate(kind="payroll_cost", tenant_id=TENANT, user_id=USER,
-                           as_of=AS_OF, force_refresh=False)
-        result = await svc.generate(kind="payroll_cost", tenant_id=TENANT,
-                                    user_id=USER, as_of=AS_OF, force_refresh=False)
+        await svc.generate(
+            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=False
+        )
+        result = await svc.generate(
+            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=False
+        )
         assert result.source == "cache"
         assert len(cache.inserted) == 1
         assert audit.events[-1]["action"] == AI_L3_ACCESSED
 
     async def test_force_refresh_allowed_when_gate_open(self) -> None:
         svc, cache, _, _ = _service()
-        result = await svc.generate(kind="payroll_cost", tenant_id=TENANT,
-                                    user_id=USER, as_of=AS_OF, force_refresh=True)
+        result = await svc.generate(
+            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=True
+        )
         assert result.source == "live"
         assert len(cache.inserted) == 1
 
     async def test_force_refresh_denied_when_gate_closed(self) -> None:
         svc, _, _, _ = _service(allow_refresh=False)
         with pytest.raises(PermissionDeniedError):
-            await svc.generate(kind="payroll_cost", tenant_id=TENANT, user_id=USER,
-                               as_of=AS_OF, force_refresh=True)
+            await svc.generate(
+                kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=True
+            )
 
     async def test_llm_disabled_abstains(self) -> None:
-        svc, cache, audit, _ = _service(allow_llm=False)
-        result = await svc.generate(kind="payroll_cost", tenant_id=TENANT,
-                                    user_id=USER, as_of=AS_OF, force_refresh=False)
+        svc, _, audit, _ = _service(allow_llm=False)
+        result = await svc.generate(
+            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=False
+        )
         assert result.status == "abstained"
         assert result.source == "llm_disabled"
         assert [e["action"] for e in audit.events] == [AI_L3_ABSTAINED]
 
     async def test_unparseable_llm_abstains(self) -> None:
-        svc, _, audit, _ = _service(llm=FakeLlm(text="not json at all"))
-        result = await svc.generate(kind="payroll_cost", tenant_id=TENANT,
-                                    user_id=USER, as_of=AS_OF, force_refresh=False)
+        svc, _, _, _ = _service(llm=FakeLlm(text="not json at all"))
+        result = await svc.generate(
+            kind="payroll_cost", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=False
+        )
         assert result.status == "abstained"
         assert result.source == "unparseable"
 
     async def test_unknown_kind_raises(self) -> None:
         svc, _, _, _ = _service()
         with pytest.raises(ValueError):
-            await svc.generate(kind="nope", tenant_id=TENANT, user_id=USER,
-                               as_of=AS_OF, force_refresh=False)
+            await svc.generate(
+                kind="nope", tenant_id=TENANT, user_id=USER, as_of=AS_OF, force_refresh=False
+            )
 
 
 class TestLeavePaySignals:
@@ -381,8 +436,15 @@ class TestLeavePaySignals:
         assert has_material_activity("leave_pay_correlation", short) is False
 
     def test_flat_series_r_undefined_is_not_material(self) -> None:
-        flat = [{"period_start": "2025-05-01", "run_code": f"PR-2025-{i:02d}",
-                 "leave_days": 5, "overtime": "100.00"} for i in range(1, 13)]
+        flat = [
+            {
+                "period_start": "2025-05-01",
+                "run_code": f"PR-2025-{i:02d}",
+                "leave_days": 5,
+                "overtime": "100.00",
+            }
+            for i in range(1, 13)
+        ]
         signals = build_leave_pay_signals({"pairs": flat})
         assert signals["has_material_activity"] is False
 
@@ -393,8 +455,11 @@ class TestLeavePayService:
         gateway.leave_payload = {"pairs": _CORRELATION_PAIRS}
         svc, cache, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_LEAVE_JSON))
         result = await svc.generate(
-            kind="leave_pay_correlation", tenant_id=TENANT, user_id=USER,
-            as_of=AS_OF, force_refresh=False,
+            kind="leave_pay_correlation",
+            tenant_id=TENANT,
+            user_id=USER,
+            as_of=AS_OF,
+            force_refresh=False,
         )
         assert result.status == "generated"
         assert result.source == "live"
@@ -408,10 +473,13 @@ class TestLeavePayService:
     async def test_abstains_when_insufficient_history(self) -> None:
         gateway = FakeGateway(_SPIKE_PAYLOAD)
         gateway.leave_payload = {"pairs": _CORRELATION_PAIRS[:5]}
-        svc, cache, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_LEAVE_JSON))
+        svc, _, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_LEAVE_JSON))
         result = await svc.generate(
-            kind="leave_pay_correlation", tenant_id=TENANT, user_id=USER,
-            as_of=AS_OF, force_refresh=False,
+            kind="leave_pay_correlation",
+            tenant_id=TENANT,
+            user_id=USER,
+            as_of=AS_OF,
+            force_refresh=False,
         )
         assert result.status == "abstained"
         assert result.source == "abstention"
@@ -439,8 +507,14 @@ class TestComplianceDigestSignals:
         assert figures["{{rank_3_type}}"] == "contract_missing_field"
 
     def test_zero_findings_is_not_material(self) -> None:
-        empty = {**_COMPLIANCE_ORG_PAYLOAD, "open_findings": 0, "total_findings": 0,
-                 "by_type": {}, "by_severity": {}, "risk_ranked": []}
+        empty = {
+            **_COMPLIANCE_ORG_PAYLOAD,
+            "open_findings": 0,
+            "total_findings": 0,
+            "by_type": {},
+            "by_severity": {},
+            "risk_ranked": [],
+        }
         signals = build_compliance_digest_signals(empty)
         assert signals["has_material_activity"] is False
         assert signals["figures"]["{{open_findings}}"] == "0"
@@ -450,11 +524,13 @@ class TestComplianceDigestSignals:
 class TestComplianceDigestService:
     async def test_generates_and_audits_compliance(self) -> None:
         gateway = FakeGateway(_SPIKE_PAYLOAD)
-        svc, cache, audit, _ = _service(gateway=gateway,
-                                        llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
+        svc, cache, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
         result = await svc.generate(
-            kind="compliance_digest", tenant_id=TENANT, user_id=USER,
-            as_of=AS_OF, force_refresh=False,
+            kind="compliance_digest",
+            tenant_id=TENANT,
+            user_id=USER,
+            as_of=AS_OF,
+            force_refresh=False,
         )
         assert result.status == "generated"
         assert result.source == "live"
@@ -467,15 +543,20 @@ class TestComplianceDigestService:
     async def test_abstains_when_zero_findings(self) -> None:
         gateway = FakeGateway(_SPIKE_PAYLOAD)
         gateway.compliance_payload = {
-            "total_findings": 0, "open_findings": 0,
-            "by_type": {}, "by_severity": {},
-            "generated_at": "2026-09-08T12:00:00Z", "narrative": "No findings.",
+            "total_findings": 0,
+            "open_findings": 0,
+            "by_type": {},
+            "by_severity": {},
+            "generated_at": "2026-09-08T12:00:00Z",
+            "narrative": "No findings.",
         }
-        svc, cache, audit, _ = _service(gateway=gateway,
-                                        llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
+        svc, _, audit, _ = _service(gateway=gateway, llm=FakeLlm(text=_GOOD_COMPLIANCE_JSON))
         result = await svc.generate(
-            kind="compliance_digest", tenant_id=TENANT, user_id=USER,
-            as_of=AS_OF, force_refresh=False,
+            kind="compliance_digest",
+            tenant_id=TENANT,
+            user_id=USER,
+            as_of=AS_OF,
+            force_refresh=False,
         )
         assert result.status == "abstained"
         assert result.source == "abstention"

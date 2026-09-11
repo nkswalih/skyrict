@@ -189,9 +189,7 @@ class L3Repository:
             ],
         )
 
-    async def leave_pay_pairs(
-        self, tenant_id: uuid.UUID, *, limit: int = 12
-    ) -> list[LeavePayPair]:
+    async def leave_pay_pairs(self, tenant_id: uuid.UUID, *, limit: int = 12) -> list[LeavePayPair]:
         """Monthly (approved leave days, overtime paid) over the last runs.
 
         One row per paid/approved run, newest first, up to ``limit`` months.

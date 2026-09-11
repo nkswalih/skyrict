@@ -229,7 +229,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("fx", "FX rates", (CORE_FX_READ, CORE_FX_WRITE)),
     ("hr", "HR", (ERP_HR_READ, ERP_HR_WRITE, ERP_HR_APPROVE)),
     ("payroll", "Payroll", (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE)),
-("documents", "Documents", (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE)),
+    ("documents", "Documents", (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE)),
     ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH, ERP_AI_L3_REFRESH)),
     (
         "hr_ai",

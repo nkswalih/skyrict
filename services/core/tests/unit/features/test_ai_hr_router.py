@@ -801,10 +801,12 @@ def _l3_movement() -> object:
         previous_benefit_adjustments=Decimal("0.00"),
         benefit_delta=Decimal("500.00"),
         department_breakdown=[
-            DepartmentCostDelta("Operations", Decimal("52060.00"), Decimal("41400.00"),
-                                Decimal("10660.00")),
-            DepartmentCostDelta("Engineering", Decimal("53460.00"), Decimal("55000.00"),
-                                Decimal("-1540.00")),
+            DepartmentCostDelta(
+                "Operations", Decimal("52060.00"), Decimal("41400.00"), Decimal("10660.00")
+            ),
+            DepartmentCostDelta(
+                "Engineering", Decimal("53460.00"), Decimal("55000.00"), Decimal("-1540.00")
+            ),
         ],
     )
 
@@ -875,7 +877,9 @@ def test_l3_leave_pay_correlation_returns_pairs_with_string_money() -> None:
     repo.pairs = [_l3_pair()]
     client = _l3_app(repo)
 
-    resp = client.get("/api/v1/ai/hr/l3/leave-pay-correlation", headers={"authorization": "Bearer tok"})
+    resp = client.get(
+        "/api/v1/ai/hr/l3/leave-pay-correlation", headers={"authorization": "Bearer tok"}
+    )
 
     assert resp.status_code == 200
     assert repo.pair_calls == [TENANT_ID]

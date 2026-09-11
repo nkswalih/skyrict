@@ -199,7 +199,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "ERP Payroll",
         (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE),
     ),
-(
+    (
         "erp_documents",
         "ERP Documents",
         (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE),

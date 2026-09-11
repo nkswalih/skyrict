@@ -39,11 +39,7 @@ def build_payroll_cost_signals(raw: dict) -> dict:
     strings). Figure tokens are built only from fields that exist on the wire;
     values are the verified source strings, substituted at render time.
     """
-    figures = {
-        f"{{{{{key}}}}}": str(raw.get(key, "0"))
-        for key in _DELTA_KEYS
-        if key in raw
-    }
+    figures = {f"{{{{{key}}}}}": str(raw.get(key, "0")) for key in _DELTA_KEYS if key in raw}
     return {
         "period": {
             "current_period_start": str(raw.get("current_period_start", "")),
@@ -101,7 +97,12 @@ def build_leave_pay_signals(raw: dict) -> dict:
         "{{peak_overtime_month}}": str(peak.get("run_code", "")),
         "{{peak_overtime}}": str(peak.get("overtime", "0")),
     }
-    return {"pairs": rows, "correlation": f"{r:.2f}", "figures": figures, "has_material_activity": True}
+    return {
+        "pairs": rows,
+        "correlation": f"{r:.2f}",
+        "figures": figures,
+        "has_material_activity": True,
+    }
 
 
 def build_compliance_digest_signals(raw: dict) -> dict:

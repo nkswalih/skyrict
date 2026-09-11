@@ -25,14 +25,15 @@ depends_on = None
 
 # (key, description) - mirrors identity.core.permissions catalog entries.
 _PERMISSIONS: tuple[tuple[str, str], ...] = (
-    ("erp.hr.ai.management", "View L3 HR/Payroll AI narratives (cost, correlation, compliance digest)"),
+    (
+        "erp.hr.ai.management",
+        "View L3 HR/Payroll AI narratives (cost, correlation, compliance digest)",
+    ),
 )
 
 # Roles granted each key when migrating (owner is covered by its "*" grant).
 # L3 is exec-scoped: tenant_owner ONLY, mirroring the 0020 "individual" tier.
-_GRANTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("erp.hr.ai.management", ("tenant_owner",)),
-)
+_GRANTS: tuple[tuple[str, tuple[str, ...]], ...] = (("erp.hr.ai.management", ("tenant_owner",)),)
 
 
 def _append_permissions(role_names: tuple[str, ...], permission_keys: tuple[str, ...]) -> None:
