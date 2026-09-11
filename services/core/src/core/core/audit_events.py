@@ -36,6 +36,10 @@ HR_AI_ANOMALY_DISMISSED = "hr.ai.anomaly.dismissed"
 HR_AI_ANOMALY_RESOLVED = "hr.ai.anomaly.resolved"
 HR_AI_COMPLIANCE_ACKNOWLEDGED = "hr.ai.compliance.acknowledged"
 HR_AI_COMPLIANCE_RESOLVED = "hr.ai.compliance.resolved"
+# HR-AI-003: L3 analytics narrative generation (every access audited, aggregates only).
+HR_AI_L3_PAYROLL_COST_NARRATED = "hr.ai.l3.payroll_cost.narrated"
+HR_AI_L3_LEAVE_PAY_CORRELATED = "hr.ai.l3.leave_pay.correlated"
+HR_AI_L3_COMPLIANCE_DIGESTED = "hr.ai.l3.compliance.digested"
 
 # ---------------------------------------------------------------------------
 # Payroll
@@ -109,6 +113,9 @@ CATALOG: tuple[str, ...] = (
     HR_AI_ANOMALY_RESOLVED,
     HR_AI_COMPLIANCE_ACKNOWLEDGED,
     HR_AI_COMPLIANCE_RESOLVED,
+    HR_AI_L3_PAYROLL_COST_NARRATED,
+    HR_AI_L3_LEAVE_PAY_CORRELATED,
+    HR_AI_L3_COMPLIANCE_DIGESTED,
     PAYROLL_RUN_CREATED,
     PAYROLL_RUN_COMPUTED,
     PAYROLL_RUN_APPROVED,
@@ -175,6 +182,9 @@ AUDIT_EVENT_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             HR_AI_ANOMALY_RESOLVED,
             HR_AI_COMPLIANCE_ACKNOWLEDGED,
             HR_AI_COMPLIANCE_RESOLVED,
+            HR_AI_L3_PAYROLL_COST_NARRATED,
+            HR_AI_L3_LEAVE_PAY_CORRELATED,
+            HR_AI_L3_COMPLIANCE_DIGESTED,
         ),
     ),
     (
@@ -275,6 +285,9 @@ __all__ = [
     "HR_AI_ANOMALY_RESOLVED",
     "HR_AI_COMPLIANCE_ACKNOWLEDGED",
     "HR_AI_COMPLIANCE_RESOLVED",
+    "HR_AI_L3_COMPLIANCE_DIGESTED",
+    "HR_AI_L3_LEAVE_PAY_CORRELATED",
+    "HR_AI_L3_PAYROLL_COST_NARRATED",
     "HR_AI_RISK_ACKNOWLEDGED",
     "HR_DEPARTMENT_CREATED",
     "HR_DEPARTMENT_UPDATED",

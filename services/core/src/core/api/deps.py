@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from core.features.ai_hr.anomaly_service import AnomalyService
     from core.features.ai_hr.compliance_service import ComplianceService
     from core.features.ai_hr.eval_repository import EvalRunRepository
+    from core.features.ai_hr.l3_repository import L3Repository
     from core.features.ai_hr.pattern_data_repository import (
         AiHrPatternDataRepository as PatternDataRepository,
     )
@@ -616,6 +617,13 @@ def get_pattern_data_repository(db: AsyncSession = Depends(get_db)) -> PatternDa
     from core.features.ai_hr.pattern_data_repository import AiHrPatternDataRepository
 
     return AiHrPatternDataRepository(db)
+
+
+def get_l3_repository(db: AsyncSession = Depends(get_db)) -> L3Repository:
+    """Composition root for the L3 payroll-cost source data repository (HR-AI-003)."""
+    from core.features.ai_hr.l3_repository import L3Repository
+
+    return L3Repository(db)
 
 
 async def get_hr_ai_individual(

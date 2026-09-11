@@ -28,6 +28,11 @@ from ai_agent.core.audit_events import (
     AI_GUARDIAN_EVENT_FLAGGED,
     AI_GUARDIAN_REPORT_GENERATED,
     AI_HR_COPILOT_EXCHANGE,
+    AI_L3_ABSTAINED,
+    AI_L3_ACCESSED,
+    AI_L3_COMPLIANCE_DIGESTED,
+    AI_L3_LEAVE_PAY_CORRELATED,
+    AI_L3_PAYROLL_COST_GENERATED,
     AI_LEAD_SCORED,
     AI_NARRATOR_GENERATED,
     AI_NARRATOR_REFRESHED,
@@ -71,6 +76,15 @@ class TestAppendixBVocabulary:
         # SKY-80 NL report builder events.
         assert AI_REPORT_GENERATED == "ai.report.generated"
         assert AI_REPORT_SAVED == "ai.report.saved"
+        # HR-AI-003 L3 HR/Payroll narrative events.
+        assert AI_L3_PAYROLL_COST_GENERATED == "ai.l3.payroll_cost.generated"
+        assert AI_L3_LEAVE_PAY_CORRELATED == "ai.l3.leave_pay.correlated"
+        assert AI_L3_COMPLIANCE_DIGESTED == "ai.l3.compliance.digested"
+
+        # HR-AI-003 every access / abstention is audited.
+        assert AI_L3_ACCESSED == "ai.l3.accessed"
+        assert AI_L3_ABSTAINED == "ai.l3.abstained"
+
         # SKY-90 agent wave 2 events.
         assert AI_COACHING_SUGGESTION_CREATED == "ai.coaching.suggestion.created"
         assert AI_COACHING_SUGGESTION_VIEWED == "ai.coaching.suggestion.viewed"
@@ -100,6 +114,11 @@ class TestAppendixBVocabulary:
             audit_events.AI_FOLLOW_UP_GENERATED,
             audit_events.AI_FOLLOW_UP_APPLIED,
             audit_events.AI_FOLLOW_UP_DISMISSED,
+            audit_events.AI_L3_PAYROLL_COST_GENERATED,
+            audit_events.AI_L3_LEAVE_PAY_CORRELATED,
+            audit_events.AI_L3_COMPLIANCE_DIGESTED,
+            audit_events.AI_L3_ACCESSED,
+            audit_events.AI_L3_ABSTAINED,
             audit_events.AI_REPORT_GENERATED,
             audit_events.AI_REPORT_SAVED,
             audit_events.AI_COACHING_SUGGESTION_CREATED,

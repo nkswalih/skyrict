@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { BadgeCheck, PenLine, Receipt, Wallet } from "lucide-react";
+import {
+    Bar,
+    BarChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+} from "recharts";
 
 import {
     RecentActivityList,
@@ -12,6 +19,7 @@ import {
     StatusBreakdown,
     type BreakdownSegment,
 } from "@/components/dashboard/shared/status-breakdown";
+import { L3NarrativeCard } from "@/components/dashboard/erp/hr/l3-narrative-card";
 import { Button } from "@/components/ui/button";
 import { CardSkeleton, StatCardSkeleton } from "@/components/ui/page-skeletons";
 import { ApiError } from "@/lib/api/http";
@@ -42,6 +50,8 @@ interface OverviewData {
     breakdown: BreakdownSegment[];
     breakdownTotal: number;
     recentRuns: ActivityItem[];
+    currency: string;
+    costTrend: { key: string; label: string; amount: number }[];
 }
 
 /** Bar/dot colors for the runs-by-status summary, matching StatusBadge hues. */
@@ -65,6 +75,27 @@ function capitalize(value: string): string {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/** Bucket paid runs into a month-over-month net cost series (newest first in). */
+function buildCostTrend(
+    runs: { periodStart: string; totalNet: { amount: string } | null }[],
+): { key: string; label: string; amount: number }[] {
+    const byMonth = new Map<string, number>();
+    for (const run of runs) {
+        const amount = Number(run.totalNet?.amount ?? 0);
+        if (!Number.isFinite(amount) || amount === 0) continue;
+        const key = run.periodStart.slice(0, 7);
+        byMonth.set(key, (byMonth.get(key) ?? 0) + amount);
+    }
+    return [...byMonth.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-12)
+        .map(([key, amount]) => ({
+            key,
+            label: formatDate(`${key}-01`),
+            amount: Math.round(amount * 100) / 100,
+        }));
+}
+
 export function PayrollOverview() {
     const [status, setStatus] = useState<PageStatus>({ state: "loading" });
 
@@ -79,6 +110,7 @@ export function PayrollOverview() {
                 approvedResult,
                 paidResult,
                 voidResult,
+                trendResult,
             ] = await Promise.all([
                 listPayrollRuns({ pageSize: 20 }),
                 getPayrollSettings(),
@@ -87,6 +119,7 @@ export function PayrollOverview() {
                 listPayrollRuns({ pageSize: 20, status: "approved" }),
                 listPayrollRuns({ pageSize: 20, status: "paid" }),
                 listPayrollRuns({ pageSize: 20, status: "void" }),
+                listPayrollRuns({ pageSize: 100, status: "paid" }),
             ]);
 
             const runsByStatus: Record<PayrollRunStatus, number> = {
@@ -145,6 +178,8 @@ export function PayrollOverview() {
                         0,
                     ),
                     recentRuns,
+                    currency,
+                    costTrend: buildCostTrend(trendResult.items),
                 },
             });
         } catch (error) {
@@ -175,6 +210,7 @@ export function PayrollOverview() {
                     <CardSkeleton className="h-64" />
                     <CardSkeleton className="h-64" />
                 </div>
+                <CardSkeleton className="h-80" />
             </div>
         );
     }
@@ -244,6 +280,54 @@ export function PayrollOverview() {
                     emptyMessage="No payroll runs yet start your first run."
                 />
             </div>
+
+            <section aria-label="Payroll cost trend" className="space-y-4">
+                <div className="rounded-xl border border-border bg-card p-5">
+                    <h2 className="font-display text-sm font-semibold tracking-tight text-foreground">
+                        Payroll cost trend
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                        Monthly total net across paid runs
+                    </p>
+                    {data.costTrend.length > 0 ? (
+                        <div className="mt-4 h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                    data={data.costTrend}
+                                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                                >
+                                    <XAxis
+                                        dataKey="label"
+                                        tick={{ fontSize: 12 }}
+                                        stroke="var(--muted-foreground)"
+                                        interval="preserveStartEnd"
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: "var(--muted)" }}
+                                        formatter={(value) =>
+                                            formatMoney(Number(value), data.currency)
+                                        }
+                                    />
+                                    <Bar
+                                        dataKey="amount"
+                                        fill="var(--primary)"
+                                        radius={[4, 4, 0, 0]}
+                                    />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <p className="mt-3 text-sm text-muted-foreground">
+                            No paid runs yet — the cost trend appears once a run is paid.
+                        </p>
+                    )}
+                </div>
+
+                <L3NarrativeCard
+                    kind="payroll_cost"
+                    accessibilityLabel="Payroll cost narrative"
+                />
+            </section>
         </div>
     );
 }

@@ -114,6 +114,9 @@ service-account*.json
 # ---------- Docker ----------
 docker-compose.override.yml
 docker-compose.override.yaml
+# Local convenience wrapper around infra/docker/docker-compose{.dev}.yml
+# (canonical compose files live under infra/docker/ - see README).
+docker-compose.yml
 
 # ---------- Node.js / Frontend ----------
 node_modules/

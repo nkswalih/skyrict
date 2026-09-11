@@ -33,10 +33,12 @@ from core.core.permissions import (
     ERP_AI_GUARDIAN_READ,
     ERP_AI_GUARDIAN_REVIEW,
     ERP_AI_INVOKE,
+    ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
     ERP_CRM_READ,
     ERP_CRM_WRITE,
     ERP_FINANCE_READ,
+    ERP_HR_AI_MANAGEMENT,
     ERP_INVENTORY_AI_APPROVE,
     ERP_INVENTORY_READ,
     ERP_INVENTORY_WRITE,
@@ -68,6 +70,15 @@ _require_reports_read = require_permission(ERP_REPORTS_READ)
 # The save path persists a NEW definition, so the caller must hold the create
 # gate IN ADDITION to the read gate every reporting endpoint enforces.
 _require_reports_create = require_all_permissions(ERP_REPORTS_READ, ERP_REPORTS_CREATE)
+
+# --- L3 HR/Payroll narratives (HR-AI-003) ----------------------------------
+# L3 outputs require erp.hr.ai.management everywhere (spec: management-only).
+# Force-refresh adds erp.ai.l3.refresh - the same two-tier convention as the
+# SKY-63 narrator (reads + a dedicated refresh key).
+_require_hr_ai_management = require_permission(ERP_HR_AI_MANAGEMENT)
+_HrAiManagementDep = Annotated[dict[str, Any], Depends(_require_hr_ai_management)]
+_require_hr_ai_l3_refresh = require_all_permissions(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
+_HrAiL3RefreshDep = Annotated[dict[str, Any], Depends(_require_hr_ai_l3_refresh)]
 
 # --- Cross-module narrator (SKY-63) strict matrix ---------------------------
 # The digest spans all four ERP domains, so a caller must hold erp.ai.invoke
@@ -315,6 +326,37 @@ async def proxy_narrator_refresh(
 ) -> Response:
     """Force-recompute today's digest -> ai-agent /api/v1/ai/narrator/digest/refresh."""
     return await _proxy(request, client, "/api/v1/ai/narrator/digest/refresh")
+
+
+# --- L3 HR/Payroll narratives (HR-AI-003) -----------------------------------
+# Narration happens in ai-agent; the gate lives HERE at the core edge
+# (erp.hr.ai.management), mirroring the narrator/refresh convention.
+
+
+@router.get("/l3/{kind}")
+async def proxy_l3_narrative(
+    request: Request,
+    kind: str,
+    _management: _HrAiManagementDep,
+    client: _ClientDep,
+) -> Response:
+    """L3 narrative for a kind -> ai-agent /api/v1/ai/l3/{kind}."""
+    return await _proxy(request, client, f"/api/v1/ai/l3/{kind}")
+
+
+@router.post("/l3/{kind}/refresh")
+async def proxy_l3_narrative_refresh(
+    request: Request,
+    kind: str,
+    _refresh: _HrAiL3RefreshDep,
+    client: _ClientDep,
+) -> Response:
+    """Force-recompute an L3 narrative -> ai-agent /api/v1/ai/l3/{kind}/refresh.
+
+    Two-tier gate: erp.hr.ai.management (read) AND erp.ai.l3.refresh (refresh),
+    mirroring the narrator/refresh convention.
+    """
+    return await _proxy(request, client, f"/api/v1/ai/l3/{kind}/refresh")
 
 
 # --- Demand forecasting (feature 4) ------------------------------------------

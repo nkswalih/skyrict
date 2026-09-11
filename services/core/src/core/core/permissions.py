@@ -92,6 +92,12 @@ ERP_AI_INVOKE = "erp.ai.invoke"
 # the daily digest out of turn; plain reads need the strict narrator matrix.
 ERP_AI_NARRATOR_REFRESH = "erp.ai.narrator.refresh"
 
+# L3 HR/Payroll narratives (HR-AI-003): force-refresh gate on the
+# /api/v1/ai/l3/{kind}/refresh proxy. Mirrors the narrator convention - a
+# caller must hold the L3 read gate (erp.hr.ai.management) AND this refresh
+# key to force LLM narration out of turn; plain reads need management only.
+ERP_AI_L3_REFRESH = "erp.ai.l3.refresh"
+
 # HR & Payroll AI slice (docs/modules/skyrict-ai/hr-payroll-ai-features.md §3).
 # Checked at the core edge for /api/v1/ai/hr/*. Same strings as identity's
 # catalog so role grants stay portable across the platform.
@@ -100,6 +106,7 @@ ERP_HR_AI_INDIVIDUAL = "erp.hr.ai.individual"
 ERP_HR_AI_ACKNOWLEDGE = "erp.hr.ai.acknowledge"
 ERP_HR_AI_COPILOT = "erp.hr.ai.copilot"
 ERP_HR_AI_EVAL = "erp.hr.ai.eval"
+ERP_HR_AI_MANAGEMENT = "erp.hr.ai.management"
 
 # Employee self-service portal (own leave balances/requests only; mirrors
 # identity's catalog so the invite flow can grant it portably)
@@ -173,11 +180,13 @@ CATALOG: tuple[str, ...] = (
     ERP_DOCUMENTS_DELETE,
     ERP_AI_INVOKE,
     ERP_AI_NARRATOR_REFRESH,
+    ERP_AI_L3_REFRESH,
     ERP_HR_AI_READ,
     ERP_HR_AI_INDIVIDUAL,
     ERP_HR_AI_ACKNOWLEDGE,
     ERP_HR_AI_COPILOT,
     ERP_HR_AI_EVAL,
+    ERP_HR_AI_MANAGEMENT,
     ERP_LEAVE_SELF,
     ERP_PAYROLL_AI_READ,
     ERP_PAYROLL_AI_RUN,
@@ -220,12 +229,8 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("fx", "FX rates", (CORE_FX_READ, CORE_FX_WRITE)),
     ("hr", "HR", (ERP_HR_READ, ERP_HR_WRITE, ERP_HR_APPROVE)),
     ("payroll", "Payroll", (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE)),
-    (
-        "documents",
-        "Documents",
-        (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE),
-    ),
-    ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH)),
+    ("documents", "Documents", (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE)),
+    ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH, ERP_AI_L3_REFRESH)),
     (
         "hr_ai",
         "HR & Payroll AI",
@@ -235,6 +240,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             ERP_HR_AI_ACKNOWLEDGE,
             ERP_HR_AI_COPILOT,
             ERP_HR_AI_EVAL,
+            ERP_HR_AI_MANAGEMENT,
         ),
     ),
     ("leave_self", "Employee self-service", (ERP_LEAVE_SELF,)),
@@ -292,6 +298,7 @@ __all__ = [
     "ERP_AI_GUARDIAN_READ",
     "ERP_AI_GUARDIAN_REVIEW",
     "ERP_AI_INVOKE",
+    "ERP_AI_L3_REFRESH",
     "ERP_AI_NARRATOR_REFRESH",
     "ERP_CRM_READ",
     "ERP_CRM_WRITE",
@@ -307,6 +314,7 @@ __all__ = [
     "ERP_HR_AI_COPILOT",
     "ERP_HR_AI_EVAL",
     "ERP_HR_AI_INDIVIDUAL",
+    "ERP_HR_AI_MANAGEMENT",
     "ERP_HR_AI_READ",
     "ERP_HR_APPROVE",
     "ERP_HR_READ",

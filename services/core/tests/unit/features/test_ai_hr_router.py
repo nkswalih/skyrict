@@ -19,8 +19,10 @@ from fastapi.testclient import TestClient
 from core.api.deps import (
     get_ai_hr_service,
     get_hr_ai_individual,
+    get_l3_repository,
     get_quality_service,
 )
+from core.core.exceptions import SkyrictError, skyrict_error_handler
 from core.features.ai.router import get_ai_client
 from core.features.ai_hr import router as ai_hr_router
 from core.features.ai_hr.attrition_repository import ScoredRisk
@@ -602,7 +604,7 @@ class _FakeComplianceService:
 
     async def org_feed(self, tenant_id: uuid.UUID) -> object:
         self.org_calls.append(tenant_id)
-        from core.features.ai_hr.compliance_service import ComplianceOrgSummary
+        from core.features.ai_hr.compliance_service import ComplianceOrgSummary, ComplianceRiskGroup
 
         return ComplianceOrgSummary(
             total_findings=3,
@@ -613,6 +615,20 @@ class _FakeComplianceService:
                 "contract_missing_field": 1,
             },
             by_severity={"high": 1, "medium": 1, "low": 1},
+            risk_ranked=[
+                ComplianceRiskGroup(
+                    check_type="document_expiry",
+                    weighted_open_score=3,
+                    open_count=1,
+                    total_count=1,
+                ),
+                ComplianceRiskGroup(
+                    check_type="training_overdue",
+                    weighted_open_score=1,
+                    open_count=1,
+                    total_count=1,
+                ),
+            ],
             generated_at=datetime(2026, 1, 1, tzinfo=UTC),
             narrative="2 open compliance finding(-ies) ...",
         )
@@ -683,6 +699,9 @@ def test_compliance_org_feed_returns_l1_aggregate() -> None:
     assert body["by_type"]["contract_missing_field"] == 1
     assert body["by_severity"]["high"] == 1
     assert "narrative" in body
+    assert body["risk_ranked"][0]["check_type"] == "document_expiry"
+    assert body["risk_ranked"][0]["weighted_open_score"] == 3
+    assert body["risk_ranked"][1]["check_type"] == "training_overdue"
 
 
 def test_compliance_employee_feed_403_without_individual() -> None:
@@ -730,3 +749,141 @@ def test_compliance_status_requires_ack_permission_and_returns_updated() -> None
     assert resp.status_code == 200
     assert service.status_calls == [(TENANT_ID, ACTOR_ID, "acknowledged", ACTOR_ID)]
     assert resp.json()["data"]["status"] == "acknowledged"
+
+
+# ---------------------------------------------------------------------------
+# L3 payroll-cost source data (HR-AI-003)
+# ---------------------------------------------------------------------------
+
+
+class _FakeL3Repository:
+    def __init__(self) -> None:
+        self.result: object | None = None
+        self.pairs: list[object] = []
+        self.calls: list[uuid.UUID] = []
+        self.pair_calls: list[uuid.UUID] = []
+
+    async def payroll_cost_movement(self, tenant_id: uuid.UUID) -> object | None:
+        self.calls.append(tenant_id)
+        return self.result
+
+    async def leave_pay_pairs(self, tenant_id: uuid.UUID, *, limit: int = 12) -> list[object]:
+        self.pair_calls.append(tenant_id)
+        return self.pairs
+
+
+def _l3_movement() -> object:
+    from datetime import date
+    from decimal import Decimal
+
+    from core.features.ai_hr.l3_repository import (
+        DepartmentCostDelta,
+        PayrollCostMovement,
+        RunPeriod,
+    )
+
+    return PayrollCostMovement(
+        current_period=RunPeriod(date(2026, 3, 1), date(2026, 3, 31), "PR-2026-03"),
+        previous_period=RunPeriod(date(2026, 2, 1), date(2026, 2, 28), "PR-2026-02"),
+        current_headcount=12,
+        previous_headcount=12,
+        headcount_delta=0,
+        current_gross=Decimal("132400.00"),
+        previous_gross=Decimal("118000.00"),
+        gross_delta=Decimal("14400.00"),
+        current_net=Decimal("105520.00"),
+        previous_net=Decimal("96400.00"),
+        net_delta=Decimal("9120.00"),
+        current_overtime=Decimal("21600.00"),
+        previous_overtime=Decimal("0.00"),
+        overtime_delta=Decimal("21600.00"),
+        current_benefit_adjustments=Decimal("500.00"),
+        previous_benefit_adjustments=Decimal("0.00"),
+        benefit_delta=Decimal("500.00"),
+        department_breakdown=[
+            DepartmentCostDelta(
+                "Operations", Decimal("52060.00"), Decimal("41400.00"), Decimal("10660.00")
+            ),
+            DepartmentCostDelta(
+                "Engineering", Decimal("53460.00"), Decimal("55000.00"), Decimal("-1540.00")
+            ),
+        ],
+    )
+
+
+def _l3_app(repo: _FakeL3Repository) -> TestClient:
+    app = FastAPI()
+    app.add_exception_handler(SkyrictError, skyrict_error_handler)
+    app.include_router(ai_hr_router.router, prefix="/api/v1")
+    app.dependency_overrides[ai_hr_router._require_ai_invoke] = lambda: {
+        "tenant_id": TENANT_ID,
+        "user_id": ACTOR_ID,
+    }
+    app.dependency_overrides[ai_hr_router._require_hr_ai_management] = lambda: {
+        "tenant_id": TENANT_ID,
+        "user_id": ACTOR_ID,
+    }
+    app.dependency_overrides[get_l3_repository] = lambda: repo
+    return TestClient(app)
+
+
+def test_l3_payroll_cost_returns_movement_with_string_money() -> None:
+    repo = _FakeL3Repository()
+    repo.result = _l3_movement()
+    client = _l3_app(repo)
+
+    resp = client.get("/api/v1/ai/hr/l3/payroll-cost", headers={"authorization": "Bearer tok"})
+
+    assert resp.status_code == 200
+    assert repo.calls == [TENANT_ID]
+    body = resp.json()["data"]
+    assert body["current_run_code"] == "PR-2026-03"
+    assert body["previous_run_code"] == "PR-2026-02"
+    assert body["net_delta"] == "9120.00"
+    assert body["overtime_delta"] == "21600.00"
+    assert body["benefit_delta"] == "500.00"
+    assert body["current_benefit_adjustments"] == "500.00"
+    assert body["headcount_delta"] == 0
+    assert body["department_breakdown"][0]["department_name"] == "Operations"
+    assert body["department_breakdown"][0]["net_delta"] == "10660.00"
+
+
+def test_l3_payroll_cost_insufficient_history_is_404() -> None:
+    repo = _FakeL3Repository()
+    repo.result = None
+    client = _l3_app(repo)
+
+    resp = client.get("/api/v1/ai/hr/l3/payroll-cost", headers={"authorization": "Bearer tok"})
+
+    assert resp.status_code == 404
+
+
+def _l3_pair() -> object:
+    from datetime import date
+    from decimal import Decimal
+
+    from core.features.ai_hr.l3_repository import LeavePayPair
+
+    return LeavePayPair(
+        period_start=date(2026, 3, 1),
+        run_code="PR-2026-03",
+        leave_days=10,
+        overtime=Decimal("1500.00"),
+    )
+
+
+def test_l3_leave_pay_correlation_returns_pairs_with_string_money() -> None:
+    repo = _FakeL3Repository()
+    repo.pairs = [_l3_pair()]
+    client = _l3_app(repo)
+
+    resp = client.get(
+        "/api/v1/ai/hr/l3/leave-pay-correlation", headers={"authorization": "Bearer tok"}
+    )
+
+    assert resp.status_code == 200
+    assert repo.pair_calls == [TENANT_ID]
+    body = resp.json()["data"]
+    assert body["pairs"][0]["run_code"] == "PR-2026-03"
+    assert body["pairs"][0]["leave_days"] == 10
+    assert body["pairs"][0]["overtime"] == "1500.00"

@@ -124,6 +124,71 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("narrator.agent_registration_failed")
 
+    # Weekly L3 compliance digest (HR-AI-003): optional APScheduler cron over
+    # all active tenants. Disabled by default; starts only when enabled AND a
+    # service token is provisioned AND a provider is configured (the digest
+    # requires the LLM to narrate).
+    l3_weekly_scheduler: object | None = None
+    if (
+        settings.L3_WEEKLY_DIGEST_ENABLED
+        and settings.L3_WEEKLY_DIGEST_SERVICE_TOKEN
+        and llm_router.has_providers
+    ):
+        from ai_agent.api.scheduled.l3_weekly_digest import L3WeeklyDigestScheduler
+        from ai_agent.db.session import async_session_factory
+
+        async def _l3_enabled_tenants() -> list[tuple[uuid.UUID, str]]:
+            from ai_agent.db.repository import TenantRepository
+
+            async with async_session_factory() as session:
+                tenants = await TenantRepository(session).list_active()
+            return [(tenant.id, tenant.slug) for tenant in tenants]
+
+        async def _l3_service_factory(tenant_id: uuid.UUID, slug: str) -> object:
+            from sqlalchemy.ext.asyncio import AsyncSession
+
+            from ai_agent.core.audit_service import AuditService
+            from ai_agent.db.audit_repository import AiAuditLogRepository
+            from ai_agent.db.l3_narrative_repository import L3NarrativeRepository
+            from ai_agent.features.l3.gateway import HttpL3CoreGateway
+            from ai_agent.features.l3.service import L3NarrativeService
+
+            session: AsyncSession = async_session_factory()
+            return L3NarrativeService(
+                gateway=HttpL3CoreGateway(
+                    base_url=str(settings.INVENTORY_SERVICE_URL),
+                    bearer_token=settings.L3_WEEKLY_DIGEST_SERVICE_TOKEN,
+                    tenant_slug=slug,
+                ),
+                llm_router=llm_router,
+                cache=L3NarrativeRepository(session),
+                audit=AuditService(AiAuditLogRepository(session)),
+                allow_llm=settings.NARRATOR_ALLOW_LLM,
+                allow_refresh=settings.L3_ALLOW_REFRESH,
+            )
+
+        l3_scheduler = L3WeeklyDigestScheduler(
+            tenant_provider=_l3_enabled_tenants,
+            service_factory=_l3_service_factory,  # type: ignore[arg-type]
+            day_of_week=settings.L3_WEEKLY_DIGEST_DAY_OF_WEEK,
+            hour=settings.L3_WEEKLY_DIGEST_HOUR,
+            minute=settings.L3_WEEKLY_DIGEST_MINUTE,
+            timezone=settings.NARRATOR_SCHEDULER_TIMEZONE,
+        )
+        l3_scheduler.start()
+        l3_weekly_scheduler = l3_scheduler
+        try:
+            from ai_agent.db.agent_registry_repository import AgentRegistryRepository
+
+            async with async_session_factory() as session:
+                await AgentRegistryRepository(session).upsert_system_agent(
+                    name="l3_weekly", module="ai_agent.features.l3"
+                )
+                await session.commit()
+            logger.info("l3_weekly.agent_registered")
+        except Exception:
+            logger.exception("l3_weekly.agent_registration_failed")
+
     # Weekly revenue-forecast refresh (SKY-82 A4): optional cron calling the
     # core finance-forecast recompute. Disabled by default; tenant enumeration
     # is a placeholder like the narrator's, so the cron runs but refreshes
@@ -180,6 +245,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if narrator_scheduler is not None:
         narrator_scheduler.stop()  # type: ignore[attr-defined]
+
+    if l3_weekly_scheduler is not None:
+        l3_weekly_scheduler.stop()  # type: ignore[attr-defined]
 
     if forecast_scheduler is not None:
         forecast_scheduler.stop()  # type: ignore[attr-defined]

@@ -31,6 +31,7 @@ from core.api.deps import (
     get_current_user,
     get_eval_repository,
     get_hr_ai_individual,
+    get_l3_repository,
     get_pattern_data_repository,
     get_payroll_anomaly_service,
     get_quality_service,
@@ -43,6 +44,7 @@ from core.core.permissions import (
     ERP_HR_AI_ACKNOWLEDGE,
     ERP_HR_AI_COPILOT,
     ERP_HR_AI_EVAL,
+    ERP_HR_AI_MANAGEMENT,
     ERP_HR_AI_READ,
     ERP_HR_READ,
     ERP_HR_WRITE,
@@ -55,6 +57,13 @@ from core.features.ai_hr.attrition_client import score_features
 from core.features.ai_hr.attrition_repository import FeatureVector, ScoredRisk
 from core.features.ai_hr.compliance_service import ComplianceService
 from core.features.ai_hr.eval_repository import EvalRunRepository
+from core.features.ai_hr.l3_repository import L3Repository
+from core.features.ai_hr.l3_schemas import (
+    LeavePayCorrelationOut,
+    PayrollCostMovementOut,
+    leave_pay_to_out,
+    movement_to_out,
+)
 from core.features.ai_hr.pattern_data_repository import AiHrPatternDataRepository
 from core.features.ai_hr.payroll_anomaly_service import PayrollAnomalyService
 from core.features.ai_hr.quality_service import QualityService
@@ -118,6 +127,7 @@ _require_hr_ai_copilot = require_permission(ERP_HR_AI_COPILOT)
 _require_hr_ai_eval = require_permission(ERP_HR_AI_EVAL)
 _require_hr_read = require_permission(ERP_HR_READ)
 _require_hr_write = require_permission(ERP_HR_WRITE)
+_require_hr_ai_management = require_permission(ERP_HR_AI_MANAGEMENT)
 
 _AiInvokeDep = Annotated[dict[str, Any], Depends(_require_ai_invoke)]
 _HrAiReadDep = Annotated[dict[str, Any], Depends(_require_hr_ai_read)]
@@ -126,6 +136,7 @@ _HrAiCopilotDep = Annotated[dict[str, Any], Depends(_require_hr_ai_copilot)]
 _HrAiEvalDep = Annotated[dict[str, Any], Depends(_require_hr_ai_eval)]
 _HrReadDep = Annotated[dict[str, Any], Depends(_require_hr_read)]
 _HrWriteDep = Annotated[dict[str, Any], Depends(_require_hr_write)]
+_HrAiManagementDep = Annotated[dict[str, Any], Depends(_require_hr_ai_management)]
 _CurrentUserDep = Annotated[dict[str, Any], Depends(get_current_user)]
 _ServiceDep = Annotated[AiHrService, Depends(get_ai_hr_service)]
 _QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
@@ -135,6 +146,7 @@ _SuggestionServiceDep = Annotated[SuggestionService, Depends(get_suggestion_serv
 _PayrollAnomalyServiceDep = Annotated[PayrollAnomalyService, Depends(get_payroll_anomaly_service)]
 _ComplianceServiceDep = Annotated[ComplianceService, Depends(get_compliance_service)]
 _EvalRepositoryDep = Annotated[EvalRunRepository, Depends(get_eval_repository)]
+_L3RepoDep = Annotated[L3Repository, Depends(get_l3_repository)]
 _PatternDataRepositoryDep = Annotated[
     AiHrPatternDataRepository, Depends(get_pattern_data_repository)
 ]
@@ -721,3 +733,32 @@ async def compliance_set_status(
         data=compliance_finding_to_out(updated),
         message="Compliance finding status applied",
     )
+
+
+# --- L3 payroll-cost source data (HR-AI-003) ---
+
+
+@router.get("/l3/payroll-cost", response_model=ResponseEnvelope[PayrollCostMovementOut])
+async def l3_payroll_cost_movement(
+    _management: _HrAiManagementDep,
+    current_user: _AiInvokeDep,
+    repo: _L3RepoDep,
+) -> ResponseEnvelope[PayrollCostMovementOut]:
+    """L3 month-over-month payroll cost movement for the narrator (HR-AI-003)."""
+    movement = await repo.payroll_cost_movement(_tenant_id(current_user))
+    if movement is None:
+        raise NotFoundError(
+            "Insufficient payroll history for cost movement (need 2+ completed runs)"
+        )
+    return ResponseEnvelope(success=True, data=movement_to_out(movement))
+
+
+@router.get("/l3/leave-pay-correlation", response_model=ResponseEnvelope[LeavePayCorrelationOut])
+async def l3_leave_pay_correlation(
+    _management: _HrAiManagementDep,
+    current_user: _AiInvokeDep,
+    repo: _L3RepoDep,
+) -> ResponseEnvelope[LeavePayCorrelationOut]:
+    """L3 monthly (leave days, overtime) series for the narrator (HR-AI-003, C2)."""
+    pairs = await repo.leave_pay_pairs(_tenant_id(current_user))
+    return ResponseEnvelope(success=True, data=leave_pay_to_out(pairs))

@@ -81,6 +81,8 @@ class TestRegistry:
             # Conversation persistence (SKY-60)
             "ai_conversations",
             "ai_conversation_messages",
+            # HR-AI-003 L3 payroll/leave/compliance narratives
+            "ai_l3_narrative_snapshots",
         }
         assert expected == set(Base.metadata.tables.keys())
 

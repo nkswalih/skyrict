@@ -27,9 +27,11 @@ from core.core.permissions import (
     ERP_AI_GUARDIAN_READ,
     ERP_AI_GUARDIAN_REVIEW,
     ERP_AI_INVOKE,
+    ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
     ERP_CRM_READ,
     ERP_FINANCE_READ,
+    ERP_HR_AI_MANAGEMENT,
     ERP_INVENTORY_READ,
     ERP_REPORTS_CREATE,
     ERP_REPORTS_READ,
@@ -185,6 +187,90 @@ class TestCrmDealHealthSweepForwarding:
 
         assert response.status_code == 200
         assert seen[0].url.path == "/api/v1/ai/crm/opportunities/sweep"
+
+
+class TestL3Narratives:
+    """L3 routes forward to ai-agent only when erp.hr.ai.management is held.
+
+    The permission dependency resolves through get_current_user + RBAC, so the
+    app stubs those (mirroring TestNarratorPermissionGate) and records every
+    forwarded request.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_rbac(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        grants: list[str] = []
+        self._grants_box = grants
+
+        class _FakeRbac:
+            def __init__(self, session: object) -> None:
+                self.session = session
+
+            async def resolve_user_permissions(
+                self, *, user_id: object, tenant_id: object
+            ) -> list[str]:
+                return grants
+
+        monkeypatch.setattr(api_deps, "RbacRepository", _FakeRbac)
+
+    def _app(self, seen: list[httpx.Request]) -> TestClient:
+        app = FastAPI()
+        app.add_exception_handler(SkyrictError, skyrict_error_handler)
+        app.include_router(ai_router.router, prefix="/api/v1")
+        app.dependency_overrides[get_current_user] = lambda: {
+            "user_id": uuid.uuid4(),
+            "tenant_id": uuid.uuid4(),
+        }
+        app.dependency_overrides[get_db] = lambda: object()
+        app.dependency_overrides[ai_router.get_ai_client] = lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: (seen.append(request), httpx.Response(200, json={"ok": True}))[1]
+            ),
+            base_url="http://ai.test",
+        )
+        return TestClient(app)
+
+    def _grant(self, *keys: str) -> None:
+        self._grants_box[:] = list(keys)
+
+    def test_get_forwards_with_query(self) -> None:
+        self._grant(ERP_HR_AI_MANAGEMENT)
+        seen: list[httpx.Request] = []
+
+        response = self._app(seen).get(
+            "/api/v1/ai/l3/payroll_cost?as_of=2026-09-08",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert len(seen) == 1
+        assert seen[0].url.path == "/api/v1/ai/l3/payroll_cost"
+        assert seen[0].url.query == b"as_of=2026-09-08"
+
+    def test_refresh_forwards(self) -> None:
+        self._grant(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
+        seen: list[httpx.Request] = []
+
+        response = self._app(seen).post(
+            "/api/v1/ai/l3/payroll_cost/refresh",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert len(seen) == 1
+        assert seen[0].url.path == "/api/v1/ai/l3/payroll_cost/refresh"
+
+    def test_refresh_requires_dedicated_key_in_addition_to_management(self) -> None:
+        self._grant(ERP_HR_AI_MANAGEMENT)
+        assert self._app([]).post("/api/v1/ai/l3/payroll_cost/refresh").status_code == 403
+
+    def test_refresh_gated_by_management_plus_refresh_key(self) -> None:
+        self._grant(ERP_HR_AI_MANAGEMENT, ERP_AI_L3_REFRESH)
+        assert self._app([]).post("/api/v1/ai/l3/payroll_cost/refresh").status_code == 200
+
+    def test_without_management_denied(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_FINANCE_READ)
+        assert self._app([]).get("/api/v1/ai/l3/payroll_cost").status_code == 403
 
 
 class TestNarratorPermissionGate:

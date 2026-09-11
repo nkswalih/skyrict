@@ -316,6 +316,12 @@ export const erpNavGroups: NavGroup[] = [
                         icon: ShieldCheck,
                         permission: "erp.hr.ai.read",
                     },
+                    {
+                        href: "/dashboard/erp/hr/correlation",
+                        label: "Leave · pay correlation",
+                        icon: Activity,
+                        permission: "erp.hr.ai.read",
+                    },
                 ],
             },
             {

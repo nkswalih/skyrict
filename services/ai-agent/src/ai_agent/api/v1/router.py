@@ -30,6 +30,7 @@ from ai_agent.api.v1.routers.guardian import router as guardian_router
 from ai_agent.api.v1.routers.hr_copilot import router as hr_copilot_router
 from ai_agent.api.v1.routers.inventory_search import router as inventory_search_router
 from ai_agent.api.v1.routers.inventory_sync import router as inventory_sync_router
+from ai_agent.api.v1.routers.l3 import router as l3_router
 from ai_agent.api.v1.routers.narrator import router as narrator_router
 from ai_agent.api.v1.routers.nl_query import router as nl_query_router
 from ai_agent.api.v1.routers.rag import router as rag_router
@@ -57,6 +58,7 @@ api_router.include_router(attrition_router)
 api_router.include_router(hr_copilot_router)
 api_router.include_router(abc_router)
 api_router.include_router(forecast_router)
+api_router.include_router(l3_router)
 api_router.include_router(crm_router)
 api_router.include_router(guardian_router)
 api_router.include_router(draft_entry_router)
