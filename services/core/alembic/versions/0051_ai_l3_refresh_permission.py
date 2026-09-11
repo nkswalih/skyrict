@@ -5,10 +5,10 @@ narrative (POST /api/v1/ai/l3/{kind}/refresh) alongside the read gate
 ``erp.hr.ai.management``, mirroring how ``erp.ai.narrator.refresh`` gates the
 SKY-63 narrator refresh. It enters the runtime catalog (``core_permissions``)
 the same way, so ``require_all_permissions`` can enforce it at the core edge.
-Identity (0025) seeds the same string for role grants.
+Identity (0026) seeds the same string for role grants.
 
 Revision ID: 0046
-Revises: 0045
+Revises: 0050
 Create Date: 2026-09-09
 """
 
@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0046"
-down_revision = "0045"
+revision = "0051"
+down_revision = "0050"
 branch_labels = None
 depends_on = None
 

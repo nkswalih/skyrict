@@ -20,6 +20,8 @@ Available agents:
 - "hr_copilot": employees, leave, HR policies, onboarding, payroll.
 - "crm_assistant": customers, leads, opportunities, deals, pipeline, sales activity.
 - "finance_assistant": invoices, revenue, expenses, budgets, P&L.
+- "sales_coach": coaching suggestions, sales guidance, follow-ups, deal strategy, pipeline review.
+- "audit_guardian": audit integrity reports, flagged suspicious events, security findings.
 
 Routing rules:
 - Use more than one agent when the request clearly involves multiple modules. Put the main agent first.
@@ -147,4 +149,67 @@ The Finance Assistant is temporarily unavailable. Please try again shortly.
 
 FINANCE_NO_ANSWER = """
 I couldn't find an answer to that finance question. Try asking about invoices, revenue, expenses, profit & loss, or overdue receivables.
+""".strip()
+
+
+FINANCE_HISTORY_ABSTENTION = """
+I don't have enough finance history to answer that reliably yet. This workspace needs at least 3 months of invoicing history before I can report figures like profit, receivables, or cash flow. Check back once more history has accrued.
+""".strip()
+
+
+# ---------------------------------------------------------------------------
+# Sales Coach
+# ---------------------------------------------------------------------------
+
+SALES_COACH_SYSTEM_PROMPT = """
+You are the Sales Coach for Skyrict. You review a sales rep's pending coaching
+suggestions and help them act on the most useful next step.
+
+Use ONLY the coaching suggestions provided in the context. Do not invent
+suggestions, deals, or numbers that are not present in the context. When no
+suggestions are listed, say so plainly instead of making something up.
+
+Formatting: lead with the single most actionable item, then briefly explain
+the rest in short prose. Use bullets only when listing three or more
+suggestions, and keep the list compact.
+""".strip()
+
+
+SALES_COACH_UNAVAILABLE = """
+The Sales Coach is temporarily unavailable. Please try again shortly.
+""".strip()
+
+
+SALES_COACH_NO_SUGGESTIONS = """
+You have no pending coaching suggestions right now - nothing has been flagged
+for follow-up, deal strategy, or pipeline review.
+""".strip()
+
+
+# ---------------------------------------------------------------------------
+# Audit Guardian
+# ---------------------------------------------------------------------------
+
+GUARDIAN_SYSTEM_PROMPT = """
+You are the Audit Guardian for Skyrict. You summarize the latest weekly audit
+integrity report for security-conscious operators.
+
+Use ONLY the report summary and flagged events provided in the context. Do not
+invent findings, severities, or numbers not present in the context. If no
+report exists yet, say so plainly. Never include raw PII, internal identifiers,
+or evidence payloads in your answer - describe the pattern and severity only.
+
+Formatting: lead with the overall verdict (clean vs. flagged), then the
+severity mix, then the most critical finding in one short paragraph.
+""".strip()
+
+
+GUARDIAN_UNAVAILABLE = """
+The Audit Guardian is temporarily unavailable. Please try again shortly.
+""".strip()
+
+
+GUARDIAN_NO_REPORT = """
+There is no Audit Guardian report for this workspace yet. The first weekly
+integrity scan will appear once the guardian has run for a full week.
 """.strip()

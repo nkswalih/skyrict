@@ -191,6 +191,52 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Document management (SKY-87, docs/modules/documents.md) ---
+    DOCS_STORAGE_BACKEND: str = Field(
+        default="local",
+        description=(
+            "blob storage backend for uploaded documents: 'local' (dev/test "
+            "default, files under DOCS_STORAGE_LOCAL_DIR) or 's3' (S3-compatible "
+            "bucket). Mirrors the identity avatar storage split."
+        ),
+    )
+    DOCS_STORAGE_LOCAL_DIR: str = Field(
+        default="storage/documents",
+        description="filesystem root for the local document storage backend",
+    )
+    DOCS_S3_BUCKET: str = Field(
+        default="",
+        description="S3 bucket for documents when DOCS_STORAGE_BACKEND=s3 (required)",
+    )
+    DOCS_S3_PREFIX: str = Field(
+        default="documents",
+        description="object-key prefix under which tenant document keys are stored",
+    )
+    DOCS_S3_REGION: str = Field(
+        default="us-east-1",
+        description="region for the S3-compatible bucket (endpoint_url overrides in dev)",
+    )
+    DOCS_S3_ENDPOINT_URL: str = Field(
+        default="",
+        description=(
+            "optional S3-compatible endpoint (e.g. http://localhost:9000 for "
+            "MinIO in dev); empty means the default AWS region endpoint."
+        ),
+    )
+    DOCS_MAX_UPLOAD_BYTES: int = Field(
+        default=26_214_400,
+        ge=1,
+        description="maximum accepted upload size per document version in bytes (25 MiB)",
+    )
+    DOCS_VIRUS_SCAN_HOOK_URL: str = Field(
+        default="",
+        description=(
+            "optional virus-scan webhook URL invoked after an upload commits "
+            "(SKY-87 stub: POSTed {document_id, tenant_id, checksum_sha256}); "
+            "empty disables the hook."
+        ),
+    )
+
     # --- Payroll automation worker (HR-AUT-001, Commit 1) ---
     PAYROLL_AUTO_WORKER_ENABLED: bool = Field(
         default=True,

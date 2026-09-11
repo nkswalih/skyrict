@@ -2,9 +2,9 @@
 
 Closes the DoD's "migration applies up and down" checkbox for the WHOLE chain,
 not the newest link in isolation: identity base schema -> core ``upgrade head``
-(all 7 revisions) -> core ``downgrade base`` (all the way back to nothing) ->
-core ``upgrade head`` again - on a disposable scratch database created by the
-test and dropped afterwards.
+(all 8 revisions, 0001..0048) -> core ``downgrade base`` (all the way back to
+nothing) -> core ``upgrade head`` again - on a disposable scratch database
+created by the test and dropped afterwards.
 
 Why this exists: the thread that produced migration 0007 found a schema that
 had silently diverged from what the migration files claimed (``ref_id`` uuid
@@ -41,6 +41,7 @@ from urllib.parse import urlsplit, urlunsplit
 import asyncpg
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -206,7 +207,7 @@ async def _assert_upgraded_schema(url: str, tenant_ids: list[str] | None = None)
             version = (
                 await conn.execute(text("SELECT version_num FROM alembic_version_core"))
             ).scalar_one()
-            assert version == "0045", f"head is {version}, expected 0045"
+            assert version == "0051", f"head is {version}, expected 0051"
 
             # 0018: erp.leave.self is a first-class catalog permission.
             perm_row = (
@@ -887,6 +888,161 @@ async def _assert_upgraded_schema(url: str, tenant_ids: list[str] | None = None)
                 )
             ).scalar_one()
             assert not_null == "NO", "0040 drift threshold must be NOT NULL"
+
+            # 0045: revenue forecasts (SKY-82 A4) - one row per (tenant, month),
+            # RLS enabled, and a unique guard so a recompute can never double-
+            # count a month in the UI series.
+            tenant_id = uuid.UUID(tenant_ids[0])
+            await conn.execute(
+                text(
+                    "INSERT INTO erp_revenue_forecast "
+                    "(tenant_id, month, predicted, lower_bound, upper_bound, "
+                    " backtest_mape, model_version) "
+                    "VALUES (:tenant, '2026-10-01', 10000.0000, 9000.0000, 11000.0000, "
+                    " 0.050000, 'sma-6')"
+                ),
+                {"tenant": tenant_id},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO erp_revenue_forecast "
+                    "(tenant_id, month, predicted, lower_bound, upper_bound, "
+                    " backtest_mape, model_version) "
+                    "VALUES (:tenant, '2026-11-01', 11000.0000, 9900.0000, 12100.0000, "
+                    " 0.050000, 'sma-6')"
+                ),
+                {"tenant": tenant_id},
+            )
+            await conn.commit()
+            forecast_count = (
+                await conn.execute(
+                    text("SELECT count(*) FROM erp_revenue_forecast WHERE tenant_id = :tenant"),
+                    {"tenant": tenant_id},
+                )
+            ).scalar_one()
+            assert forecast_count == 2, "0045 must accept one row per (tenant, month)"
+
+            dup_rejected = False
+            try:
+                await conn.execute(
+                    text(
+                        "INSERT INTO erp_revenue_forecast "
+                        "(tenant_id, month, predicted, model_version) "
+                        "VALUES (:tenant, '2026-10-01', 9999.0000, 'sma-6')"
+                    ),
+                    {"tenant": tenant_id},
+                )
+                await conn.commit()
+            except IntegrityError:
+                dup_rejected = True
+                await conn.rollback()
+            assert dup_rejected, "0045 unique (tenant_id, month) must reject duplicates"
+
+            forecast_policy = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_policies "
+                        "WHERE schemaname = 'public' "
+                        "AND policyname = 'tenant_isolation_erp_revenue_forecast'"
+                    )
+                )
+            ).scalar_one()
+            assert forecast_policy == 1, "0045 must enable RLS on erp_revenue_forecast"
+
+            pipeline_column = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'erp_revenue_forecast' "
+                        "AND column_name = 'pipeline_value'"
+                    )
+                )
+            ).scalar_one()
+            assert pipeline_column == 1, "0046 must add pipeline_value to erp_revenue_forecast"
+
+            baseline_column = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'erp_revenue_forecast' "
+                        "AND column_name = 'baseline'"
+                    )
+                )
+            ).scalar_one()
+            assert baseline_column == 1, "0047 must add baseline to erp_revenue_forecast"
+
+            uplift_column = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'erp_revenue_forecast' "
+                        "AND column_name = 'pipeline_uplift'"
+                    )
+                )
+            ).scalar_one()
+            assert uplift_column == 1, "0047 must add pipeline_uplift to erp_revenue_forecast"
+            await conn.execute(
+                text("DELETE FROM erp_revenue_forecast WHERE tenant_id = :tenant"),
+                {"tenant": tenant_id},
+            )
+            await conn.commit()
+
+            # 0048: document management spine (SKY-87, docs/modules/documents.md) -
+            # the two tenant-scoped tables, RLS policies, the tags GIN index, and
+            # the erp.documents.* permission trio.
+            for table in ("erp_documents", "erp_document_versions"):
+                regclass = (
+                    await conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"})
+                ).scalar_one()
+                assert regclass is not None, f"0048 must create {table}"
+
+            for policy_name in (
+                "tenant_isolation_erp_documents",
+                "tenant_isolation_erp_document_versions",
+            ):
+                policy_count = (
+                    await conn.execute(
+                        text("SELECT count(*) FROM pg_policies WHERE policyname = :name"),
+                        {"name": policy_name},
+                    )
+                ).scalar_one()
+                assert policy_count == 1, f"0048 must create RLS policy {policy_name}"
+
+            tags_index_count = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_indexes "
+                        "WHERE schemaname = 'public' "
+                        "AND tablename = 'erp_documents' "
+                        "AND indexname = 'ix_erp_documents_tenant_tags'"
+                    )
+                )
+            ).scalar_one()
+            assert tags_index_count == 1, "0048 must create the tags GIN index"
+
+            document_fk = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_constraint "
+                        "WHERE conrelid = 'public.erp_document_versions'::regclass "
+                        "AND conname = 'fk_erp_document_versions_document_tenant'"
+                    )
+                )
+            ).scalar_one()
+            assert document_fk == 1, "0048 must add the document version composite FK"
+
+            for perm_key in (
+                "erp.documents.read",
+                "erp.documents.write",
+                "erp.documents.delete",
+            ):
+                perm_row = (
+                    await conn.execute(
+                        text("SELECT description FROM core_permissions WHERE key = :key"),
+                        {"key": perm_key},
+                    )
+                ).scalar_one_or_none()
+                assert perm_row is not None, f"0048 must register {perm_key}"
     finally:
         await engine.dispose()
 
@@ -911,6 +1067,9 @@ async def _assert_downgraded_to_base(url: str) -> None:
                 "public.erp_report_snapshots",
                 "public.erp_suppliers",
                 "public.erp_supplier_performance",
+                "public.erp_revenue_forecast",
+                "public.erp_documents",
+                "public.erp_document_versions",
             ):
                 regclass = (await conn.execute(text(f"SELECT to_regclass('{table}')"))).scalar_one()
                 assert regclass is None, f"{table} still exists after downgrade base"

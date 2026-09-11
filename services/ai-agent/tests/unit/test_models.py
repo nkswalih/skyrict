@@ -44,6 +44,10 @@ class TestRegistry:
             "ai_audit_log",
             "ai_digest_snapshots",
             "agent_registry",
+            # Agent wave 2 (SKY-90)
+            "ai_coaching_suggestions",
+            "ai_guardian_reports",
+            "ai_guardian_events",
             # INV-AI-002 predictive tables
             "ai_restock_settings",
             "ai_restock_demand_stats",
@@ -60,6 +64,8 @@ class TestRegistry:
             "ai_finance_eval_runs",
             # SKY-70 product-embedding snapshot
             "ai_inv_item_embeddings",
+            # SKY-87 document OCR/embedding enrichment store
+            "ai_document_embeddings",
             # SKY-67 C1 finance-line snapshot
             "ai_finance_line_embeddings",
             # LangGraph orchestration (SKY-59)
@@ -95,6 +101,10 @@ class TestRegistry:
             "ai_follow_up_suggestions",
             # SKY-61 memory persistence
             "ai_semantic_memory",
+            # Agent wave 2 (SKY-90)
+            "ai_coaching_suggestions",
+            "ai_guardian_reports",
+            "ai_guardian_events",
         ):
             pk = list(Base.metadata.tables[table].primary_key.columns.keys())
             assert pk == ["tenant_id", "id"], table

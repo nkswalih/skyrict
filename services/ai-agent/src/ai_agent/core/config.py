@@ -252,6 +252,35 @@ class Settings(BaseSettings):
             "Machine-to-machine only; never logged."
         ),
     )
+    DOCUMENT_SYNC_TOKEN: str = Field(
+        default="",
+        description=(
+            "shared secret that core's post-commit document OCR dispatch "
+            "presents to POST /ai/documents/process - must match core's "
+            "CORE_AI_SYNC_TOKEN. Empty disables the document process endpoint (503). "
+            "Machine-to-machine only; never logged."
+        ),
+    )
+    CORE_DOCUMENT_URL: str = Field(
+        default="http://localhost:8001",
+        description=(
+            "base URL of the core monolith for document storage reads. "
+            "ai-agent fetches document bytes from core's GET /documents/{id}/download "
+            "endpoint to perform OCR + tagging + embedding. In docker networks "
+            "set CORE_DOCUMENT_URL=http://skyrict-core:8001."
+        ),
+    )
+    CORE_DOCUMENT_TIMEOUT_SECONDS: float = Field(
+        default=30.0,
+        gt=0,
+        description="per-call timeout for core document byte-stream fetches",
+    )
+    DOCUMENT_EMBEDDING_MODEL: str = Field(
+        default="",
+        description=(
+            "model used for document chunk embeddings. Falls back to EMBEDDING_MODEL when empty."
+        ),
+    )
 
     # --- RAG configuration (SKY-58) ---
     RAG_CHUNK_CHILD_TOKENS: int = Field(
@@ -349,7 +378,7 @@ class Settings(BaseSettings):
         default=0, ge=0, le=59, description="minute of hour for the daily narrator digest"
     )
 
-    # --- L3 HR/Payroll narratives (HR-AI-003) ---
+# --- L3 HR/Payroll narratives (HR-AI-003) ---
     # Authorization for refresh lives at the core edge (erp.hr.ai.management +
     # erp.ai.l3.refresh). This deployment flag is the service-level second gate:
     # when False the L3 /refresh endpoints are refused here even if core permits.
@@ -382,6 +411,26 @@ class Settings(BaseSettings):
     )
     L3_WEEKLY_DIGEST_MINUTE: int = Field(
         default=0, ge=0, le=59, description="minute of hour for the weekly compliance digest"
+    )
+
+    # --- Revenue forecasting (SKY-82 A4) ---
+    FORECAST_SCHEDULER_ENABLED: bool = Field(
+        default=False,
+        description="start the weekly revenue-forecast cron at boot (SKY-82 A4)",
+    )
+    FORECAST_SCHEDULER_DAY_OF_WEEK: str = Field(
+        default="mon",
+        description="day of week for the weekly forecast recompute (cron expression)",
+    )
+    FORECAST_SCHEDULER_TIMEZONE: str = Field(
+        default="UTC",
+        description="timezone for the weekly forecast cron",
+    )
+    FORECAST_SCHEDULER_HOUR: int = Field(
+        default=6, ge=0, le=23, description="hour of day for the weekly forecast recompute"
+    )
+    FORECAST_SCHEDULER_MINUTE: int = Field(
+        default=0, ge=0, le=59, description="minute of hour for the weekly forecast recompute"
     )
 
     # --- Email delivery (SMTP) for critical anomaly alerts (spec §4.3) ---

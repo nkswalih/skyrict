@@ -14,10 +14,11 @@ AI providers are intentionally absent from this gate - see api/readiness.py.
 Shutdown: closes the gate so probes drain the pod, then disposes the DB
 engine and the Redis pool.
 
-Background jobs (SKY-68): suggestion expiry, anomaly auto-close, and anomaly
-scan run as asyncio tasks started after provider init and cancelled on shutdown.
-The scan lives in api/scheduled (not core/jobs) because it orchestrates feature
-services; repository-only jobs stay in core/jobs.
+Background jobs (SKY-68/SKY-90): suggestion expiry, anomaly auto-close, anomaly
+scan, Audit Guardian weekly reports, and memory compaction run as asyncio tasks
+started after provider init and cancelled on shutdown. The orchestrating jobs
+live in api/scheduled (not core/jobs) because they compose feature services;
+repository-only jobs stay in core/jobs.
 """
 
 from __future__ import annotations
@@ -123,7 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("narrator.agent_registration_failed")
 
-    # Weekly L3 compliance digest (HR-AI-003): optional APScheduler cron over
+# Weekly L3 compliance digest (HR-AI-003): optional APScheduler cron over
     # all active tenants. Disabled by default; starts only when enabled AND a
     # service token is provisioned AND a provider is configured (the digest
     # requires the LLM to narrate).
@@ -188,10 +189,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("l3_weekly.agent_registration_failed")
 
+    # Weekly revenue-forecast refresh (SKY-82 A4): optional cron calling the
+    # core finance-forecast recompute. Disabled by default; tenant enumeration
+    # is a placeholder like the narrator's, so the cron runs but refreshes
+    # nothing until a tenant provider lands.
+    forecast_scheduler: object | None = None
+    if settings.FORECAST_SCHEDULER_ENABLED:
+        from ai_agent.features.revenue_forecast.scheduler import RevenueForecastScheduler
+
+        async def _forecast_tenants() -> list[tuple[uuid.UUID, str]]:
+            return []
+
+        async def _refresh_factory(tenant_id: uuid.UUID, slug: str) -> object:
+            from ai_agent.features.revenue_forecast.client import CoreForecastRefreshClient
+
+            return CoreForecastRefreshClient(
+                base_url=str(settings.INVENTORY_SERVICE_URL),
+                bearer_token="",  # nosec B106 - system-agent wiring; token lands with tenant provider
+                tenant_slug=slug,
+            )
+
+        forecast_scheduler = RevenueForecastScheduler(
+            tenant_provider=_forecast_tenants,
+            refresh_factory=_refresh_factory,  # type: ignore[arg-type]
+            day_of_week=settings.FORECAST_SCHEDULER_DAY_OF_WEEK,
+            hour=settings.FORECAST_SCHEDULER_HOUR,
+            minute=settings.FORECAST_SCHEDULER_MINUTE,
+            timezone=settings.FORECAST_SCHEDULER_TIMEZONE,
+        )
+        forecast_scheduler.start()
+
     # --- Background jobs (SKY-68) -----------------------------------------
     bg_tasks: list[asyncio.Task[None]] = []
     from ai_agent.api.scheduled.anomaly_scan import run_scheduled_anomaly_scan
     from ai_agent.api.scheduled.crm_follow_up_scan import run_crm_follow_up_scan
+    from ai_agent.api.scheduled.deal_health_sweep import run_deal_health_sweep
+    from ai_agent.api.scheduled.guardian_report import run_scheduled_guardian_report
+    from ai_agent.api.scheduled.memory_compaction import run_scheduled_memory_compaction
     from ai_agent.core.jobs.anomaly_autoclose import run_anomaly_autoclose_job
     from ai_agent.core.jobs.suggestion_expiry import run_suggestion_expiry_job
 
@@ -199,6 +233,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     bg_tasks.append(asyncio.create_task(run_anomaly_autoclose_job()))
     bg_tasks.append(asyncio.create_task(run_scheduled_anomaly_scan()))
     bg_tasks.append(asyncio.create_task(run_crm_follow_up_scan()))
+    bg_tasks.append(asyncio.create_task(run_deal_health_sweep()))
+    bg_tasks.append(asyncio.create_task(run_scheduled_guardian_report(llm_router=llm_router)))
+    bg_tasks.append(asyncio.create_task(run_scheduled_memory_compaction(llm_router=llm_router)))
     logger.info("background_jobs.started", count=len(bg_tasks))
 
     # Graceful shutdown: uvicorn owns SIGTERM/SIGINT handling; on signal it
@@ -211,6 +248,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if l3_weekly_scheduler is not None:
         l3_weekly_scheduler.stop()  # type: ignore[attr-defined]
+
+    if forecast_scheduler is not None:
+        forecast_scheduler.stop()  # type: ignore[attr-defined]
 
     # Cancel background jobs before disposing resources.
     for task in bg_tasks:

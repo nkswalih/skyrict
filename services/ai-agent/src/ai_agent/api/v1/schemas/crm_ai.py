@@ -55,6 +55,15 @@ class DealHealthResponse(BaseModel):
     computed_at: datetime
 
 
+class DealHealthSweepResponse(BaseModel):
+    """Band counts from a bulk sweep (POST /ai/crm/opportunities/sweep)."""
+
+    assessed: int = Field(ge=0)
+    healthy: int = Field(ge=0)
+    at_risk: int = Field(ge=0)
+    critical: int = Field(ge=0)
+
+
 class FollowUpItem(BaseModel):
     """One follow-up suggestion for a user (GET /ai/crm/follow-ups)."""
 

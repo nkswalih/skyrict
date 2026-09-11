@@ -92,6 +92,24 @@ AI_REPORT_GENERATED = "ai.report.generated"
 AI_REPORT_SAVED = "ai.report.saved"
 """The NL report builder persisted a generated report as a saved definition (SKY-80)."""
 
+AI_COACHING_SUGGESTION_CREATED = "ai.coaching.suggestion.created"
+"""The Sales Coach agent produced a coaching suggestion (SKY-90)."""
+
+AI_COACHING_SUGGESTION_VIEWED = "ai.coaching.suggestion.viewed"
+"""A manager viewed a coaching suggestion (SKY-90)."""
+
+AI_COACHING_SUGGESTION_ACCEPTED = "ai.coaching.suggestion.accepted"
+"""A manager accepted a coaching suggestion (SKY-90)."""
+
+AI_COACHING_SUGGESTION_DISMISSED = "ai.coaching.suggestion.dismissed"
+"""A manager dismissed a coaching suggestion (SKY-90)."""
+
+AI_GUARDIAN_REPORT_GENERATED = "ai.guardian.report.generated"
+"""The Audit Guardian generated a weekly integrity report (SKY-90)."""
+
+AI_GUARDIAN_EVENT_FLAGGED = "ai.guardian.event.flagged"
+"""The Audit Guardian flagged a suspicious audit event (SKY-90)."""
+
 ALL_AI_AUDIT_EVENTS = frozenset(
     {
         AI_QUERY_EXECUTED,
@@ -120,6 +138,12 @@ ALL_AI_AUDIT_EVENTS = frozenset(
         AI_L3_ABSTAINED,
         AI_REPORT_GENERATED,
         AI_REPORT_SAVED,
+        AI_COACHING_SUGGESTION_CREATED,
+        AI_COACHING_SUGGESTION_VIEWED,
+        AI_COACHING_SUGGESTION_ACCEPTED,
+        AI_COACHING_SUGGESTION_DISMISSED,
+        AI_GUARDIAN_REPORT_GENERATED,
+        AI_GUARDIAN_EVENT_FLAGGED,
     }
 )
 """The complete, closed vocabulary accepted by the AuditService."""

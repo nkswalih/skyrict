@@ -39,17 +39,23 @@ class FakeLlmRouter:
         self,
         *,
         has_providers: bool = True,
-        completion_text: str | Exception = "",
+        completion_text: str | Exception | list[str] = "",
         stream_tokens: list[str] | None = None,
     ) -> None:
         self.has_providers = has_providers
         self._completion_text = completion_text
+        self._completion_pool = list(completion_text) if isinstance(completion_text, list) else None
         self._stream_tokens = stream_tokens or ["hello ", "world "]
         self.complete_calls = 0
         self.stream_calls = 0
 
     async def complete(self, request: LlmRequest) -> LlmCompletion:
         self.complete_calls += 1
+        if self._completion_pool is not None:
+            text = self._completion_pool.pop(0) if self._completion_pool else self._completion_text
+            if isinstance(text, Exception):
+                raise text
+            return LlmCompletion(text=text, model_used="fake-model", latency_ms=1)
         if isinstance(self._completion_text, Exception):
             raise self._completion_text
         return LlmCompletion(text=self._completion_text, model_used="fake-model", latency_ms=1)
@@ -146,6 +152,45 @@ class FakeForecast:
         return [{"horizon_weeks": 4, "avg_demand": "12.0"}]
 
 
+class FakeCoachSuggestions:
+    def __init__(self, rows: list[dict[str, object]] | None = None) -> None:
+        self._rows = rows or []
+
+    async def list_pending_for_rep(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        rep_user_id: uuid.UUID,
+    ) -> list[dict[str, object]]:
+        return self._rows
+
+
+class FakeGuardianReports:
+    def __init__(
+        self,
+        reports: list[dict[str, object]] | None = None,
+        events: list[dict[str, object]] | None = None,
+    ) -> None:
+        self._reports = reports or []
+        self._events = events or []
+
+    async def list_reports(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        limit: int = 1,
+    ) -> list[dict[str, object]]:
+        return self._reports[:limit]
+
+    async def list_events_for_report(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> list[dict[str, object]]:
+        return self._events
+
+
 def make_service(
     *,
     router: FakeLlmRouter | None = None,
@@ -153,6 +198,8 @@ def make_service(
     rag: FakeRag | None = None,
     hr_copilot: FakeHrCopilot | None = None,
     forecast: FakeForecast | None = None,
+    coach_suggestions: FakeCoachSuggestions | None = None,
+    guardian_reports: FakeGuardianReports | None = None,
     provisioned: dict[str, bool] | None = None,
     threshold: float = 0.75,
 ) -> SupervisorService:
@@ -167,12 +214,16 @@ def make_service(
         rag=rag,
         hr_copilot=hr_copilot,
         forecast=forecast,
+        coach_suggestions=coach_suggestions,
+        guardian_reports=guardian_reports,
         provisioned=provisioned
         or {
             "inventory_monitor": True,
             "hr_copilot": True,
             "crm_assistant": True,
             "finance_assistant": True,
+            "sales_coach": True,
+            "audit_guardian": True,
         },
         confidence_threshold=threshold,
     )
@@ -230,10 +281,41 @@ async def test_classify_abstains_unparseable_output() -> None:
     router = FakeLlmRouter(has_providers=True, completion_text="sorry, I can't")
     service = make_service(router=router)
 
-    decision = await service.classify("What stock is low?")
+    decision = await service.classify("blah blah")
 
     assert decision.abstain is True
     assert decision.reason == "unparseable_classifier_output"
+    assert router.complete_calls == 2
+
+
+async def test_classify_keyword_fallback_after_unparseable_output() -> None:
+    router = FakeLlmRouter(has_providers=True, completion_text="sorry, I can't")
+    service = make_service(router=router)
+
+    decision = await service.classify("What stock is below reorder point?")
+
+    assert decision.agents == ("inventory_monitor",)
+    assert decision.abstain is False
+    assert decision.reason == "keyword_fallback"
+    assert router.complete_calls == 2
+
+
+async def test_classify_recovers_after_truncated_completion() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=[
+            '{"',
+            json.dumps({"agents": ["finance_assistant"], "confidence": 0.9}),
+        ],
+    )
+    service = make_service(router=router)
+
+    decision = await service.classify("What is our net income this quarter?")
+
+    assert decision.agents == ("finance_assistant",)
+    assert decision.abstain is False
+    assert decision.reason == "routed"
+    assert router.complete_calls == 2
 
 
 async def test_classify_keyword_fallback_without_providers() -> None:
@@ -272,6 +354,34 @@ async def test_classify_strips_markdown_fences() -> None:
 
     assert decision.agents == ("finance_assistant",)
     assert decision.abstain is False
+
+
+async def test_classify_recovers_fence_and_prose_wrapped_json() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text="\n```json\n"
+        + json.dumps({"agents": ["finance_assistant"], "confidence": 0.9})
+        + "\n```\nnothing else",
+    )
+    service = make_service(router=router)
+
+    decision = await service.classify("What is our net income this quarter?")
+
+    assert decision.agents == ("finance_assistant",)
+    assert decision.abstain is False
+    assert decision.reason == "routed"
+
+
+async def test_classify_finance_keyword_fallback_covers_net_income() -> None:
+    router = FakeLlmRouter(has_providers=False)
+    service = make_service(router=router)
+
+    decision = await service.classify("What is our net income this quarter?")
+
+    assert decision.agents == ("finance_assistant",)
+    assert decision.abstain is False
+    assert decision.reason == "keyword_fallback"
+    assert router.complete_calls == 0
 
 
 # --- streaming ---------------------------------------------------------------
@@ -408,3 +518,182 @@ async def test_stream_delegate_failure_degrades_not_raises() -> None:
     assert "temporarily unavailable" in tokens_text(events, "hr_copilot")
     done = [e for e in events if isinstance(e, DoneEvent)]
     assert len(done) == 1
+
+
+# --- Sales Coach + Audit Guardian delegates (SKY-90) -------------------------
+
+
+async def test_classify_sales_coach_keyword_fallback() -> None:
+    router = FakeLlmRouter(has_providers=False)
+    service = make_service(router=router)
+
+    decision = await service.classify("What coaching suggestions do I have?")
+
+    assert decision.agents == ("sales_coach",)
+    assert decision.abstain is False
+    assert decision.reason == "keyword_fallback"
+
+
+async def test_classify_audit_guardian_keyword_fallback() -> None:
+    router = FakeLlmRouter(has_providers=False)
+    service = make_service(router=router)
+
+    decision = await service.classify("Show me the latest audit integrity report")
+
+    assert decision.agents == ("audit_guardian",)
+    assert decision.abstain is False
+    assert decision.reason == "keyword_fallback"
+
+
+async def test_classify_rejects_unknown_agent_keys() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=json.dumps({"agents": ["not_a_real_agent"], "confidence": 0.9}),
+    )
+    service = make_service(router=router)
+
+    decision = await service.classify("weird question")
+
+    assert decision.agents == ()
+    assert decision.abstain is True
+
+
+async def test_stream_sales_coach_no_suggestions() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=json.dumps({"agents": ["sales_coach"], "confidence": 0.95}),
+    )
+    service = make_service(router=router, coach_suggestions=FakeCoachSuggestions())
+
+    events = await collect(service, query="Do I have any coaching suggestions?")
+
+    assert "no pending coaching suggestions" in tokens_text(events, "sales_coach")
+    done = next(e for e in events if isinstance(e, DoneEvent))
+    assert done.agents == ("sales_coach",)
+
+
+async def test_stream_sales_coach_deterministic_without_provider() -> None:
+    router = FakeLlmRouter(has_providers=False)
+    service = make_service(
+        router=router,
+        coach_suggestions=FakeCoachSuggestions(
+            [
+                {
+                    "status": "pending",
+                    "title": "Follow up on Acme deal",
+                    "body": "The proposal was sent 5 days ago.",
+                }
+            ]
+        ),
+    )
+
+    events = await collect(service, query="What coaching should I work on?")
+
+    text = tokens_text(events, "sales_coach")
+    assert "Follow up on Acme deal" in text
+    assert "The proposal was sent 5 days ago." in text
+    assert router.complete_calls == 0
+
+
+async def test_stream_sales_coach_llm_path_uses_suggestion_context() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=json.dumps({"agents": ["sales_coach"], "confidence": 0.95}),
+    )
+    service = make_service(
+        router=router,
+        coach_suggestions=FakeCoachSuggestions(
+            [
+                {
+                    "status": "pending",
+                    "title": "Pipeline review",
+                    "body": "Three deals are stuck in negotiation.",
+                }
+            ]
+        ),
+    )
+
+    events = await collect(service, query="Summarize my coaching")
+
+    assert router.complete_calls >= 1  # classification call
+    assert tokens_text(events, "sales_coach")  # non-empty text segment
+
+
+async def test_stream_guardian_no_report() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=json.dumps({"agents": ["audit_guardian"], "confidence": 0.95}),
+    )
+    service = make_service(router=router, guardian_reports=FakeGuardianReports())
+
+    events = await collect(service, query="Any security findings this week?")
+
+    assert "no Audit Guardian report" in tokens_text(events, "audit_guardian")
+
+
+async def test_stream_guardian_deterministic_without_provider() -> None:
+    router = FakeLlmRouter(has_providers=False)
+    service = make_service(
+        router=router,
+        guardian_reports=FakeGuardianReports(
+            reports=[
+                {
+                    "id": uuid.uuid4(),
+                    "summary": "One auth burst outside business hours.",
+                    "total_events_scanned": 42,
+                    "flagged_count": 2,
+                }
+            ],
+            events=[
+                {
+                    "severity": "high",
+                    "reason": "auth_burst",
+                    "source_table": "identity_audit_log",
+                    "event_action": "sign_in.failed",
+                },
+                {
+                    "severity": "medium",
+                    "reason": "off_hours_access",
+                    "source_table": "ai_audit_log",
+                    "event_action": "chat.stream",
+                },
+            ],
+        ),
+    )
+
+    events = await collect(service, query="Summarize the audit report")
+
+    text = tokens_text(events, "audit_guardian")
+    assert "42 events scanned" in text
+    assert "2 flagged" in text
+    assert "auth_burst" in text
+    assert router.complete_calls == 0
+
+
+async def test_stream_guardian_llm_path_emits_citation() -> None:
+    router = FakeLlmRouter(
+        has_providers=True,
+        completion_text=json.dumps({"agents": ["audit_guardian"], "confidence": 0.95}),
+    )
+    report_id = uuid.uuid4()
+    service = make_service(
+        router=router,
+        guardian_reports=FakeGuardianReports(
+            reports=[
+                {
+                    "id": report_id,
+                    "summary": "No suspicious activity detected.",
+                    "total_events_scanned": 10,
+                    "flagged_count": 0,
+                }
+            ]
+        ),
+    )
+
+    events = await collect(service, query="Latest audit report?")
+
+    citations = [e for e in events if isinstance(e, CitationsEvent) and e.agent == "audit_guardian"]
+    assert len(citations) == 1
+    assert citations[0].citations[0].module == "audit_guardian"
+    assert str(report_id) in citations[0].citations[0].source_ref
+    assert tokens_text(events, "audit_guardian")  # non-empty text segment

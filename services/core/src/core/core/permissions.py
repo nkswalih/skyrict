@@ -74,6 +74,14 @@ ERP_PAYROLL_READ = "erp.payroll.read"
 ERP_PAYROLL_WRITE = "erp.payroll.write"
 ERP_PAYROLL_APPROVE = "erp.payroll.approve"
 
+# ERP Documents (SKY-87, docs/modules/documents.md). Read/upload gates for the
+# document management platform; delete gates hard deletes. Entity-linked
+# documents additionally require the owning module's read key (mirrored from
+# identity's catalog so role grants stay portable across the platform).
+ERP_DOCUMENTS_READ = "erp.documents.read"
+ERP_DOCUMENTS_WRITE = "erp.documents.write"
+ERP_DOCUMENTS_DELETE = "erp.documents.delete"
+
 # AI assistant (docs/modules/skyrict-ai/inventory-ai-features.md §6.3).
 # Gate checked by core BEFORE any /api/v1/ai/* request is forwarded to the
 # ai-agent microservice - permissionless calls never reach the AI service.
@@ -121,6 +129,18 @@ ERP_REPORTS_READ = "erp.reports.read"
 # Always paired with ERP_REPORTS_READ so a creator can run what they create.
 ERP_REPORTS_CREATE = "erp.reports.create"
 
+# Sales Coach AI (SKY-90 wave 2): read gates the pending coaching suggestion
+# queue for a tenant/rep; review gates the accept/dismiss decisions that flip
+# the suggestion status ledger. Seeded into core_permissions by migration 0048.
+ERP_AI_COACHING_READ = "erp.ai.coaching.read"
+ERP_AI_COACHING_REVIEW = "erp.ai.coaching.review"
+
+# Audit Guardian AI (SKY-90 wave 2): read gates the weekly integrity reports
+# and the detail view that exposes flagged-event evidence; review gates the
+# operator acknowledgement that marks a report reviewed. Seeded by 0048.
+ERP_AI_GUARDIAN_READ = "erp.ai.guardian.read"
+ERP_AI_GUARDIAN_REVIEW = "erp.ai.guardian.review"
+
 # Every catalogued permission, in catalog order.
 CATALOG: tuple[str, ...] = (
     ERP_INVENTORY_READ,
@@ -155,6 +175,9 @@ CATALOG: tuple[str, ...] = (
     ERP_PAYROLL_READ,
     ERP_PAYROLL_WRITE,
     ERP_PAYROLL_APPROVE,
+    ERP_DOCUMENTS_READ,
+    ERP_DOCUMENTS_WRITE,
+    ERP_DOCUMENTS_DELETE,
     ERP_AI_INVOKE,
     ERP_AI_NARRATOR_REFRESH,
     ERP_AI_L3_REFRESH,
@@ -171,6 +194,10 @@ CATALOG: tuple[str, ...] = (
     ERP_PAYROLL_AI_APPROVE,
     ERP_REPORTS_READ,
     ERP_REPORTS_CREATE,
+    ERP_AI_COACHING_READ,
+    ERP_AI_COACHING_REVIEW,
+    ERP_AI_GUARDIAN_READ,
+    ERP_AI_GUARDIAN_REVIEW,
 )
 # Permission module groupings.
 # Each entry: (module_key, module_label, (permission_keys, ...))
@@ -202,6 +229,7 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("fx", "FX rates", (CORE_FX_READ, CORE_FX_WRITE)),
     ("hr", "HR", (ERP_HR_READ, ERP_HR_WRITE, ERP_HR_APPROVE)),
     ("payroll", "Payroll", (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE)),
+("documents", "Documents", (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE)),
     ("ai", "AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH, ERP_AI_L3_REFRESH)),
     (
         "hr_ai",
@@ -231,6 +259,16 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "Reporting & analytics",
         (ERP_REPORTS_READ, ERP_REPORTS_CREATE),
     ),
+    (
+        "ai_coaching",
+        "Sales Coach AI",
+        (ERP_AI_COACHING_READ, ERP_AI_COACHING_REVIEW),
+    ),
+    (
+        "ai_guardian",
+        "Audit Guardian AI",
+        (ERP_AI_GUARDIAN_READ, ERP_AI_GUARDIAN_REVIEW),
+    ),
 )
 
 
@@ -255,11 +293,18 @@ __all__ = [
     "CATALOG",
     "CORE_FX_READ",
     "CORE_FX_WRITE",
+    "ERP_AI_COACHING_READ",
+    "ERP_AI_COACHING_REVIEW",
+    "ERP_AI_GUARDIAN_READ",
+    "ERP_AI_GUARDIAN_REVIEW",
     "ERP_AI_INVOKE",
     "ERP_AI_L3_REFRESH",
     "ERP_AI_NARRATOR_REFRESH",
     "ERP_CRM_READ",
     "ERP_CRM_WRITE",
+    "ERP_DOCUMENTS_DELETE",
+    "ERP_DOCUMENTS_READ",
+    "ERP_DOCUMENTS_WRITE",
     "ERP_FINANCE_AI_READ",
     "ERP_FINANCE_AI_WRITE",
     "ERP_FINANCE_APPROVE",

@@ -5,10 +5,10 @@ endpoint - payroll-cost narratives, leave-pay correlation, and compliance
 monitoring digests. It enters the runtime catalog (``core_permissions``)
 exactly like its ``erp.hr.ai.*`` siblings in migration 0021 and the
 ``erp.hr.ai.eval`` key in 0023, so ``require_permission`` can enforce it at
-the core edge. Identity (0024) seeds the same string for role grants.
+the core edge. Identity (0025) seeds the same string for role grants.
 
 Revision ID: 0045
-Revises: 0044
+Revises: 0049
 Create Date: 2026-09-08
 """
 
@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0045"
-down_revision = "0044"
+revision = "0050"
+down_revision = "0049"
 branch_labels = None
 depends_on = None
 

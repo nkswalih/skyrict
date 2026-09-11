@@ -42,6 +42,10 @@ from core.features.crm.models import (  # noqa: F401
     ErpCrmLeadModel,
     ErpCrmOpportunityModel,
 )
+from core.features.documents.models import (  # noqa: F401
+    ErpDocumentModel,
+    ErpDocumentVersionModel,
+)
 from core.features.finance.models import (  # noqa: F401
     ErpChartOfAccountModel,
     ErpFiscalPeriodModel,

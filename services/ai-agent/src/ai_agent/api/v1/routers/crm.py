@@ -5,7 +5,7 @@ in C4-C7. The gateway is bound to the *caller's* JWT so core enforces the
 existing CRM read permissions - the AI service never bypasses authorization.
 
 Rate limits (C8):
-- ``/score`` and ``/health`` use ``RATE_LIMIT_CRM_PER_MIN`` (15/min/user).
+- ``/score``, ``/health`` and ``/opportunities/sweep`` use ``RATE_LIMIT_CRM_PER_MIN`` (15/min/user).
 - ``/follow-ups/{id}/apply`` and ``/dismiss`` use ``RATE_LIMIT_CRM_APPLY_PER_MIN`` (10/min/user).
 - Both enforce the aggregate ``RATE_LIMIT_TENANT_PER_MIN`` (100/min/tenant).
 """
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ai_agent.api.deps import get_current_user, get_db
 from ai_agent.api.v1.schemas.crm_ai import (
     DealHealthResponse,
+    DealHealthSweepResponse,
     FollowUpItem,
     FollowUpSuggestionType,
     HealthBand,
@@ -167,6 +168,38 @@ async def get_deal_health(
         engagement_velocity=result.engagement_velocity,
         days_in_stage=result.days_in_stage,
         computed_at=datetime.now(UTC),
+    )
+
+
+@router.post(
+    "/opportunities/sweep",
+    response_model=DealHealthSweepResponse,
+)
+async def sweep_deal_health(
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    service: Annotated[CrmAiService, Depends(get_crm_service)],
+) -> DealHealthSweepResponse:
+    """Recheck + persist deal health for every open opportunity closing within
+    the next 12 months (the manual twin of the scheduled nightly sweep)."""
+    await limiter.enforce(
+        key=f"ai:crm:{user['tenant_id']}:{user['user_id']}",
+        limit=settings.RATE_LIMIT_CRM_PER_MIN,
+        window_seconds=60,
+    )
+    await limiter.enforce(
+        key=f"ai:tenant_total:{user['tenant_id']}",
+        limit=settings.RATE_LIMIT_TENANT_PER_MIN,
+        window_seconds=60,
+    )
+    result = await service.sweep_deal_health(
+        tenant_id=user["tenant_id"],
+        user_id=user["user_id"],
+    )
+    return DealHealthSweepResponse(
+        assessed=result.assessed,
+        healthy=result.healthy,
+        at_risk=result.at_risk,
+        critical=result.critical,
     )
 
 

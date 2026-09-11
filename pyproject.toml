@@ -77,7 +77,9 @@ extend-immutable-calls = [
 "services/core/src/core/core/exceptions.py" = ["TC001", "TC002", "TC003"]
 "services/core/src/core/core/tenant_context.py" = ["TC001", "TC002", "TC003"]
 "services/ai-agent/src/ai_agent/api/**" = ["TC001", "TC002", "TC003"]
+"services/ai-agent/src/ai_agent/features/**" = ["TC001", "TC002", "TC003"]
 "services/ai-agent/src/ai_agent/models/**" = ["TC001", "TC002", "TC003"]
+"services/ai-agent/src/ai_agent/db/**" = ["TC001", "TC002", "TC003"]
 "services/ai-agent/src/ai_agent/core/exceptions.py" = ["TC001", "TC002", "TC003"]
 "services/ai-agent/src/ai_agent/core/tenant_context.py" = ["TC001", "TC002", "TC003"]
 
@@ -221,9 +223,10 @@ module = [
     "apscheduler",
     "apscheduler.schedulers.asyncio",
     "apscheduler.triggers.cron",
-    "tzlocal",
-]
-ignore_missing_imports = true
+      "tzlocal",
+      "openpyxl",
+  ]
+  ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # ragas is an optional, lazily-imported eval dependency (nightly workflow

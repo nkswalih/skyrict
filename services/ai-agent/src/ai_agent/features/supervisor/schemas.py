@@ -19,14 +19,25 @@ AGENT_INVENTORY = "inventory_monitor"
 AGENT_HR = "hr_copilot"
 AGENT_CRM = "crm_assistant"
 AGENT_FINANCE = "finance_assistant"
+AGENT_SALES_COACH = "sales_coach"
+AGENT_AUDIT_GUARDIAN = "audit_guardian"
 
-AgentKey = Literal["inventory_monitor", "hr_copilot", "crm_assistant", "finance_assistant"]
+AgentKey = Literal[
+    "inventory_monitor",
+    "hr_copilot",
+    "crm_assistant",
+    "finance_assistant",
+    "sales_coach",
+    "audit_guardian",
+]
 
 AGENT_DISPLAY_NAMES: dict[str, str] = {
     AGENT_INVENTORY: "Inventory Monitor",
     AGENT_HR: "HR Copilot",
     AGENT_CRM: "CRM Assistant",
     AGENT_FINANCE: "Finance Assistant",
+    AGENT_SALES_COACH: "Sales Coach",
+    AGENT_AUDIT_GUARDIAN: "Audit Guardian",
     "supervisor": "Supervisor",
 }
 

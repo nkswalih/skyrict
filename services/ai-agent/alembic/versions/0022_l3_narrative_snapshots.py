@@ -15,7 +15,7 @@ the newest row for a (kind, as_of) pair), mirroring ai_digest_snapshots (0007)
 and 0001/0012 RLS conventions. Aggregates only - no employee-level data.
 
 Revision ID: 0020
-Revises: 0019
+Revises: 0021
 Create Date: 2026-09-08
 """
 
@@ -25,8 +25,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0020"
-down_revision = "0019"
+revision = "0022"
+down_revision = "0021"
 branch_labels = None
 depends_on = None
 

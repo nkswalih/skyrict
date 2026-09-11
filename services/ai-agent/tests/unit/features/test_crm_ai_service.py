@@ -61,6 +61,7 @@ class FakeGateway:
     def __init__(self) -> None:
         self._leads: dict[uuid.UUID, Any] = {LEAD_ID: FakeLead()}
         self._opps: dict[uuid.UUID, Any] = {OPP_ID: FakeOpp()}
+        self._site_opps: list[Any] = []
         self._activities: list[ActivityRef] = [
             ActivityRef(
                 id=uuid.uuid4(),
@@ -85,7 +86,7 @@ class FakeGateway:
         return []
 
     async def list_opportunities(self, *, page: int = 1) -> list[OpportunityRef]:
-        return []
+        return self._site_opps
 
 
 class FakeRepo:
@@ -210,6 +211,55 @@ class TestComputeDealHealth:
         assert len(service._repo._saved_deals) == 1  # type: ignore[attr-defined]
         audit = service._audit  # type: ignore[attr-defined]
         assert audit.calls[0]["action"] == "ai.crm.deal.health"
+
+
+class TestSweepDealHealth:
+    async def test_sweeps_only_horizon_deals_and_counts_bands(self) -> None:
+        gateway = FakeGateway()
+        base = datetime.now(UTC)
+        gateway._activities = [
+            ActivityRef(
+                id=uuid.uuid4(),
+                kind="call",
+                completed_at=base - timedelta(days=2),
+                created_at=base - timedelta(days=2),
+            ),
+        ]
+        gateway._site_opps = [
+            FakeOpp(),
+            FakeOpp(),
+            FakeOpp(),
+            FakeOpp(),
+        ]
+        gateway._site_opps[0].id = uuid.uuid4()
+        gateway._site_opps[0].created_at = base - timedelta(days=30)
+        gateway._site_opps[0].last_stage_change_at = base - timedelta(days=5)
+        gateway._site_opps[0].expected_close_date = (base + timedelta(days=5)).date()
+        gateway._site_opps[1].id = uuid.uuid4()
+        gateway._site_opps[1].expected_close_date = (base + timedelta(days=10)).date()
+        gateway._site_opps[1].probability = 10  # low prob -> yellow
+        gateway._site_opps[2].id = uuid.uuid4()
+        gateway._site_opps[2].expected_close_date = (base + timedelta(days=400)).date()
+        gateway._site_opps[3].id = uuid.uuid4()
+        gateway._site_opps[3].expected_close_date = (base - timedelta(days=5)).date()
+        for opp in gateway._site_opps:
+            gateway._opps[opp.id] = opp
+
+        repo = FakeRepo()
+        service = _make_service(gateway=gateway, repo=repo)
+        result = await service.sweep_deal_health(
+            tenant_id=TENANT_ID,
+            user_id=USER_ID,
+        )
+
+        assert result.assessed == 2
+        assert result.healthy == 1
+        assert result.at_risk == 1
+        assert result.critical == 0
+        # Far-away and past deals are outside the horizon and must be skipped.
+        assert len(repo._saved_deals) == 2
+        audit = service._audit  # type: ignore[attr-defined]
+        assert [call["action"] for call in audit.calls] == ["ai.crm.deal.health"] * 2
 
 
 class TestListPendingFollowUps:

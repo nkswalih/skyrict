@@ -3,6 +3,11 @@
 Handles storing and retrieving conversation memories for the CRM Assistant.
 Episodic memories are full query-response pairs; semantic memories are
 extracted facts. Both auto-expire after 90 days.
+
+Compaction (SKY-90): the weekly compaction job summarizes older episodic
+rows into semantic facts and stamps ``compacted_at`` on them. Compacted
+rows are excluded from recall - their essence survives as semantic facts,
+which keeps the recall context budget bounded.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 
 from ai_agent.models.ai_episodic_memory import AiEpisodicMemoryModel
 from ai_agent.models.ai_semantic_memory import AiSemanticMemoryModel
@@ -62,6 +67,7 @@ class MemoryRepository:
             tokens_output=tokens_output,
             created_at=now,
             expires_at=now + timedelta(days=90),
+            compacted_at=None,
         )
         self._session.add(row)
         await self._session.flush()
@@ -81,11 +87,12 @@ class MemoryRepository:
         query: str,
         limit: int = _EPISODIC_LIMIT,
     ) -> list[dict[str, Any]]:
-        """Retrieve the most recent episodic memories for a user.
+        """Retrieve the most recent, not-yet-compacted episodic memories.
 
         Uses trigram similarity on query_text to find memories relevant to the
         current query, falling back to most-recent if trigram extension is
-        unavailable.
+        unavailable. Compacted rows are excluded (SKY-90) - their essence
+        lives in semantic memory.
         """
         now = datetime.now(UTC)
         # Try trigram similarity search first (if pg_trgm is available).
@@ -101,6 +108,7 @@ class MemoryRepository:
                     AiEpisodicMemoryModel.tenant_id == tenant_id,
                     AiEpisodicMemoryModel.user_id == user_id,
                     AiEpisodicMemoryModel.expires_at > now,
+                    AiEpisodicMemoryModel.compacted_at.is_(None),
                 )
                 .order_by(text("sim DESC"))
                 .limit(limit)
@@ -119,13 +127,14 @@ class MemoryRepository:
         except Exception:
             pass  # pg_trgm not available - fall through to recency.
 
-        # Fallback: most recent.
+        # Fallback: most recent not-yet-compacted.
         result = await self._session.execute(
             select(AiEpisodicMemoryModel)
             .where(
                 AiEpisodicMemoryModel.tenant_id == tenant_id,
                 AiEpisodicMemoryModel.user_id == user_id,
                 AiEpisodicMemoryModel.expires_at > now,
+                AiEpisodicMemoryModel.compacted_at.is_(None),
             )
             .order_by(AiEpisodicMemoryModel.created_at.desc())
             .limit(limit)
@@ -139,6 +148,78 @@ class MemoryRepository:
             }
             for r in rows
         ]
+
+    async def list_uncompacted_episodic(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+        before: datetime,
+        limit: int = 100,
+    ) -> list[AiEpisodicMemoryModel]:
+        """Rows older than ``before`` that the compaction job has not folded.
+
+        The compaction batch for one user - oldest first so the job always
+        folds the same content in one pass and marks it before re-reading.
+        """
+        result = await self._session.execute(
+            select(AiEpisodicMemoryModel)
+            .where(
+                AiEpisodicMemoryModel.tenant_id == tenant_id,
+                AiEpisodicMemoryModel.user_id == user_id,
+                AiEpisodicMemoryModel.expires_at > datetime.now(UTC),
+                AiEpisodicMemoryModel.compacted_at.is_(None),
+                AiEpisodicMemoryModel.created_at < before,
+            )
+            .order_by(AiEpisodicMemoryModel.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_users_with_uncompacted_episodic(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        before: datetime,
+    ) -> list[uuid.UUID]:
+        """Distinct users holding uncompacted, unexpired rows older than ``before``.
+
+        The compaction scheduler enumerates the per-tenant work set with this
+        query instead of iterating the platform user directory - episodic rows
+        are the only source of truth for who actually has a pending fold.
+        """
+        result = await self._session.execute(
+            select(AiEpisodicMemoryModel.user_id)
+            .where(
+                AiEpisodicMemoryModel.tenant_id == tenant_id,
+                AiEpisodicMemoryModel.expires_at > datetime.now(UTC),
+                AiEpisodicMemoryModel.compacted_at.is_(None),
+                AiEpisodicMemoryModel.created_at < before,
+            )
+            .distinct()
+            .order_by(AiEpisodicMemoryModel.user_id)
+        )
+        return list(result.scalars().all())
+
+    async def mark_episodic_compacted(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        ids: list[uuid.UUID],
+    ) -> int:
+        """Stamp ``compacted_at`` on the given rows; returns rowcount."""
+        if not ids:
+            return 0
+        result = await self._session.execute(
+            update(AiEpisodicMemoryModel)
+            .where(
+                AiEpisodicMemoryModel.tenant_id == tenant_id,
+                AiEpisodicMemoryModel.id.in_(ids),
+            )
+            .values(compacted_at=datetime.now(UTC))
+        )
+        await self._session.flush()
+        return result.rowcount or 0  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Semantic memory

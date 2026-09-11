@@ -3,13 +3,13 @@
 Ticket HR-AI-003 (docs/modules/skyrict-ai/hr-payroll-ai-features.md §L3):
 ``erp.ai.l3.refresh`` gates force-refreshing an L3 HR/Payroll AI narrative on
 POST /api/v1/ai/l3/{kind}/refresh, layered on top of the read gate
-``erp.hr.ai.management`` (0024) - the same two-tier convention as
+``erp.hr.ai.management`` (0025) - the same two-tier convention as
 ``erp.ai.narrator.refresh`` (0022). Granted ONLY to ``tenant_owner`` so the
 owner can always demo a refresh; org_admin/dept_manager hold neither key and
 stay 403 on both read and refresh.
 
 Revision ID: 0025
-Revises: 0024
+Revises: 0025
 Create Date: 2026-09-09
 """
 
@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0025"
-down_revision = "0024"
+revision = "0026"
+down_revision = "0025"
 branch_labels = None
 depends_on = None
 

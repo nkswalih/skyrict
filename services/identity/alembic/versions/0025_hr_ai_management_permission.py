@@ -10,7 +10,7 @@ until a dedicated executive role is provisioned. Aggregates only (no
 employee-level data), as the L3 scope defines.
 
 Revision ID: 0024
-Revises: 0023
+Revises: 0024
 Create Date: 2026-09-08
 """
 
@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0024"
-down_revision = "0023"
+revision = "0025"
+down_revision = "0024"
 branch_labels = None
 depends_on = None
 

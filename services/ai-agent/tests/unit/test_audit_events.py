@@ -17,10 +17,16 @@ from ai_agent.core.audit_events import (
     AI_ANOMALY_DISMISSED,
     AI_ANOMALY_ESCALATED,
     AI_ANOMALY_RESOLVED,
+    AI_COACHING_SUGGESTION_ACCEPTED,
+    AI_COACHING_SUGGESTION_CREATED,
+    AI_COACHING_SUGGESTION_DISMISSED,
+    AI_COACHING_SUGGESTION_VIEWED,
     AI_DEAL_HEALTH_ASSESSED,
     AI_FOLLOW_UP_APPLIED,
     AI_FOLLOW_UP_DISMISSED,
     AI_FOLLOW_UP_GENERATED,
+    AI_GUARDIAN_EVENT_FLAGGED,
+    AI_GUARDIAN_REPORT_GENERATED,
     AI_HR_COPILOT_EXCHANGE,
     AI_LEAD_SCORED,
     AI_L3_ABSTAINED,
@@ -70,7 +76,7 @@ class TestAppendixBVocabulary:
         # SKY-80 NL report builder events.
         assert AI_REPORT_GENERATED == "ai.report.generated"
         assert AI_REPORT_SAVED == "ai.report.saved"
-        # HR-AI-003 L3 HR/Payroll narrative events.
+# HR-AI-003 L3 HR/Payroll narrative events.
         assert AI_L3_PAYROLL_COST_GENERATED == "ai.l3.payroll_cost.generated"
         assert AI_L3_LEAVE_PAY_CORRELATED == "ai.l3.leave_pay.correlated"
         assert AI_L3_COMPLIANCE_DIGESTED == "ai.l3.compliance.digested"
@@ -78,6 +84,14 @@ class TestAppendixBVocabulary:
         # HR-AI-003 every access / abstention is audited.
         assert AI_L3_ACCESSED == "ai.l3.accessed"
         assert AI_L3_ABSTAINED == "ai.l3.abstained"
+
+        # SKY-90 agent wave 2 events.
+        assert AI_COACHING_SUGGESTION_CREATED == "ai.coaching.suggestion.created"
+        assert AI_COACHING_SUGGESTION_VIEWED == "ai.coaching.suggestion.viewed"
+        assert AI_COACHING_SUGGESTION_ACCEPTED == "ai.coaching.suggestion.accepted"
+        assert AI_COACHING_SUGGESTION_DISMISSED == "ai.coaching.suggestion.dismissed"
+        assert AI_GUARDIAN_REPORT_GENERATED == "ai.guardian.report.generated"
+        assert AI_GUARDIAN_EVENT_FLAGGED == "ai.guardian.event.flagged"
 
     def test_all_events_covers_exactly_the_documented_constants(self) -> None:
         expected = {
@@ -107,6 +121,12 @@ class TestAppendixBVocabulary:
             audit_events.AI_L3_ABSTAINED,
             audit_events.AI_REPORT_GENERATED,
             audit_events.AI_REPORT_SAVED,
+            audit_events.AI_COACHING_SUGGESTION_CREATED,
+            audit_events.AI_COACHING_SUGGESTION_VIEWED,
+            audit_events.AI_COACHING_SUGGESTION_ACCEPTED,
+            audit_events.AI_COACHING_SUGGESTION_DISMISSED,
+            audit_events.AI_GUARDIAN_REPORT_GENERATED,
+            audit_events.AI_GUARDIAN_EVENT_FLAGGED,
         }
         assert set(ALL_AI_AUDIT_EVENTS) == expected
 

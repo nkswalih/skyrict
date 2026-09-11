@@ -68,6 +68,29 @@ class CrmAiRepository:
     async def save_deal_health(self, row: AiDealHealthModel) -> None:
         self._session.add(row)
 
+    async def save_deal_health_assessment(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        opportunity_id: uuid.UUID,
+        health: str,
+        confidence: float,
+        risk_factors: list[str],
+        recommended_actions: list[str],
+    ) -> None:
+        """Persist one scheduled/engine assessment (owns the ORM model, so the
+        API layer never imports ``ai_agent.models`` directly)."""
+        self._session.add(
+            AiDealHealthModel(
+                tenant_id=tenant_id,
+                opportunity_id=opportunity_id,
+                health=health,
+                confidence=confidence,
+                risk_factors=risk_factors,
+                recommended_actions=recommended_actions,
+            )
+        )
+
     # --- follow-up suggestions -----------------------------------------------
     async def list_pending_for_user(
         self, *, tenant_id: uuid.UUID, user_id: uuid.UUID

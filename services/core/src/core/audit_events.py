@@ -58,6 +58,16 @@ SALES_ORDER_CONFIRMED = "sales.order.confirmed"
 SALES_ORDER_FULFILLED = "sales.order.fulfilled"
 SALES_ORDER_CANCELLED = "sales.order.cancelled"
 
+# ---------------------------------------------------------------------------
+# Documents (SKY-87, docs/modules/documents.md §6)
+# ---------------------------------------------------------------------------
+DOCUMENT_UPLOADED = "documents.document.uploaded"
+DOCUMENT_VERSION_ADDED = "documents.document.version_added"
+DOCUMENT_UPDATED = "documents.document.updated"
+DOCUMENT_DELETED = "documents.document.deleted"
+DOCUMENT_TAGS_CONFIRMED = "documents.document.tags_confirmed"
+DOCUMENT_DOWNLOADED = "documents.document.downloaded"
+
 # Every catalogued audit event, in catalog order.
 CATALOG: tuple[str, ...] = (
     PRODUCT_CREATED,
@@ -101,6 +111,12 @@ CATALOG: tuple[str, ...] = (
     SALES_ORDER_CONFIRMED,
     SALES_ORDER_FULFILLED,
     SALES_ORDER_CANCELLED,
+    DOCUMENT_UPLOADED,
+    DOCUMENT_VERSION_ADDED,
+    DOCUMENT_UPDATED,
+    DOCUMENT_DELETED,
+    DOCUMENT_TAGS_CONFIRMED,
+    DOCUMENT_DOWNLOADED,
 )
 
 ALL_AUDIT_EVENTS: frozenset[str] = frozenset(CATALOG)
@@ -167,6 +183,18 @@ AUDIT_EVENT_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             SALES_ORDER_CANCELLED,
         ),
     ),
+    (
+        "documents",
+        "Documents",
+        (
+            DOCUMENT_UPLOADED,
+            DOCUMENT_VERSION_ADDED,
+            DOCUMENT_UPDATED,
+            DOCUMENT_DELETED,
+            DOCUMENT_TAGS_CONFIRMED,
+            DOCUMENT_DOWNLOADED,
+        ),
+    ),
 )
 
 
@@ -211,6 +239,12 @@ __all__ = [
     "CRM_OPPORTUNITY_STAGE_CHANGED",
     "CRM_OPPORTUNITY_UPDATED",
     "CRM_OPPORTUNITY_WON",
+    "DOCUMENT_DELETED",
+    "DOCUMENT_DOWNLOADED",
+    "DOCUMENT_TAGS_CONFIRMED",
+    "DOCUMENT_UPDATED",
+    "DOCUMENT_UPLOADED",
+    "DOCUMENT_VERSION_ADDED",
     "PRODUCT_CREATED",
     "PRODUCT_DEACTIVATED",
     "PRODUCT_REACTIVATED",

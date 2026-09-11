@@ -16,7 +16,8 @@ constructor, same pattern as ``AnomalyService``).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
@@ -46,6 +47,16 @@ if TYPE_CHECKING:
     from ai_agent.models.ai_follow_up_suggestion import AiFollowUpSuggestionModel
 
 logger = structlog.get_logger("ai_agent.crm.service")
+
+
+@dataclass(frozen=True, slots=True)
+class DealHealthSweep:
+    """Band counts from one bulk deal-health pass."""
+
+    assessed: int
+    healthy: int
+    at_risk: int
+    critical: int
 
 
 class CrmAiService:
@@ -154,6 +165,38 @@ class CrmAiService:
         )
 
         return result
+
+    async def sweep_deal_health(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        user_id: uuid.UUID,
+        horizon_days: int = 365,
+    ) -> DealHealthSweep:
+        """Compute + persist health for every open opportunity expected to close
+        within the next ``horizon_days`` (the forecast-card horizon)."""
+        now = datetime.now(UTC)
+        today = now.date()
+        horizon_end = (now + timedelta(days=horizon_days)).date()
+        counts = {"assessed": 0, "green": 0, "yellow": 0, "red": 0}
+        for opp in await self._gateway.list_opportunities():
+            if opp.expected_close_date is None:
+                continue
+            if not today <= opp.expected_close_date <= horizon_end:
+                continue
+            result = await self.compute_deal_health(
+                tenant_id=tenant_id,
+                opportunity_id=opp.id,
+                user_id=user_id,
+            )
+            counts["assessed"] += 1
+            counts[result.health] += 1
+        return DealHealthSweep(
+            assessed=counts["assessed"],
+            healthy=counts["green"],
+            at_risk=counts["yellow"],
+            critical=counts["red"],
+        )
 
     # --- follow-up management ------------------------------------------------
 

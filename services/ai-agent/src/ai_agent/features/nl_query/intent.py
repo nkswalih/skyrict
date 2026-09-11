@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # NOTE: runtime import on purpose - pydantic resolves this annotation while
 # building the model schema, so a TYPE_CHECKING-only import breaks at boot.
-from ai_agent.features.nl_query.gateway import MovementType  # noqa: TC001
+# TC001 is per-file-ignored for features/; the comment documents the intent.
+from ai_agent.features.nl_query.gateway import MovementType
 
 
 class IntentAction(StrEnum):

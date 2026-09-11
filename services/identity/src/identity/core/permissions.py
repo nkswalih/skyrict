@@ -64,6 +64,15 @@ ERP_PAYROLL_READ = "erp.payroll.read"
 ERP_PAYROLL_WRITE = "erp.payroll.write"
 ERP_PAYROLL_APPROVE = "erp.payroll.approve"
 
+# ERP Documents (SKY-87, docs/modules/documents.md). Read/upload gates for the
+# document management platform; delete gates hard deletes. Entity-linked
+# documents additionally require the owning module's read key (e.g.
+# erp.hr.read) so a document never leaks across a boundary its owning module
+# would not cross.
+ERP_DOCUMENTS_READ = "erp.documents.read"
+ERP_DOCUMENTS_WRITE = "erp.documents.write"
+ERP_DOCUMENTS_DELETE = "erp.documents.delete"
+
 # Payroll automation (HR-AUT-001, docs/modules/skyrict-ai/hr-payroll-ai-features.md §15).
 # Batch engine keys — same string catalog as core's (migration 0026) so role
 # grants stay portable across the platform.
@@ -144,6 +153,9 @@ CATALOG: tuple[str, ...] = (
     ERP_PAYROLL_READ,
     ERP_PAYROLL_WRITE,
     ERP_PAYROLL_APPROVE,
+    ERP_DOCUMENTS_READ,
+    ERP_DOCUMENTS_WRITE,
+    ERP_DOCUMENTS_DELETE,
     ERP_AI_INVOKE,
     ERP_AI_NARRATOR_REFRESH,
     ERP_AI_L3_REFRESH,
@@ -186,6 +198,11 @@ PERMISSION_MODULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "erp_payroll",
         "ERP Payroll",
         (ERP_PAYROLL_READ, ERP_PAYROLL_WRITE, ERP_PAYROLL_APPROVE),
+    ),
+(
+        "erp_documents",
+        "ERP Documents",
+        (ERP_DOCUMENTS_READ, ERP_DOCUMENTS_WRITE, ERP_DOCUMENTS_DELETE),
     ),
     ("erp_ai", "ERP AI assistant", (ERP_AI_INVOKE, ERP_AI_NARRATOR_REFRESH, ERP_AI_L3_REFRESH)),
     (
@@ -233,6 +250,9 @@ __all__ = [
     "ERP_AI_NARRATOR_REFRESH",
     "ERP_CRM_READ",
     "ERP_CRM_WRITE",
+    "ERP_DOCUMENTS_DELETE",
+    "ERP_DOCUMENTS_READ",
+    "ERP_DOCUMENTS_WRITE",
     "ERP_FINANCE_READ",
     "ERP_FINANCE_WRITE",
     "ERP_HR_AI_ACKNOWLEDGE",

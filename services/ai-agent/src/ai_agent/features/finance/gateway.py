@@ -91,6 +91,45 @@ class ArAgingRef:
     buckets: tuple[ArAgingBucketRef, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class TrialBalanceRowRef:
+    """One trial-balance line (an account's debit/credit side)."""
+
+    code: str
+    name: str
+    account_type: str
+    debit: Decimal
+    credit: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class TrialBalanceRef:
+    """Trial balance as of a date: balanced or not, with its rows."""
+
+    as_of: date
+    rows: tuple[TrialBalanceRowRef, ...]
+    total_debit: Decimal
+    total_credit: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class CashflowPositionRef:
+    """One projected month a cash-out date line (opening->closing)."""
+
+    month: str
+    opening: Decimal
+    inflows: Decimal
+    outflows: Decimal
+    closing: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class CashflowProjectionRef:
+    """Forward cash-flow projection seeded as of a date."""
+
+    positions: tuple[CashflowPositionRef, ...]
+
+
 class FinanceGatewayPort(Protocol):
     """Read-only finance queries, scoped by the forwarded caller's identity."""
 
@@ -98,6 +137,8 @@ class FinanceGatewayPort(Protocol):
     async def list_invoices(self) -> list[InvoiceRef]: ...
     async def get_pnl(self) -> PnlRef | None: ...
     async def get_ar_aging(self) -> ArAgingRef | None: ...
+    async def get_trial_balance(self, *, as_of: date) -> TrialBalanceRef | None: ...
+    async def get_cashflow_projection(self, *, as_of: date) -> CashflowProjectionRef | None: ...
 
 
 class HttpFinanceGateway:
@@ -199,6 +240,63 @@ class HttpFinanceGateway:
             buckets=tuple(buckets),
         )
 
+    async def get_trial_balance(self, *, as_of: date) -> TrialBalanceRef | None:
+        payload = await self._get_optional(
+            "/api/v1/finance/reports/trial-balance", params={"as_of": as_of.isoformat()}
+        )
+        if payload is None:
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return None
+        rows_raw = data.get("rows")
+        rows: list[TrialBalanceRowRef] = []
+        if isinstance(rows_raw, list):
+            for row in rows_raw:
+                if not isinstance(row, dict):
+                    continue
+                rows.append(
+                    TrialBalanceRowRef(
+                        code=str(row.get("code") or ""),
+                        name=str(row.get("name") or ""),
+                        account_type=str(row.get("account_type") or ""),
+                        debit=_as_decimal(row.get("debit") or 0),
+                        credit=_as_decimal(row.get("credit") or 0),
+                    )
+                )
+        return TrialBalanceRef(
+            as_of=_as_date(data["as_of"]),
+            rows=tuple(rows),
+            total_debit=_as_decimal(data["total_debit"]),
+            total_credit=_as_decimal(data["total_credit"]),
+        )
+
+    async def get_cashflow_projection(self, *, as_of: date) -> CashflowProjectionRef | None:
+        payload = await self._get_optional(
+            "/api/v1/finance/automation/cashflow-projection", params={"as_of": as_of.isoformat()}
+        )
+        if payload is None:
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return None
+        positions_raw = data.get("positions")
+        positions: list[CashflowPositionRef] = []
+        if isinstance(positions_raw, list):
+            for position in positions_raw:
+                if not isinstance(position, dict):
+                    continue
+                positions.append(
+                    CashflowPositionRef(
+                        month=str(position.get("month") or ""),
+                        opening=_as_decimal(position.get("opening") or 0),
+                        inflows=_as_decimal(position.get("inflows") or 0),
+                        outflows=_as_decimal(position.get("outflows") or 0),
+                        closing=_as_decimal(position.get("closing") or 0),
+                    )
+                )
+        return CashflowProjectionRef(positions=tuple(positions))
+
     def _create_client(self) -> httpx.AsyncClient:
         """Create the per-call HTTP client (overridable seam for tests)."""
         return httpx.AsyncClient(timeout=10.0)
@@ -244,11 +342,15 @@ class HttpFinanceGateway:
             raise AiUnavailableError("Finance service returned an unusable response")
         return payload
 
-    async def _get_optional(self, path: str) -> dict[str, object] | None:
+    async def _get_optional(
+        self, path: str, *, params: dict[str, str] | None = None
+    ) -> dict[str, object] | None:
         """Single-envelope read that degrades to ``None`` on any non-200."""
         try:
             async with self._create_client() as client:
-                response = await client.get(f"{self._base_url}{path}", headers=self._headers())
+                response = await client.get(
+                    f"{self._base_url}{path}", params=params, headers=self._headers()
+                )
                 if response.status_code != 200:
                     logger.warning("finance_gateway_non_ok", path=path, status=response.status_code)
                     return None

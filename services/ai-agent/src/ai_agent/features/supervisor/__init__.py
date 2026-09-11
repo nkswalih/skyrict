@@ -9,10 +9,12 @@ persistence (registry rows) is injected by the graph layer
 """
 
 from ai_agent.features.supervisor.schemas import (
+    AGENT_AUDIT_GUARDIAN,
     AGENT_CRM,
     AGENT_FINANCE,
     AGENT_HR,
     AGENT_INVENTORY,
+    AGENT_SALES_COACH,
     AgentKey,
     AgentStartEvent,
     Citation,
@@ -26,10 +28,12 @@ from ai_agent.features.supervisor.schemas import (
 from ai_agent.features.supervisor.service import SupervisorService
 
 __all__ = [
+    "AGENT_AUDIT_GUARDIAN",
     "AGENT_CRM",
     "AGENT_FINANCE",
     "AGENT_HR",
     "AGENT_INVENTORY",
+    "AGENT_SALES_COACH",
     "AgentKey",
     "AgentStartEvent",
     "Citation",

@@ -22,6 +22,10 @@ from core.api import deps as api_deps
 from core.api.deps import get_current_user, get_db
 from core.core.exceptions import SkyrictError, skyrict_error_handler
 from core.core.permissions import (
+    ERP_AI_COACHING_READ,
+    ERP_AI_COACHING_REVIEW,
+    ERP_AI_GUARDIAN_READ,
+    ERP_AI_GUARDIAN_REVIEW,
     ERP_AI_INVOKE,
     ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
@@ -53,6 +57,11 @@ def _app_with_recorder(seen: list[httpx.Request]) -> TestClient:
     app.dependency_overrides[ai_router._require_narrator_refresh] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_reports_read] = lambda: {"sub": "u1"}
     app.dependency_overrides[ai_router._require_reports_create] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_crm_read] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_coaching_read] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_coaching_review] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_guardian_read] = lambda: {"sub": "u1"}
+    app.dependency_overrides[ai_router._require_guardian_review] = lambda: {"sub": "u1"}
     client_factory = lambda: httpx.AsyncClient(  # noqa: E731
         transport=httpx.MockTransport(handler), base_url="http://ai.test"
     )
@@ -164,6 +173,20 @@ class TestSupplierRiskForwarding:
 
         assert response.status_code == 200
         assert seen[0].url.path == "/api/v1/ai/supplier-risk"
+
+
+class TestCrmDealHealthSweepForwarding:
+    def test_sweep_post_forwards(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+
+        response = client.post(
+            "/api/v1/ai/crm/opportunities/sweep",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == "/api/v1/ai/crm/opportunities/sweep"
 
 
 class TestL3Narratives:
@@ -428,3 +451,207 @@ class TestReportBuilderPermissionGate:
     def test_missing_invoke_denied(self) -> None:
         self._grant(ERP_REPORTS_READ, ERP_REPORTS_CREATE)
         assert self._app().post("/api/v1/ai/report-builder/save").status_code == 403
+
+
+class TestCoachingForwarding:
+    """SKY-90 coaching: GET suggestions list, POST review accept/dismiss."""
+
+    def test_list_suggestions_forwards(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+
+        response = client.get(
+            "/api/v1/ai/coaching/suggestions",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == "/api/v1/ai/coaching/suggestions"
+
+    def test_review_suggestion_forwards_uuid(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+        suggestion_id = uuid.uuid4()
+
+        response = client.post(
+            f"/api/v1/ai/coaching/suggestions/{suggestion_id}/review",
+            json={"status": "accepted"},
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == f"/api/v1/ai/coaching/suggestions/{suggestion_id}/review"
+
+
+class TestGuardianForwarding:
+    """SKY-90 guardian: GET reports list, GET report detail, POST review."""
+
+    def test_list_reports_forwards(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+
+        response = client.get(
+            "/api/v1/ai/guardian/reports",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == "/api/v1/ai/guardian/reports"
+
+    def test_get_report_detail_forwards_uuid(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+        report_id = uuid.uuid4()
+
+        response = client.get(
+            f"/api/v1/ai/guardian/reports/{report_id}",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == f"/api/v1/ai/guardian/reports/{report_id}"
+
+    def test_review_report_forwards_uuid(self) -> None:
+        seen: list[httpx.Request] = []
+        client = _app_with_recorder(seen)
+        report_id = uuid.uuid4()
+
+        response = client.post(
+            f"/api/v1/ai/guardian/reports/{report_id}/review",
+            headers={"authorization": "Bearer tok"},
+        )
+
+        assert response.status_code == 200
+        assert seen[0].url.path == f"/api/v1/ai/guardian/reports/{report_id}/review"
+
+
+class TestCoachingPermissionGate:
+    """coaching.read gates list; coaching.review gates the accept/dismiss action."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_rbac(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        grants: list[str] = []
+        self._grants_box = grants
+
+        class _FakeRbac:
+            def __init__(self, session: object) -> None:
+                self.session = session
+
+            async def resolve_user_permissions(
+                self, *, user_id: object, tenant_id: object
+            ) -> list[str]:
+                return grants
+
+        monkeypatch.setattr(api_deps, "RbacRepository", _FakeRbac)
+
+    def _app(self) -> TestClient:
+        app = FastAPI()
+        app.add_exception_handler(SkyrictError, skyrict_error_handler)
+        app.include_router(ai_router.router, prefix="/api/v1")
+        app.dependency_overrides[get_current_user] = lambda: {
+            "user_id": uuid.uuid4(),
+            "tenant_id": uuid.uuid4(),
+        }
+        app.dependency_overrides[get_db] = lambda: object()
+        app.dependency_overrides[ai_router.get_ai_client] = lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"ok": True})),
+            base_url="http://ai.test",
+        )
+        return TestClient(app)
+
+    def _grant(self, *keys: str) -> None:
+        self._grants_box[:] = list(keys)
+
+    def test_list_with_invoke_and_read(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_COACHING_READ)
+        assert self._app().get("/api/v1/ai/coaching/suggestions").status_code == 200
+
+    def test_list_without_read_denied(self) -> None:
+        self._grant(ERP_AI_INVOKE)
+        assert self._app().get("/api/v1/ai/coaching/suggestions").status_code == 403
+
+    def test_review_requires_review_key(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_COACHING_READ)
+        assert (
+            self._app().post(f"/api/v1/ai/coaching/suggestions/{uuid.uuid4()}/review").status_code
+            == 403
+        )
+
+    def test_review_granted_with_review_key(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_COACHING_REVIEW)
+        assert (
+            self._app().post(f"/api/v1/ai/coaching/suggestions/{uuid.uuid4()}/review").status_code
+            == 200
+        )
+
+    def test_missing_invoke_denied(self) -> None:
+        self._grant(ERP_AI_COACHING_READ)
+        assert self._app().get("/api/v1/ai/coaching/suggestions").status_code == 403
+
+
+class TestGuardianPermissionGate:
+    """guardian.read gates list + detail; guardian.review gates the review action."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_rbac(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        grants: list[str] = []
+        self._grants_box = grants
+
+        class _FakeRbac:
+            def __init__(self, session: object) -> None:
+                self.session = session
+
+            async def resolve_user_permissions(
+                self, *, user_id: object, tenant_id: object
+            ) -> list[str]:
+                return grants
+
+        monkeypatch.setattr(api_deps, "RbacRepository", _FakeRbac)
+
+    def _app(self) -> TestClient:
+        app = FastAPI()
+        app.add_exception_handler(SkyrictError, skyrict_error_handler)
+        app.include_router(ai_router.router, prefix="/api/v1")
+        app.dependency_overrides[get_current_user] = lambda: {
+            "user_id": uuid.uuid4(),
+            "tenant_id": uuid.uuid4(),
+        }
+        app.dependency_overrides[get_db] = lambda: object()
+        app.dependency_overrides[ai_router.get_ai_client] = lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"ok": True})),
+            base_url="http://ai.test",
+        )
+        return TestClient(app)
+
+    def _grant(self, *keys: str) -> None:
+        self._grants_box[:] = list(keys)
+
+    def test_list_with_invoke_and_read(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_GUARDIAN_READ)
+        assert self._app().get("/api/v1/ai/guardian/reports").status_code == 200
+
+    def test_detail_with_invoke_and_read(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_GUARDIAN_READ)
+        assert self._app().get(f"/api/v1/ai/guardian/reports/{uuid.uuid4()}").status_code == 200
+
+    def test_list_without_read_denied(self) -> None:
+        self._grant(ERP_AI_INVOKE)
+        assert self._app().get("/api/v1/ai/guardian/reports").status_code == 403
+
+    def test_review_requires_review_key(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_GUARDIAN_READ)
+        assert (
+            self._app().post(f"/api/v1/ai/guardian/reports/{uuid.uuid4()}/review").status_code
+            == 403
+        )
+
+    def test_review_granted_with_review_key(self) -> None:
+        self._grant(ERP_AI_INVOKE, ERP_AI_GUARDIAN_REVIEW)
+        assert (
+            self._app().post(f"/api/v1/ai/guardian/reports/{uuid.uuid4()}/review").status_code
+            == 200
+        )
+
+    def test_missing_invoke_denied(self) -> None:
+        self._grant(ERP_AI_GUARDIAN_READ)
+        assert self._app().get("/api/v1/ai/guardian/reports").status_code == 403

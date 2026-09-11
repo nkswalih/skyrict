@@ -249,6 +249,33 @@ def seed_overdue_invoices(
 
 
 @app.command()
+def seed_revenue_history(
+    tenant_id: str = typer.Option(
+        ...,
+        "--tenant-id",
+        help="UUID of a tenant to seed approved invoice history for",
+    ),
+) -> None:
+    """Seed 8 months of APPROVED invoices so the A3/A4 finance demo can test.
+
+    Non-destructive and idempotent: backfills ``INV-HIST-*`` invoices for the
+    tenant (skipping existing numbers), and does nothing when the tenant
+    already has >= 3 distinct approved months (the FIN-AI-003 floor).
+    """
+    import asyncio
+
+    from core.seed_revenue_history import seed_revenue_history as _seed
+
+    async def _run() -> None:
+        counts = await _seed(uuid.UUID(tenant_id))
+        typer.echo(f"seeded approved invoice history for tenant {tenant_id}:")
+        for key, value in counts.items():
+            typer.echo(f"  {key}: {value}")
+
+    asyncio.run(_run())
+
+
+@app.command()
 def provision_rbac(
     tenant_id: str = typer.Option(
         ...,

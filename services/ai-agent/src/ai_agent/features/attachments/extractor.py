@@ -76,7 +76,7 @@ def extract_docx(raw: bytes) -> str:
 
 def extract_xlsx(raw: bytes) -> str:
     """Extract text from an .xlsx spreadsheet."""
-    from openpyxl import load_workbook  # type: ignore[import-untyped]
+    from openpyxl import load_workbook
 
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     sheets_text: list[str] = []

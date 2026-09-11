@@ -922,3 +922,100 @@ export function searchAuditLog(
         })}`,
     );
 }
+
+// ---------------------------------------------------------------------------
+// SKY-82 A4: revenue forecasting
+// ---------------------------------------------------------------------------
+
+export interface RevenueForecastDeal {
+    id: string;
+    name: string;
+    amount: number | null;
+    probability: number;
+    expected_close_date: string;
+    // Raw conversion value (probability/100 x amount) vs the health-adjusted
+    // value actually blended into the month's pipeline.
+    weighted: number;
+    health: string | null;
+    confidence: number | null;
+    factor: number;
+    adjusted: number;
+}
+
+export interface RevenueForecastPoint {
+    month: string;
+    predicted: number;
+    // Per-point decomposition: baseline = trend + seasonal projection alone,
+    // pipeline = weighted open-deal uplift blended in (predicted == baseline + pipeline).
+    baseline: number | null;
+    pipeline: number | null;
+    lower_bound: number | null;
+    upper_bound: number | null;
+    // The deals behind this month's pipeline, health-adjusted value each.
+    deals: RevenueForecastDeal[];
+}
+
+export interface RevenueForecastActual {
+    month: string;
+    actual: number;
+}
+
+export interface RevenueForecast {
+    model_version: string;
+    backtest_mape: number | null;
+    sigma: number | null;
+    points: RevenueForecastPoint[];
+    history: RevenueForecastActual[];
+    pipeline_value: number | null;
+}
+
+function asNumber(value: string | number | null | undefined): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+// Core serializes Decimal keys as strings; coerce every numeric field once so
+// downstream consumers get real numbers (string compares were sorting money
+// lexicographically, e.g. "71927" > "573221").
+export function mapRevenueForecast(payload: RevenueForecast): RevenueForecast {
+    return {
+        ...payload,
+        backtest_mape: asNumber(payload.backtest_mape),
+        sigma: asNumber(payload.sigma),
+        pipeline_value: asNumber(payload.pipeline_value),
+        points: (payload.points ?? []).map((point) => ({
+            ...point,
+            predicted: asNumber(point.predicted) ?? 0,
+            baseline: asNumber(point.baseline),
+            pipeline: asNumber(point.pipeline),
+            lower_bound: asNumber(point.lower_bound),
+            upper_bound: asNumber(point.upper_bound),
+            deals: (point.deals ?? []).map((deal) => ({
+                ...deal,
+                amount: asNumber(deal.amount),
+                weighted: asNumber(deal.weighted) ?? 0,
+                factor: asNumber(deal.factor) ?? 1,
+                adjusted: asNumber(deal.adjusted) ?? 0,
+                confidence: asNumber(deal.confidence),
+            })),
+        })),
+        history: (payload.history ?? []).map((actual) => ({
+            ...actual,
+            actual: asNumber(actual.actual) ?? 0,
+        })),
+    };
+}
+
+export function getRevenueForecast(): Promise<RevenueForecast> {
+    return apiFetch<RevenueForecast>(`${FINANCE}/forecast/revenue`).then(
+        mapRevenueForecast,
+    );
+}
+
+export function refreshRevenueForecast(): Promise<RevenueForecast> {
+    return apiPost<RevenueForecast>(
+        `${FINANCE}/forecast/revenue/refresh`,
+        {},
+    ).then(mapRevenueForecast);
+}

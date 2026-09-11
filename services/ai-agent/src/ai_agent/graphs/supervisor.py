@@ -20,10 +20,12 @@ from typing import TYPE_CHECKING
 from ai_agent.db.agent_registry_repository import AgentRegistryRepository
 from ai_agent.db.conversation_repository import ConversationRepository
 from ai_agent.features.supervisor.schemas import (
+    AGENT_AUDIT_GUARDIAN,
     AGENT_CRM,
     AGENT_FINANCE,
     AGENT_HR,
     AGENT_INVENTORY,
+    AGENT_SALES_COACH,
     SupervisorEvent,
 )
 from ai_agent.features.supervisor.service import SupervisorService
@@ -42,13 +44,24 @@ if TYPE_CHECKING:
     from ai_agent.features.hr_copilot.service import HrCopilotService
     from ai_agent.features.nl_query.gateway import InventoryGatewayPort
     from ai_agent.features.rag.retrieval.service import RagRetrievalService
-    from ai_agent.features.supervisor.delegates import ForecastPort
+    from ai_agent.features.supervisor.delegates import (
+        CoachSuggestionPort,
+        ForecastPort,
+        GuardianReportPort,
+    )
 
 
 class SupervisorRuntime:
     """Resolves registry-provisioned leaves and streams one supervisor turn."""
 
-    REGISTERED_AGENTS: tuple[str, ...] = (AGENT_INVENTORY, AGENT_HR, AGENT_CRM, AGENT_FINANCE)
+    REGISTERED_AGENTS: tuple[str, ...] = (
+        AGENT_INVENTORY,
+        AGENT_HR,
+        AGENT_CRM,
+        AGENT_FINANCE,
+        AGENT_SALES_COACH,
+        AGENT_AUDIT_GUARDIAN,
+    )
 
     def __init__(
         self,
@@ -62,6 +75,8 @@ class SupervisorRuntime:
         finance_gateway_factory: Callable[[], Awaitable[FinanceGatewayPort]] | None = None,
         memory_service: MemoryService | None = None,
         forecast: ForecastPort | None = None,
+        coach_suggestions: CoachSuggestionPort | None = None,
+        guardian_reports: GuardianReportPort | None = None,
         confidence_threshold: float = 0.75,
     ) -> None:
         self._session = session
@@ -73,6 +88,8 @@ class SupervisorRuntime:
         self._finance_gateway_factory = finance_gateway_factory
         self._memory_service = memory_service
         self._forecast = forecast
+        self._coach_suggestions = coach_suggestions
+        self._guardian_reports = guardian_reports
         self._confidence_threshold = confidence_threshold
 
     async def stream_answer(
@@ -107,6 +124,8 @@ class SupervisorRuntime:
             finance_gateway_factory=self._finance_gateway_factory,
             memory_service=self._memory_service,
             forecast=self._forecast,
+            coach_suggestions=self._coach_suggestions,
+            guardian_reports=self._guardian_reports,
             conversation_history=ConversationRepository(self._session),
             provisioned=provisioned,
             confidence_threshold=self._confidence_threshold,

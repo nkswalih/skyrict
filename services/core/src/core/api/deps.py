@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from core.features.audit.service import AuditService
     from core.features.crm.service import CrmService
     from core.features.crm.workspace_service import CrmWorkspaceService
+    from core.features.documents.service import DocumentsService
     from core.features.finance.automation import FinanceAutomationService
     from core.features.finance.ports import AuditSink, PayrollAccrualPort
     from core.features.finance.service import FinanceService
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
     from core.features.payroll.service import PayrollService
     from core.features.payroll_automation.service import PayrollAutomationService
     from core.features.reporting.service import DashboardService, ReportService
+    from core.features.revenue_forecast.service import RevenueForecastService
     from core.features.sales.service import SalesService
 
 logger = get_logger("core.deps")
@@ -702,6 +704,16 @@ def get_finance_service(
     )
 
 
+def get_revenue_forecast_service(
+    db: AsyncSession = Depends(get_db),
+) -> RevenueForecastService:
+    """Composition root for the finance revenue-forecast feature (SKY-82 A4)."""
+    from core.features.revenue_forecast.repository import RevenueForecastRepository
+    from core.features.revenue_forecast.service import RevenueForecastService
+
+    return RevenueForecastService(repo=RevenueForecastRepository(db))
+
+
 def get_payroll_service(
     db: AsyncSession = Depends(get_db),
     audit: CoreAuditService = Depends(get_core_audit_service),
@@ -898,6 +910,101 @@ def get_inventory_service(
     from core.features.inventory.service import InventoryService
 
     return InventoryService(inventory_repo, audit_service)
+
+
+# --- Documents deps (SKY-87) ---
+
+
+def get_document_storage(db: AsyncSession = Depends(get_db)) -> object:
+    """Composition root for the document blob backend (local or S3).
+
+    Built ONCE per process from settings via ``build_document_storage()``;
+    the ``db`` argument is only there to bind lifetime to the request graph so
+    ``Depends`` caches it consistently alongside the service.
+    """
+    from core.features.documents.storage import build_document_storage
+
+    return build_document_storage()
+
+
+def get_documents_service(
+    db: AsyncSession = Depends(get_db),
+    audit_service: AuditService = Depends(get_audit_service),
+    storage: object = Depends(get_document_storage),
+) -> DocumentsService:
+    """Composition root for the documents feature (SKY-87).
+
+    The repository and blob storage share the request lifetime; the helper
+    supports the m2m OCR callback and the download/upload routes.
+    """
+    from core.features.documents.repository import DocumentsRepository
+    from core.features.documents.service import DocumentsService
+
+    return DocumentsService(
+        documents_repo=DocumentsRepository(db),
+        storage=storage,  # type: ignore[arg-type]
+        audit_service=audit_service,
+    )
+
+
+async def require_entity_linked_read(
+    module_ref: str | None,
+    current_user: dict[str, Any],
+    db: AsyncSession,
+) -> None:
+    """Entity-link rule (SKY-87 §7.3): a linked document additionally needs the
+    owning module's read key.
+
+    ``module_ref`` is read AFTER ``erp.documents.read`` resolves (the route
+    fetches the document, then calls this helper). ``general``/unlinked docs
+    need no further key. Raises ``PermissionDeniedError`` when the owner key is
+    missing - never a wildcard-only short-circuit, mirrors the catalog mirror.
+    """
+    from core.core.permissions import (
+        ERP_CRM_READ,
+        ERP_FINANCE_READ,
+        ERP_HR_READ,
+        ERP_INVENTORY_READ,
+        ERP_PAYROLL_READ,
+        ERP_SALES_READ,
+    )
+
+    owner_keys = {
+        "inventory": ERP_INVENTORY_READ,
+        "sales": ERP_SALES_READ,
+        "crm": ERP_CRM_READ,
+        "finance": ERP_FINANCE_READ,
+        "hr": ERP_HR_READ,
+        "payroll": ERP_PAYROLL_READ,
+    }
+    owner_key = owner_keys.get(module_ref or "")
+    if owner_key is None:
+        return
+    granted = await RbacRepository(db).resolve_user_permissions(
+        user_id=current_user["user_id"],
+        tenant_id=current_user["tenant_id"],
+    )
+    if not grants_permission(granted, owner_key):
+        raise PermissionDeniedError(f"Linking to '{module_ref}' requires {owner_key}")
+
+
+async def get_entity_link_guard(
+    current_user: dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Callable[[str | None], Awaitable[None]]:
+    """Dependency factory - returns a per-request guard closure for SKY-87.
+
+    The documents router calls ``guard(module_ref)`` after it has fetched the
+    document so the owning-module read key check never touches ``core.db`` from
+    a feature module (import-linter: "Only repositories touch the database
+    layer"). The guard resolves here in the api layer with the request-scoped
+    session and the same DB grant path as ``require_permission``.
+    """
+
+    async def guard(module_ref: str | None) -> None:
+        await require_entity_linked_read(module_ref, current_user, db)
+
+    return guard
 
 
 # --- CRM & Sales deps ---

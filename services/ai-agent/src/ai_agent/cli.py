@@ -421,5 +421,60 @@ def eval_finance(
     typer.echo(f"recorded {len(ids)} finance eval metric(s) -> ai_finance_eval_runs")
 
 
+@app.command()
+def documents_reindex(
+    tenant_id: str = typer.Option(..., help="Target tenant UUID"),
+    tenant_slug: str = typer.Option(..., help="Target tenant slug"),
+    ocr_status: str = typer.Option(
+        "failed", help="Re-process documents in this status: 'failed' or 'ready'"
+    ),
+    limit: int = typer.Option(50, help="Max documents to re-process"),
+) -> None:
+    """Re-process previously failed (or ready) documents' OCR/tag/embed (SKY-87).
+
+    Fetches core documents with the given ocr_status and runs the same
+    DocumentOcrService each one would get from the m2m /process endpoint.
+    """
+    if ocr_status not in ("failed", "ready"):
+        typer.echo("--ocr-status must be 'failed' or 'ready'", err=True)
+        raise typer.Exit(code=2)
+
+    async def _run() -> None:
+        from ai_agent.core.config import settings
+        from ai_agent.core.llm_router import LlmRouter
+        from ai_agent.core.providers import build_providers_from_settings
+        from ai_agent.db.document_embedding_repository import DocumentEmbeddingRepository
+        from ai_agent.db.session import async_session_factory
+        from ai_agent.features.documents.gateway import HttpDocumentGateway
+        from ai_agent.features.documents.service import DocumentOcrService
+
+        llm_router = LlmRouter(build_providers_from_settings(settings))
+        gateway = HttpDocumentGateway()
+        docs = await gateway.list_documents_for_reindex(
+            tenant_slug, ocr_status=ocr_status, limit=limit
+        )
+        typer.echo(f"found {len(docs)} document(s) with ocr_status='{ocr_status}'")
+        async with async_session_factory() as session:
+            store = DocumentEmbeddingRepository(session)
+            service = DocumentOcrService(
+                store=store,
+                gateway=gateway,
+                llm_router=llm_router,
+            )
+            for doc in docs:
+                result = await service.process(
+                    tenant_id=uuid.UUID(tenant_id),
+                    tenant_slug=tenant_slug,
+                    document_id=doc.document_id,
+                )
+                await session.commit()
+                typer.echo(
+                    f"- {doc.document_id} -> {result.ocr_status}"
+                    + (f" (tags={len(result.ai_tags)})" if result.ai_tags else "")
+                )
+
+    asyncio.run(_run())
+
+
 if __name__ == "__main__":
     app()

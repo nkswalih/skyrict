@@ -65,3 +65,15 @@ class TestCatalog:
         # report definition references it via its permission_key.
         assert ERP_REPORTS_READ == "erp.reports.read"
         assert ERP_REPORTS_READ in CATALOG
+
+    def test_ai_wave2_keys_are_catalogued(self) -> None:
+        # SKY-90 wave 2: Sales Coach + Audit Guardian, seeded by migration
+        # 0048. Read gates the queue/report surfaces; review gates the
+        # accept-dismiss and acknowledge-report decisions.
+        for key in (
+            "erp.ai.coaching.read",
+            "erp.ai.coaching.review",
+            "erp.ai.guardian.read",
+            "erp.ai.guardian.review",
+        ):
+            assert key in CATALOG

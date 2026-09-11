@@ -53,3 +53,8 @@ class AiEpisodicMemoryModel(Base):
         nullable=False,
         server_default=text("now() + interval '90 days'"),
     )
+    # Timestamp of the compaction pass that summarized this row into semantic
+    # facts (SKY-90). NULL until the weekly compaction job folds the row's
+    # essence into ai_semantic_memory; compacted rows no longer enter recall.
+    # Indexed (partial, WHERE compacted_at IS NULL) in migration 0020.
+    compacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

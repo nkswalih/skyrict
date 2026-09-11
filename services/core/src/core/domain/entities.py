@@ -150,6 +150,64 @@ class SupplierPerformance:
 
 
 @dataclass(frozen=True)
+class Document:
+    """One logical ERP document (SKY-87, platform document spine).
+
+    The document master: latest version's storage mapping, polymorphic entity
+    reference (``module_ref``/``entity_type``/``entity_id`` - documents span
+    entity lifecycles, so they are NOT composite-FK'd to any single module),
+    the human-confirmed ``tags`` JSON set, and the OCR lifecycle status. The
+    ai-agent writes ``ai_tags``/``extracted_text`` back via the m2m callback;
+    ``tags_confirmed`` flips true when a human accepts the auto-tags.
+    """
+
+    tenant_id: uuid.UUID
+    filename: str
+    mime_type: str | None
+    size_bytes: int
+    checksum_sha256: str
+    storage_backend: str
+    storage_key: str
+    module_ref: str | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    tags: list[str] | None = None
+    ocr_status: str = "pending"
+    ocr_error: str | None = None
+    extracted_text: str | None = None
+    ai_tags: list[str] | None = None
+    tags_confirmed: bool = False
+    version_count: int = 1
+    created_by: uuid.UUID | None = None
+    id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class DocumentVersion:
+    """One uploaded version of an ERP document (append-only history).
+
+    Version numbers are per-document and start at 1; the master row's storage
+    fields always mirror the latest version. ``checksum_sha256`` guards against
+    storing a byte-identical re-upload as a new version.
+    """
+
+    tenant_id: uuid.UUID
+    document_id: uuid.UUID
+    version_number: int
+    filename: str
+    mime_type: str | None
+    size_bytes: int
+    checksum_sha256: str
+    storage_backend: str
+    storage_key: str
+    created_by: uuid.UUID | None = None
+    id: uuid.UUID | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class Warehouse:
     """A tenant-scoped storage location (soft-deletable via ``is_active``)."""
 

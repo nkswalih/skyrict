@@ -40,6 +40,8 @@ from ai_agent.core.exceptions import AiUnavailableError
 from ai_agent.core.rate_limit import limiter
 from ai_agent.core.tenant_context import TenantContext
 from ai_agent.db.audit_repository import AiAuditLogRepository
+from ai_agent.db.coaching_suggestion_repository import CoachingSuggestionRepository
+from ai_agent.db.guardian_report_repository import GuardianReportRepository
 from ai_agent.db.query_cache_repository import QueryCacheRepository
 from ai_agent.db.rag_repository import RagRepository
 from ai_agent.features.crm.gateway import HttpCrmGateway
@@ -75,6 +77,85 @@ EVENT_TOKEN = "token"
 EVENT_CITATIONS = "citations"
 EVENT_DONE = "done"
 EVENT_ERROR = "error"
+
+
+class _CoachSuggestionAdapter:
+    """Adapts ORM suggestion rows to the supervisor delegate's dict contract.
+
+    Only the fields the Sales Coach delegate renders (title/body/status) cross
+    the boundary - CRM-record evidence stays in the repository and never enters
+    a chat prompt.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._repo = CoachingSuggestionRepository(session)
+
+    async def list_pending_for_rep(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        rep_user_id: uuid.UUID,
+    ) -> list[dict[str, object]]:
+        rows = await self._repo.list_pending_for_rep(
+            tenant_id=tenant_id,
+            rep_user_id=rep_user_id,
+        )
+        return [
+            {
+                "status": row.status,
+                "title": row.title,
+                "body": row.body,
+            }
+            for row in rows
+        ]
+
+
+class _GuardianReportAdapter:
+    """Adapts ORM guardian rows to the supervisor delegate's dict contract.
+
+    Deliberately drops the ``evidence`` payloads, which can carry user/IP
+    identifiers - the chat delegate only ever sees severity/reason/source.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._repo = GuardianReportRepository(session)
+
+    async def list_reports(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        limit: int = 1,
+    ) -> list[dict[str, object]]:
+        rows = await self._repo.list_reports(tenant_id=tenant_id, limit=limit)
+        return [
+            {
+                "id": row.id,
+                "summary": row.summary,
+                "total_events_scanned": row.total_events_scanned,
+                "flagged_count": row.flagged_count,
+            }
+            for row in rows
+        ]
+
+    async def list_events_for_report(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> list[dict[str, object]]:
+        rows = await self._repo.list_events_for_report(
+            tenant_id=tenant_id,
+            report_id=report_id,
+        )
+        return [
+            {
+                "severity": row.severity,
+                "reason": row.reason,
+                "source_table": row.source_table,
+                "event_action": row.event_action,
+            }
+            for row in rows
+        ]
 
 
 def _build_runtime(request: Request, session: AsyncSession) -> SupervisorRuntime:
@@ -164,6 +245,8 @@ def _build_runtime(request: Request, session: AsyncSession) -> SupervisorRuntime
         finance_gateway_factory=finance_gateway_factory,
         memory_service=memory_service,
         forecast=ForecastService(gateway_factory=gateway_factory),
+        coach_suggestions=_CoachSuggestionAdapter(session),
+        guardian_reports=_GuardianReportAdapter(session),
         confidence_threshold=settings.CONFIDENCE_THRESHOLD,
     )
 

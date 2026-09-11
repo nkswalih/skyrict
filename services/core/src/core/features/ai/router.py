@@ -1,9 +1,12 @@
 """``/api/v1/ai/*`` proxy routes - permission checks BEFORE forwarding.
 
-Permission matrix (ticket SKY-68, spec 6.3): every AI call needs
+Permission matrix (SKY-68 / SKY-90, spec 6.3): every AI call needs
 ``erp.ai.invoke`` AND the module key for the touched domain -
 ``erp.inventory.read`` for reads, ``erp.inventory.write`` for anomaly
 dispositions, ``erp.inventory.ai.approve`` for suggestion scan/approve/reject.
+SKY-90 wave 2 adds Sales Coach AI (``erp.ai.coaching.read`` /
+``erp.ai.coaching.review``) and Audit Guardian AI (``erp.ai.guardian.read`` /
+``erp.ai.guardian.review``) proxy routes.
 
 The JWT is forwarded verbatim; ai-agent re-verifies it against the
 relayed tenant slug (spec 1.4: AI is a proxy, not an auth bypass).
@@ -25,6 +28,10 @@ from fastapi.responses import Response
 
 from core.api.deps import require_all_permissions, require_permission
 from core.core.permissions import (
+    ERP_AI_COACHING_READ,
+    ERP_AI_COACHING_REVIEW,
+    ERP_AI_GUARDIAN_READ,
+    ERP_AI_GUARDIAN_REVIEW,
     ERP_AI_INVOKE,
     ERP_AI_L3_REFRESH,
     ERP_AI_NARRATOR_REFRESH,
@@ -93,6 +100,20 @@ _NarratorRefreshDep = Annotated[dict[str, Any], Depends(_require_narrator_refres
 
 _ReportsReadDep = Annotated[dict[str, Any], Depends(_require_reports_read)]
 _ReportsCreateDep = Annotated[dict[str, Any], Depends(_require_reports_create)]
+
+# --- Sales Coach + Audit Guardian AI (SKY-90 wave 2) -------------------------
+# Coaching review = accept/dismiss decisions; Guardian review = operator
+# acknowledgement of the flagged-event integrity report.
+
+_require_coaching_read = require_permission(ERP_AI_COACHING_READ)
+_require_coaching_review = require_permission(ERP_AI_COACHING_REVIEW)
+_require_guardian_read = require_permission(ERP_AI_GUARDIAN_READ)
+_require_guardian_review = require_permission(ERP_AI_GUARDIAN_REVIEW)
+
+_CoachingReadDep = Annotated[dict[str, Any], Depends(_require_coaching_read)]
+_CoachingReviewDep = Annotated[dict[str, Any], Depends(_require_coaching_review)]
+_GuardianReadDep = Annotated[dict[str, Any], Depends(_require_guardian_read)]
+_GuardianReviewDep = Annotated[dict[str, Any], Depends(_require_guardian_review)]
 
 
 def get_ai_client(request: Request) -> httpx.AsyncClient:
@@ -457,6 +478,17 @@ async def proxy_crm_deal_health(
     return await _proxy(request, client, f"/api/v1/ai/crm/opportunities/{opportunity_id}/health")
 
 
+@router.post("/crm/opportunities/sweep")
+async def proxy_crm_deal_health_sweep(
+    request: Request,
+    _invoke: _InvokeDep,
+    _crm_read: _CrmReadDep,
+    client: _ClientDep,
+) -> Response:
+    """Recheck deal health for all open opportunities -> ai-agent /api/v1/ai/crm/opportunities/sweep."""
+    return await _proxy(request, client, "/api/v1/ai/crm/opportunities/sweep")
+
+
 # --- NL report builder (SKY-80) ---------------------------------------------
 
 # generate builds a preview from report definitions the caller can already
@@ -485,3 +517,74 @@ async def proxy_report_builder_save(
 ) -> Response:
     """Persist a generated report spec -> ai-agent /api/v1/ai/report-builder/save."""
     return await _proxy(request, client, "/api/v1/ai/report-builder/save")
+
+
+# --- Sales Coach AI (SKY-90) -------------------------------------------------
+
+# Read gate: list the pending coaching suggestion queue for the tenant (or a
+# single rep). Review gate: accept/dismiss decisions that flip suggestion status.
+# coaching.read for reads, coaching.review for the write-like decision action.
+
+
+@router.get("/coaching/suggestions")
+async def proxy_list_coaching_suggestions(
+    request: Request,
+    _invoke: _InvokeDep,
+    _coaching_read: _CoachingReadDep,
+    client: _ClientDep,
+) -> Response:
+    """Pending coaching suggestion queue -> ai-agent /api/v1/ai/coaching/suggestions."""
+    return await _proxy(request, client, "/api/v1/ai/coaching/suggestions")
+
+
+@router.post("/coaching/suggestions/{suggestion_id}/review")
+async def proxy_review_coaching_suggestion(
+    request: Request,
+    suggestion_id: uuid.UUID,
+    _invoke: _InvokeDep,
+    _coaching_review: _CoachingReviewDep,
+    client: _ClientDep,
+) -> Response:
+    """Accept or dismiss a coaching suggestion -> ai-agent /api/v1/ai/coaching/suggestions/{id}/review."""
+    return await _proxy(request, client, f"/api/v1/ai/coaching/suggestions/{suggestion_id}/review")
+
+
+# --- Audit Guardian AI (SKY-90) ----------------------------------------------
+
+# Read gate: list weekly reports + fetch detail (flagged-event evidence).
+# Review gate: operator acknowledgement of the integrity report.
+
+
+@router.get("/guardian/reports")
+async def proxy_list_guardian_reports(
+    request: Request,
+    _invoke: _InvokeDep,
+    _guardian_read: _GuardianReadDep,
+    client: _ClientDep,
+) -> Response:
+    """Weekly integrity report list -> ai-agent /api/v1/ai/guardian/reports."""
+    return await _proxy(request, client, "/api/v1/ai/guardian/reports")
+
+
+@router.get("/guardian/reports/{report_id}")
+async def proxy_get_guardian_report(
+    request: Request,
+    report_id: uuid.UUID,
+    _invoke: _InvokeDep,
+    _guardian_read: _GuardianReadDep,
+    client: _ClientDep,
+) -> Response:
+    """Report detail with flagged events + evidence -> ai-agent /api/v1/ai/guardian/reports/{id}."""
+    return await _proxy(request, client, f"/api/v1/ai/guardian/reports/{report_id}")
+
+
+@router.post("/guardian/reports/{report_id}/review")
+async def proxy_review_guardian_report(
+    request: Request,
+    report_id: uuid.UUID,
+    _invoke: _InvokeDep,
+    _guardian_review: _GuardianReviewDep,
+    client: _ClientDep,
+) -> Response:
+    """Mark a guardian report reviewed -> ai-agent /api/v1/ai/guardian/reports/{id}/review."""
+    return await _proxy(request, client, f"/api/v1/ai/guardian/reports/{report_id}/review")

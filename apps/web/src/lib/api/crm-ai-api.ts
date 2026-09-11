@@ -36,6 +36,13 @@ export interface DealHealth {
     computed_at: string;
 }
 
+export interface DealHealthSweep {
+    assessed: number;
+    healthy: number;
+    at_risk: number;
+    critical: number;
+}
+
 export interface FollowUpItem {
     id: string;
     entity_type: string;
@@ -71,6 +78,14 @@ export async function getDealHealth(
     return apiFetchBody<DealHealth>(
         `${CRM_AI}/opportunities/${opportunityId}/health`,
     );
+}
+
+/**
+ * Recheck + persist deal health for every open opportunity expected to close
+ * within the next 12 months (manual twin of the scheduled nightly sweep).
+ */
+export async function sweepDealHealth(): Promise<DealHealthSweep> {
+    return apiPostBody<DealHealthSweep>(`${CRM_AI}/opportunities/sweep`, {});
 }
 
 /**

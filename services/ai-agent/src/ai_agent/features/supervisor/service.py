@@ -28,14 +28,18 @@ from ai_agent.core.exceptions import AiUnavailableError
 from ai_agent.core.providers import LlmRequest
 from ai_agent.features.attachments.processor import ProcessedAttachments, process_attachments
 from ai_agent.features.supervisor.delegates import (
+    AuditGuardianDelegator,
+    CoachSuggestionPort,
     CrmAssistantDelegator,
     Delegator,
     FinanceDelegator,
     ForecastPort,
+    GuardianReportPort,
     HrCopilotDelegator,
     HrCopilotPort,
     InventoryMonitorDelegator,
     RagSearchPort,
+    SalesCoachDelegator,
 )
 from ai_agent.features.supervisor.prompts import (
     ABSTENTION,
@@ -46,11 +50,13 @@ from ai_agent.features.supervisor.prompts import (
     not_provisioned_message,
 )
 from ai_agent.features.supervisor.schemas import (
+    AGENT_AUDIT_GUARDIAN,
     AGENT_CRM,
     AGENT_DISPLAY_NAMES,
     AGENT_FINANCE,
     AGENT_HR,
     AGENT_INVENTORY,
+    AGENT_SALES_COACH,
     AgentStartEvent,
     Citation,
     CitationsEvent,
@@ -109,7 +115,49 @@ _KEYWORD_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (AGENT_CRM, ("crm", "customer", "lead", "opportunity", "pipeline", "sales")),
     (
         AGENT_FINANCE,
-        ("finance", "invoice", "revenue", "expense", "budget", "p&l", "cash flow", "costs"),
+        (
+            "finance",
+            "invoice",
+            "revenue",
+            "expense",
+            "budget",
+            "p&l",
+            "cash flow",
+            "costs",
+            "net income",
+            "net profit",
+            "profit",
+            "loss",
+            "income",
+            "margin",
+            "receivable",
+            "accounting",
+        ),
+    ),
+    (
+        AGENT_SALES_COACH,
+        (
+            "coach",
+            "coaching",
+            "suggestion",
+            "follow up",
+            "follow-up",
+            "deal strategy",
+            "pipeline review",
+            "sales tips",
+            "improve my sales",
+        ),
+    ),
+    (
+        AGENT_AUDIT_GUARDIAN,
+        (
+            "audit",
+            "guardian",
+            "flagged",
+            "security finding",
+            "integrity report",
+            "suspicious activity",
+        ),
     ),
 )
 
@@ -137,6 +185,8 @@ class SupervisorService:
         finance_gateway_factory: Callable[[], Awaitable[FinanceGatewayPort]] | None = None,
         memory_service: MemoryService | None = None,
         forecast: ForecastPort | None = None,
+        coach_suggestions: CoachSuggestionPort | None = None,
+        guardian_reports: GuardianReportPort | None = None,
         conversation_history: ConversationHistoryPort | None = None,
         provisioned: Mapping[str, bool],
         confidence_threshold: float = 0.75,
@@ -167,32 +217,58 @@ class SupervisorService:
                 llm_router=llm_router,
                 finance_gateway_factory=finance_gateway_factory,
             )
+        if coach_suggestions is not None:
+            delegates[AGENT_SALES_COACH] = SalesCoachDelegator(
+                llm_router=llm_router,
+                suggestions=coach_suggestions,
+            )
+        if guardian_reports is not None:
+            delegates[AGENT_AUDIT_GUARDIAN] = AuditGuardianDelegator(
+                llm_router=llm_router,
+                guardian_reports=guardian_reports,
+            )
         self._delegates = delegates
 
     async def classify(self, query: str) -> RouteDecision:
-        """Route one question; never raises - falls back to keywords."""
+        """Route one question; never raises - falls back to keywords.
+
+        The classifier LLM occasionally truncates its output (a one-token
+        prefix like ``{"`` instead of full JSON). We retry once and, on a
+        repeated failure, fall back to keyword routing rather than abstaining:
+        a query that clearly mentions a module still reaches it even when the
+        classifier LLM is flaky. Queries without any known keyword degrade to
+        the supervisor answer path regardless.
+        """
         if not self._llm_router.has_providers:
             return _keyword_route(query)
-        try:
-            completion = await self._llm_router.complete(
-                LlmRequest(
-                    system_prompt=CLASSIFY_SYSTEM_PROMPT,
-                    user_prompt=query.strip(),
-                    max_tokens=128,
-                    temperature=0.0,
+        for attempt in range(2):
+            try:
+                completion = await self._llm_router.complete(
+                    LlmRequest(
+                        system_prompt=CLASSIFY_SYSTEM_PROMPT,
+                        user_prompt=query.strip(),
+                        max_tokens=128,
+                        temperature=0.0,
+                    )
                 )
-            )
-        except AiUnavailableError as exc:
-            logger.warning("supervisor.classifier_unavailable", error=str(exc))
-            return _keyword_route(query)
-
-        try:
-            agents, confidence = _parse_classification(completion.text)
-        except ValueError:
-            logger.warning("supervisor.unparseable_classification")
-            return RouteDecision(
-                agents=(), confidence=0.0, abstain=True, reason="unparseable_classifier_output"
-            )
+            except AiUnavailableError as exc:
+                logger.warning("supervisor.classifier_unavailable", error=str(exc))
+                return _keyword_route(query)
+            try:
+                agents, confidence = _parse_classification(completion.text)
+                break
+            except ValueError:
+                logger.warning("supervisor.unparseable_classification", attempt=attempt)
+        else:
+            fallback = _keyword_route(query)
+            if not fallback.agents:
+                return RouteDecision(
+                    agents=(),
+                    confidence=0.0,
+                    abstain=True,
+                    reason="unparseable_classifier_output",
+                )
+            return fallback
         if not agents:
             return RouteDecision(agents=(), confidence=confidence, abstain=True, reason="no_agents")
         if confidence < self._confidence_threshold:
@@ -401,14 +477,23 @@ class SupervisorService:
 
 
 def _parse_classification(text: str) -> tuple[tuple[str, ...], float]:
-    """Parse+Lint the classifier's JSON into (valid agent keys, confidence)."""
+    """Parse+Lint the classifier's JSON into (valid agent keys, confidence).
+
+    LLMs wrap JSON in markdown fences or prose unpredictably, so when the text
+    is not exactly a JSON object we hunt for the first ``{...}`` object after
+    stripping fence markers and surrounding prose. Genuine garbage (no braces)
+    still raises and aborts routing to the supervisor.
+    """
     cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = "\n".join(
-            line for line in cleaned.splitlines() if not line.strip().startswith("```")
-        ).strip()
+    if "```" in cleaned:
+        cleaned = "\n".join(line for line in cleaned.splitlines() if "```" not in line).strip()
+    payload_text = cleaned
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end > start:
+        payload_text = cleaned[start : end + 1]
     try:
-        payload = json.loads(cleaned)
+        payload = json.loads(payload_text)
     except ValueError as exc:
         raise ValueError("classifier output is not JSON") from exc
     if not isinstance(payload, dict):

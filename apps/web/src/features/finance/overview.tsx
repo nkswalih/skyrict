@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Loader2, MessageSquare, Wallet } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/shared/page-header";
+import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/page-skeletons";
 import { StatCardSkeleton } from "@/components/ui/page-skeletons";
+import { createConversation } from "@/lib/api/agents-api";
 import {
     getProfitAndLoss,
     getWorkingCapitalAlert,
@@ -56,6 +59,7 @@ import {
     InvoiceStatusBadge,
 } from "@/features/finance/components/status-badge";
 import { KpiCard } from "@/features/finance/components/kpi-card";
+import { RevenueForecastCard } from "@/features/finance/components/forecast-card";
 import { FinanceErrorState } from "@/features/finance/components/state-cards";
 import {
     WorkingCapitalCard,
@@ -161,10 +165,31 @@ const invoiceColumns: FinanceColumn<Invoice>[] = [
 
 export function FinanceOverview() {
     const { permissions } = useModuleAccess();
+    const router = useRouter();
     const canWrite = hasPermission(permissions, "erp.finance.write");
     const [status, setStatus] = useState<Status>({ state: "loading" });
     const [periodValue, setPeriodValue] =
         useState<PeriodValue>(defaultPeriodValue());
+    const [startingChat, setStartingChat] = useState(false);
+    const [chatError, setChatError] = useState<string | null>(null);
+
+    const startAdvisorChat = useCallback(async () => {
+        if (startingChat) return;
+        setStartingChat(true);
+        setChatError(null);
+        try {
+            const conversation = await createConversation({});
+            router.push(`/dashboard/agents/c/${conversation.id}`);
+        } catch (error) {
+            setChatError(
+                error instanceof ApiError
+                    ? error.message
+                    : "Could not start the Finance Advisor chat.",
+            );
+        } finally {
+            setStartingChat(false);
+        }
+    }, [router, startingChat]);
 
     const load = useCallback(async () => {
         setStatus({ state: "loading" });
@@ -330,13 +355,36 @@ export function FinanceOverview() {
                     description="Cash, ledgers, invoices, and accounting."
                     icon={Wallet}
                 />
-                <PeriodSelector
-                    value={periodValue}
-                    onChange={setPeriodValue}
-                    periods={status.periods}
-                    label="Overview period"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => void startAdvisorChat()}
+                        disabled={startingChat}
+                    >
+                        {startingChat ? (
+                            <Loader2
+                                aria-hidden="true"
+                                className="mr-1.5 size-4 animate-spin"
+                            />
+                        ) : (
+                            <MessageSquare
+                                aria-hidden="true"
+                                className="mr-1.5 size-4"
+                            />
+                        )}
+                        Ask Finance Advisor
+                    </Button>
+                    <PeriodSelector
+                        value={periodValue}
+                        onChange={setPeriodValue}
+                        periods={status.periods}
+                        label="Overview period"
+                    />
+                </div>
             </div>
+            {chatError ? (
+                <p className="text-sm text-destructive">{chatError}</p>
+            ) : null}
 
             {canWrite ? (
                 <div className="flex flex-wrap gap-2">
@@ -367,6 +415,10 @@ export function FinanceOverview() {
                     value={formatMoney(outstanding)}
                     hint={`${unpaidInvoices.length} unpaid`}
                 />
+            </section>
+
+            <section>
+                <RevenueForecastCard canRefresh={canWrite} />
             </section>
 
             <section className="grid gap-4 lg:grid-cols-3">
