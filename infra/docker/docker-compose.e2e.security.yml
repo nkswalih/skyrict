@@ -1,0 +1,36 @@
+# =============================================================================
+# Skyrict - E2E security suite limits (SKY-94 / SKY-108, [E2E-SEC-001])
+#
+# Used ONLY for the security Playwright project, which runs against its own
+# throwaway stack instance. Docker Compose merges this file with
+# docker-compose.e2e.yml and the merged environment replaces/sets limits.
+#
+# Why narrowing matters:
+# - IDENTITY_RATE_LIMIT_LOGIN=5 makes the 429 journey cheap (production is 5;
+#   the SKY-103 stack raises it to 1000 so parallel sign-ins never trip). A
+#   limit below 5 would consume the admin's own budget (setup 1 + worker
+#   fixture 1 + token-reuse self-login 1 = 3, plus one retry headroom); the
+#   suite burns the account-scoped login bucket with a throwaway email, so no
+#   real user's budget is consumed.
+# - IDENTITY_REFRESH_REUSE_GRACE_SECONDS=0 makes refresh-token reuse
+#   chain-kill IMMEDIATE and deterministic. The production default (10s)
+#   re-accepts a just-rotated token, which would make the "replay the old
+#   token" assertion timing-dependent.
+# - AI_RATE_LIMIT_INV_SEARCH_PER_MIN=2 (per-user, 60s window) lets the suite
+#   hit a 429 on /api/v1/ai/inventory/search with three calls instead of 31.
+#   The per-tenant budget (default 100/min) is untouched.
+#
+# Run:
+#   docker compose -f infra/docker/docker-compose.e2e.yml \
+#     -f infra/docker/docker-compose.e2e.security.yml up -d --build
+# =============================================================================
+
+services:
+  identity:
+    environment:
+      IDENTITY_RATE_LIMIT_LOGIN: "5"
+      IDENTITY_REFRESH_REUSE_GRACE_SECONDS: "0"
+
+  ai-agent:
+    environment:
+      AI_RATE_LIMIT_INV_SEARCH_PER_MIN: "2"

@@ -65,6 +65,15 @@ class TestFixedWindow:
                 await limiter.enforce(key="ai:nl_query:t-1:u-2", limit=10, window_seconds=60)
         assert exc_info.value.code == "AI_RATE_LIMITED"
 
+    async def test_enforce_carries_positive_retry_after(self) -> None:
+        limiter = _make_limiter(FakeRedis())
+
+        with pytest.raises(AiRateLimitError) as exc_info:
+            for _ in range(11):
+                await limiter.enforce(key="ai:nl_query:t-1:u-2", limit=10, window_seconds=60)
+        assert exc_info.value.retry_after_seconds is not None
+        assert exc_info.value.retry_after_seconds > 0
+
 
 class TestFailOpen:
     async def test_redis_down_allows_requests_by_default(self) -> None:

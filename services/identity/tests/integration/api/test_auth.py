@@ -116,6 +116,8 @@ class TestLoginRateLimit:
         assert body["status"] == 429
         # The 429 must not hint at the account's existence either.
         assert "not found" not in body["detail"].lower()
+        # Polling clients schedule their retry from Retry-After (SKY-108).
+        assert int(blocked.headers["retry-after"]) > 0
 
 
 class TestLoginAntiEnumeration:

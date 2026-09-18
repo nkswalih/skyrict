@@ -128,6 +128,11 @@ async function proxy(request: NextRequest) {
   }
 
   const response = NextResponse.json(result.payload, { status: result.status });
+  if (result.retryAfter) {
+    // Relay the backend rate-limit backoff header (survives identity AND the
+    // core -> ai-agent hop for /api/v1/ai/*).
+    response.headers.set("Retry-After", result.retryAfter);
+  }
   if (rotatedRefreshToken) applySessionCookie(response, rotatedRefreshToken);
   return response;
 }

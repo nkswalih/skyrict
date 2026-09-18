@@ -189,7 +189,10 @@ jobs:
         run: pnpm --filter @skyrict/web exec playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: pnpm --filter @skyrict/web exec playwright test
+        # Explicit projects: the security suite must NEVER run on this (loose)
+        # stack - it asserts on tightened rate-limit budgets. It has its own
+        # phase below after the stack is replaced.
+        run: pnpm --filter @skyrict/web exec playwright test --project=setup --project=reports-smoke --project=crm-finance
         env:
           CI: "true"
           E2E_BASE_URL: "http://default.localhost:3000"
@@ -204,6 +207,73 @@ jobs:
           # (A key without a provider stays disabled in ai-agent boot, so
           # gating on the pair keeps the assertion honest.)
           E2E_SEMANTIC_SEARCH: "${{ secrets.AI_EMBEDDING_PROVIDER != '' && secrets.AI_EMBEDDING_API_KEY != '' }}"
+
+      # ---- Security phase (SKY-108) ---------------------------------------
+      # Rebuilds the stack with tightened limits (docker-compose.e2e.security.yml)
+      # and runs the security suite against it. The web app stays on :3100; only
+      # the containers are swapped (down -v wipes the seeded data so the fresh
+      # finance/probe accounts take the first-login path).
+      - name: Boot tightened security stack
+        run: |
+          docker compose -f infra/docker/docker-compose.e2e.yml \
+            -f infra/docker/docker-compose.e2e.security.yml down -v >/dev/null 2>&1 || true
+          docker compose -f infra/docker/docker-compose.e2e.yml \
+            -f infra/docker/docker-compose.e2e.security.yml up -d --build
+        timeout-minutes: 15
+        env:
+          AI_EMBEDDING_PROVIDER: ${{ secrets.AI_EMBEDDING_PROVIDER }}
+          AI_EMBEDDING_API_KEY: ${{ secrets.AI_EMBEDDING_API_KEY }}
+
+      - name: Wait for identity and seed database (security)
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose -f infra/docker/docker-compose.e2e.yml \
+              -f infra/docker/docker-compose.e2e.security.yml exec -T identity \
+              python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" \
+              2>/dev/null; then
+              break
+            fi
+            echo "Waiting for identity (security)... ($i/60)"
+            sleep 2
+          done
+
+          docker compose -f infra/docker/docker-compose.e2e.yml \
+            -f infra/docker/docker-compose.e2e.security.yml exec -T \
+            --workdir /app/services/identity identity \
+            python -m identity.seed
+          echo "Seeded identity (security)"
+
+          for i in $(seq 1 60); do
+            if docker compose -f infra/docker/docker-compose.e2e.yml \
+              -f infra/docker/docker-compose.e2e.security.yml exec -T core \
+              python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')" \
+              2>/dev/null; then
+              break
+            fi
+            echo "Waiting for core (security)... ($i/60)"
+            sleep 2
+          done
+
+          docker compose -f infra/docker/docker-compose.e2e.yml \
+            -f infra/docker/docker-compose.e2e.security.yml exec -T \
+            --workdir /app/services/core core \
+            python -m core.cli seed --tenant-id 00000000-0000-0000-0000-000000000001
+          echo "Seeded core (security)"
+        timeout-minutes: 10
+
+      - name: Run E2E security tests
+        # --workers=1 keeps the whole suite on ONE authenticated session and
+        # --retries=0 (project-level retries already 0) prevents a replay landing
+        # inside a spent rate-limit window.
+        run: pnpm --filter @skyrict/web exec playwright test --project=security --workers=1 --retries=0
+        env:
+          CI: "true"
+          E2E_BASE_URL: "http://default.localhost:3000"
+          E2E_SKIP_WEBSERVER: "1"
+          SESSION_COOKIE_SECURE: "false"
+          E2E_TENANT_SLUG: "default"
+          E2E_ADMIN_EMAIL: "admin@skyrict.io"
+          E2E_ADMIN_PASSWORD: "Admin123!"
 
       # ---- Artifacts -------------------------------------------------------
       - name: Upload Playwright HTML report

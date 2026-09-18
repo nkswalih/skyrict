@@ -118,6 +118,11 @@ class AiRateLimitError(SkyrictError):
     message = "AI rate limit exceeded - retry shortly"
     code = "AI_RATE_LIMITED"
 
+    def __init__(self, *, retry_after_seconds: int | None = None) -> None:
+        """Carry seconds-until-close so the API layer can emit ``Retry-After``."""
+        super().__init__()
+        self.retry_after_seconds = retry_after_seconds
+
 
 class AiDataResidencyError(SkyrictError):
     """The request carries local-only data but no cleared provider exists (422).
@@ -184,7 +189,15 @@ async def skyrict_error_handler(request: Request, exc: SkyrictError) -> JSONResp
         "instance": _request_id(request),
     }
 
-    return JSONResponse(status_code=status_code, content=body)
+    headers: dict[str, str] | None = None
+    if (
+        status_code == 429
+        and isinstance(exc, AiRateLimitError)
+        and exc.retry_after_seconds is not None
+    ):
+        headers = {"Retry-After": str(exc.retry_after_seconds)}
+
+    return JSONResponse(status_code=status_code, content=body, headers=headers)
 
 
 async def request_validation_error_handler(

@@ -120,6 +120,8 @@ interface BackendCallResult {
   status: number;
   data: Record<string, unknown> | null;
   payload: Record<string, unknown>;
+  /** Upstream Retry-After on 429s, relayed so clients can back off. */
+  retryAfter: string | null;
 }
 
 /**
@@ -189,7 +191,7 @@ export async function callBackend(
     // status-0 result; report the underlying reason to Sentry so a backend
     // outage is visible instead of surfacing only as a bare 502.
     captureBffException(error, path, options.target ?? "identity");
-    return { ok: false, status: 0, data: null, payload: {} };
+    return { ok: false, status: 0, data: null, payload: {}, retryAfter: null };
   }
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -198,6 +200,7 @@ export async function callBackend(
     status: response.status,
     data: (payload.data as Record<string, unknown> | null) ?? null,
     payload,
+    retryAfter: response.headers.get("retry-after"),
   };
 }
 
@@ -280,7 +283,15 @@ export function backendError(result: BackendCallResult) {
     );
   }
   const detail = result.payload.detail ?? "Request failed. Please try again.";
-  return NextResponse.json({ error: String(detail) }, { status: result.status || 400 });
+  const response = NextResponse.json(
+    { error: String(detail) },
+    { status: result.status || 400 },
+  );
+  if (result.retryAfter) {
+    // Relay the upstream rate-limit backoff so clients can schedule retries.
+    response.headers.set("Retry-After", result.retryAfter);
+  }
+  return response;
 }
 
 /**

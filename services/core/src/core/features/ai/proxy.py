@@ -94,12 +94,17 @@ def relay_response(upstream: httpx.Response) -> Response:
     """Materialise an upstream response as a Starlette reply.
 
     Status and body pass through verbatim; only Content-Type is carried
-    over (ai-agent always answers JSON/problem+json).
+    over (ai-agent always answers JSON/problem+json). ``Retry-After`` is the
+    one extra header relayed so 429 rate-limit contracts survive the hop.
     """
+    headers: dict[str, str] = {}
+    if upstream.headers.get("retry-after"):
+        headers["Retry-After"] = upstream.headers["retry-after"]
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
+        headers=headers or None,
     )
 
 

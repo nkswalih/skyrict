@@ -165,6 +165,20 @@ class RateLimitExceededError(SkyrictError):
     message = "Rate limit exceeded"
     code = "RATE_LIMIT_EXCEEDED"
 
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        """Optionally carry how long the caller must wait before retrying.
+
+        ``enforce()`` attaches the seconds-until-window-close so the API layer
+        can emit an HTTP ``Retry-After`` header on the 429 response.
+        """
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class RateLimitUnavailableError(SkyrictError):
     message = "Service temporarily unavailable"

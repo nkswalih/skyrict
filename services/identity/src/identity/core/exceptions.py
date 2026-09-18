@@ -171,7 +171,17 @@ async def skyrict_error_handler(request: Request, exc: SkyrictError) -> JSONResp
         "instance": _request_id(request),
     }
 
-    return JSONResponse(status_code=status_code, content=body)
+    headers: dict[str, str] | None = None
+    if (
+        status_code == 429
+        and isinstance(exc, RateLimitExceededError)
+        and exc.retry_after_seconds is not None
+    ):
+        # Polling clients and the BFF relay use Retry-After to schedule the
+        # next attempt instead of hammering the same bucket until it resets.
+        headers = {"Retry-After": str(exc.retry_after_seconds)}
+
+    return JSONResponse(status_code=status_code, content=body, headers=headers)
 
 
 async def request_validation_error_handler(

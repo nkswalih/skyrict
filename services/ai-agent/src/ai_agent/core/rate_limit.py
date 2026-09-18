@@ -36,6 +36,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("ai_agent.rate_limit")
 
 
+def _seconds_until_window_close(window_seconds: int) -> int:
+    """Seconds until the current fixed window closes (same bucket math as the
+    limiter), floored at 1 so ``Retry-After`` is always a positive integer."""
+    now = int(time.time())
+    step = max(window_seconds, 1)
+    window_start = (now // step) * step
+    return max(1, window_start + step - now)
+
+
 class RateLimiter:
     """Fixed-window counter over Redis (fail-open on infra errors)."""
 
@@ -75,7 +84,7 @@ class RateLimiter:
     async def enforce(self, *, key: str, limit: int, window_seconds: int) -> None:
         """Raise AiRateLimitError when the key exceeds the limit."""
         if not await self.is_allowed(key=key, limit=limit, window_seconds=window_seconds):
-            raise AiRateLimitError()
+            raise AiRateLimitError(retry_after_seconds=_seconds_until_window_close(window_seconds))
 
 
 limiter = RateLimiter()

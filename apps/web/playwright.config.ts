@@ -102,6 +102,20 @@ export default defineConfig({
             // fresh worker-scoped context - a brand-new token family that never
             // collides with another worker's rotation chain.
         },
+        {
+            name: "security",
+            testMatch: /security\/.*\.spec\.ts/,
+            dependencies: ["setup"],
+            // Kills parallelism and retries on purpose: these specs run against a
+            // tightened rate-limit stack (docker-compose.e2e.security.yml) where a
+            // single replay would burn the exact budget they assert on. They run
+            // in their own CI phase with --workers=1 --retries=0.
+            fullyParallel: false,
+            retries: 0,
+            // NOTE: also excluded from the default `playwright test` run in CI -
+            // the main phase passes explicit --project flags so the security suite
+            // only ever runs on the tight stack.
+        },
     ],
     ...(webServer ? { webServer } : {}),
 });

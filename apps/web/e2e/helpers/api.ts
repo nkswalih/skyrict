@@ -59,10 +59,22 @@ interface Envelope<T> {
 export class BffApi {
     private token: string | null = null;
     private tokenPromise: Promise<string | null> | null = null;
+    private readonly origin: string;
+    private readonly fixedToken: string | null;
 
-    constructor(private readonly request: APIRequestContext) {}
+    constructor(
+        private readonly request: APIRequestContext,
+        options: { origin?: string; bearerToken?: string | null } = {},
+    ) {
+        // `origin` drives the CSRF Origin header and must match the Host the
+        // request actually hits (e.g. http://second.localhost:3000 for
+        // cross-tenant isolation tests).
+        this.origin = options.origin ?? BASE_URL;
+        this.fixedToken = options.bearerToken ?? null;
+    }
 
     private async accessToken(): Promise<string | null> {
+        if (this.fixedToken) return this.fixedToken;
         if (!this.tokenPromise) {
             this.tokenPromise = this.request
                 .get("/api/auth/session")
@@ -81,7 +93,10 @@ export class BffApi {
         return this.tokenPromise;
     }
 
-    async call<T>(path: string, init: RequestInit = {}): Promise<T> {
+    async raw<T>(
+        path: string,
+        init: RequestInit = {},
+    ): Promise<{ ok: boolean; status: number; retryAfter: string | null; payload: T }> {
         const token = await this.accessToken();
         const method = (init.method ?? "GET").toUpperCase();
         const headers: Record<string, string> = {};
@@ -102,7 +117,7 @@ export class BffApi {
             headers["Content-Type"] = "application/json";
         }
         if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-            headers["Origin"] = BASE_URL;
+            headers["Origin"] = this.origin;
         }
 
         const response = await this.request.fetch(path, {
@@ -116,14 +131,25 @@ export class BffApi {
             .json()
             .catch(() => ({}))) as Envelope<unknown>;
 
-        if (!response.ok()) {
-            const message =
-                extractMessage(payload.detail) ??
-                `Request failed (${response.status()})`;
-            throw new BffError(response.status(), message);
-        }
+        return {
+            ok: response.ok(),
+            status: response.status(),
+            retryAfter: response.headers()["retry-after"] ?? null,
+            payload: ("data" in payload ? payload.data : payload) as T,
+        };
+    }
 
-        return ("data" in payload ? payload.data : payload) as T;
+    async call<T>(path: string, init: RequestInit = {}): Promise<T> {
+        const { ok, status, payload } = await this.raw<T>(path, init);
+        if (!ok) {
+            const detail = (
+                payload as unknown as { detail?: unknown }
+            )?.detail;
+            const message =
+                extractMessage(detail) ?? `Request failed (${status})`;
+            throw new BffError(status, message);
+        }
+        return payload;
     }
 
     get<T>(path: string): Promise<T> {

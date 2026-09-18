@@ -27,6 +27,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("identity.rate_limit")
 
 
+def _seconds_until_window_close(window_seconds: int) -> int:
+    """Seconds until the current fixed window closes (same bucket math as the
+    limiter), floored at 1 so ``Retry-After`` is always a positive integer."""
+    now = int(time.time())
+    step = max(window_seconds, 1)
+    window_start = (now // step) * step
+    return max(1, window_start + step - now)
+
+
 class RateLimiter:
     """Fixed-window counter over Redis (fail-open on infra errors)."""
 
@@ -65,7 +74,11 @@ class RateLimiter:
             # Generic message shared by every guarded endpoint (register,
             # login, ...) - never names the endpoint or the key, so it cannot
             # hint at what the caller was doing or which account was targeted.
-            raise RateLimitExceededError("Too many attempts. Try again later.")
+            retry_after_seconds = _seconds_until_window_close(window_seconds)
+            raise RateLimitExceededError(
+                "Too many attempts. Try again later.",
+                retry_after_seconds=retry_after_seconds,
+            )
 
 
 limiter = RateLimiter()

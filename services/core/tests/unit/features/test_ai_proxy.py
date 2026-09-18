@@ -160,6 +160,17 @@ class TestRelayResponse:
         reply = relay_response(upstream)
         assert reply.media_type == "application/json"
 
+    def test_retry_after_survives_the_hop(self) -> None:
+        """429 rate-limit contract must reach the BFF client (SKY-108)."""
+        upstream = httpx.Response(
+            429,
+            json={"type": "https://problems/ai-rate-limited"},
+            headers={"retry-after": "47"},
+        )
+        reply = relay_response(upstream)
+        assert reply.status_code == 429
+        assert reply.headers["retry-after"] == "47"
+
 
 class TestStreamingRelay:
     """The SSE chat relay - chunks forwarded live, never buffered."""
