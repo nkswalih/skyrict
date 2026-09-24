@@ -126,7 +126,7 @@ function TurnstileWidget({
     }
 
     return (
-        <div className="relative mx-auto w-fit">
+        <div className="relative mx-auto w-fit max-[348px]:scale-[0.9]">
             {loading ? (
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
                     <Spinner
