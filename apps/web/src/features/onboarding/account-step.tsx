@@ -134,18 +134,18 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
         ) : null}
       </div>
 
-      <p className="pt-1 text-center text-[11px] leading-relaxed text-muted-foreground">
+      <p className="pt-1 text-center text-[11px] leading-relaxed text-pretty text-muted-foreground">
         By signing up, I agree to the Skyrict{" "}
         <Link
           href="/terms"
-          className="underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
         >
           Terms of Service
         </Link>{" "}
         and{" "}
         <Link
           href="/privacy"
-          className="underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
         >
           Privacy Policy
         </Link>
