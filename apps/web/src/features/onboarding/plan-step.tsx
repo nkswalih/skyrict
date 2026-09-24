@@ -350,7 +350,7 @@ function PlanCard({
 
                 {isEnterprise && selected ? (
                     <a
-                        href="mailto:sales@skyrict.com?subject=Enterprise plan"
+                        href="mailto:sales@skyrict.in?subject=Enterprise plan"
                         className={cn(
                             ctaClass,
                             "border-primary bg-primary text-primary-foreground",

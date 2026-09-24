@@ -181,7 +181,7 @@ function planCta(plan: BillingPlan): { label: string; href: string } {
         case "enterprise":
             return {
                 label: "Contact sales",
-                href: "mailto:sales@skyrict.com?subject=Enterprise plan",
+                href: "mailto:sales@skyrict.in?subject=Enterprise plan",
             };
         default:
             return { label: "Start 14-day trial", href: "/signup" };

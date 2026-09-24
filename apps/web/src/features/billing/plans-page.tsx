@@ -136,7 +136,7 @@ function PlanCard({
                     </Button>
                 ) : plan.id === "enterprise" ? (
                     <Button variant="outline" asChild className="w-full">
-                        <a href="mailto:sales@skyrict.com?subject=Enterprise plan">
+                        <a href="mailto:sales@skyrict.in?subject=Enterprise plan">
                             Contact sales
                         </a>
                     </Button>

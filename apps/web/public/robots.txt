@@ -19,5 +19,5 @@ Disallow: /invite
 Disallow: /forgot-password
 Disallow: /reset-password
 
-Host: https://skyrict.com
-Sitemap: https://skyrict.com/sitemap.xml
+Host: https://skyrict.in
+Sitemap: https://skyrict.in/sitemap.xml
