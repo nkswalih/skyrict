@@ -1,14 +1,4 @@
-import {
-    ArrowRight,
-    BadgeDollarSign,
-    Boxes,
-    CalendarClock,
-    Globe,
-    HandCoins,
-    ShoppingCart,
-    TrendingUp,
-    type LucideIcon,
-} from "lucide-react";
+import { ArrowRight, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -28,20 +18,6 @@ export const metadata: Metadata = {
     },
 };
 
-const opsTiles: {
-    key: string;
-    icon: LucideIcon;
-    label: string;
-    value: string;
-}[] = [
-    { key: "inventory", icon: Boxes, label: "Inventory", value: "124 units" },
-    { key: "orders", icon: ShoppingCart, label: "Orders", value: "14 open" },
-    { key: "sales", icon: BadgeDollarSign, label: "Sales", value: "$184K" },
-    { key: "cash", icon: HandCoins, label: "Cash", value: "$84.2K" },
-    { key: "payroll", icon: CalendarClock, label: "Payroll", value: "Next Fri" },
-    { key: "crm", icon: Globe, label: "CRM", value: "24 deals" },
-];
-
 const inventoryRows = [
     { sku: "EARB-M", name: "Earbuds, size M", stock: "124", cover: "2d", status: "Low" },
     { sku: "EARB-L", name: "Earbuds, size L", stock: "512", cover: "8d", status: "OK" },
@@ -58,7 +34,7 @@ const insightFeed = [
 
 function PanelHeader({ label, right }: { label: string; right?: React.ReactNode }) {
     return (
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                 {label}
             </p>
@@ -280,7 +256,7 @@ export default function ProductPage() {
 
             <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                 <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
-                    <RevealSection>
+                    <RevealSection className="min-w-0">
                         <SectionHeader
                             eyebrow="Layer 01 · ERP and operations"
                             title="The data layer. Your operations, live."
@@ -310,7 +286,7 @@ export default function ProductPage() {
                             matter, connected without a migration project.
                         </p>
                     </RevealSection>
-                    <RevealSection delay={120}>
+                    <RevealSection delay={120} className="min-w-0">
                         <DataLayerVisual />
                     </RevealSection>
                 </div>
@@ -318,8 +294,8 @@ export default function ProductPage() {
 
             <section className="border-y border-border/60 bg-card/60">
                 <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                    <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_minmax(0,1fr)] lg:gap-16">
-                        <RevealSection>
+                    <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16">
+                        <RevealSection className="min-w-0">
                             <div className="lg:order-2">
                                 <SectionHeader
                                     eyebrow="Layer 02 · Global market intelligence"
@@ -347,7 +323,7 @@ export default function ProductPage() {
                                 </div>
                             </div>
                         </RevealSection>
-                        <RevealSection delay={120}>
+                        <RevealSection delay={120} className="min-w-0">
                             <div className="lg:order-1">
                                 <ContextLayerVisual />
                             </div>
@@ -358,7 +334,7 @@ export default function ProductPage() {
 
             <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                 <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
-                    <RevealSection>
+                    <RevealSection className="min-w-0">
                         <SectionHeader
                             eyebrow="Layer 03 · AI agents"
                             title="The decision layer. Agents that explain themselves."
@@ -383,7 +359,7 @@ export default function ProductPage() {
                             ))}
                         </ul>
                     </RevealSection>
-                    <RevealSection delay={120}>
+                    <RevealSection delay={120} className="min-w-0">
                         <DecisionLayerVisual />
                     </RevealSection>
                 </div>
