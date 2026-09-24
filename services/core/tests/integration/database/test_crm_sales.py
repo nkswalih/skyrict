@@ -30,6 +30,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from alembic.script import ScriptDirectory
@@ -46,13 +47,19 @@ from core.domain.value_objects import (
     OpportunityStage,
     OrderStatus,
 )
+from core.features.audit.repository import AuditRepository
+from core.features.audit.service import AuditService
 from core.features.crm.models.customer import ErpCrmCustomerModel
 from core.features.crm.repository import CrmRepository
+from core.features.crm.service import CrmService
 from core.features.inventory.models.product import ErpProductModel
 from core.features.sales.repository import ConflictError, SalesRepository
 from core.models.tenant import TenantModel
 
 pytestmark = pytest.mark.integration
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 RLS_ROLE = "core_rls_smoke"
 
@@ -860,6 +867,143 @@ class TestCrmRepository:
             with_inactive = await repo.list_customers(tenant_id=tenant_a, include_inactive=True)
             assert any(customer.id == created.id for customer in with_inactive)
             await session.commit()
+
+
+class TestCrmServiceWriteVisibility:
+    """CRM writes must be durable BEFORE the handler returns (regression).
+
+    Post-merge E2E failure run 35991947086 (2026-09-24): ``core/db/session.py``
+    ``get_db`` commits in the yield-teardown AFTER the response is sent, and
+    the CRM feature never committed inside its handlers - so a client that
+    followed a write with another request could observe pre-commit state:
+
+      * ``qualify`` 201 -> immediate stage move -> 404 "Opportunity not found"
+        (the created opportunity row was still uncommitted);
+      * stage move 200 -> immediate next stage move -> 409 "Cannot move
+        opportunity from 'prospecting' to 'proposal'" (the previous stage
+        update was still uncommitted).
+
+    These tests drive :class:`CrmService` and then read through a FRESH
+    session. With the teardown-only commit the fresh session could not see the
+    write and the assertions failed deterministically; with the explicit
+    in-handler commit they pass immediately.
+    """
+
+    @staticmethod
+    def _make_service(session: AsyncSession) -> CrmService:
+        """Compose CrmService exactly as ``get_crm_service`` does (deps.py)."""
+        repo = CrmRepository(session)
+        return CrmService(
+            repository=repo,
+            audit=AuditService(AuditRepository(session)),
+            timeline=repo,
+        )
+
+    async def test_qualify_visible_to_fresh_session(
+        self, migrated_schema: None, crm_world: dict[str, str]
+    ) -> None:
+        """E2E attempt-1 mirror: qualify 201 then an immediate read by id."""
+        tenant_a = uuid.UUID(crm_world["tenant_a"])
+
+        async with async_session_factory() as session:
+            svc = self._make_service(session)
+            lead = await svc.create_lead(
+                tenant_id=tenant_a,
+                first_name="Lost",
+                last_name="Flow",
+                email=f"lost-{uuid.uuid4()}@example.test",
+            )
+            assert lead.id is not None
+            opportunity = await svc.qualify_lead(
+                lead.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+            )
+            assert opportunity.id is not None
+
+        # A fresh session/transaction must see the qualified opportunity
+        # immediately - the old code committed only after the response.
+        async with async_session_factory() as session:
+            repo = CrmRepository(session)
+            fetched = await repo.get_opportunity(
+                opportunity.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+            )
+            assert fetched is not None
+            assert fetched.stage == OpportunityStage.PROSPECTING
+
+    async def test_stage_moves_visible_to_fresh_session(
+        self, migrated_schema: None, crm_world: dict[str, str]
+    ) -> None:
+        """E2E retry-2 mirror: qualified 200 then an immediate next-stage read."""
+        tenant_a = uuid.UUID(crm_world["tenant_a"])
+
+        async with async_session_factory() as session:
+            svc = self._make_service(session)
+            lead = await svc.create_lead(
+                tenant_id=tenant_a,
+                company=f"Deal {uuid.uuid4()}",
+                email=f"deal-{uuid.uuid4()}@example.test",
+            )
+            assert lead.id is not None
+            opportunity = await svc.qualify_lead(
+                lead.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+            )
+            assert opportunity.id is not None
+            qualified, _ = await svc.change_stage(
+                opportunity.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+                stage=OpportunityStage.QUALIFIED,
+            )
+            assert qualified.id is not None
+
+        async with async_session_factory() as session:
+            repo = CrmRepository(session)
+            fetched = await repo.get_opportunity(
+                qualified.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+            )
+            assert fetched is not None
+            # Old code: the qualified UPDATE was still uncommitted, so this read
+            # saw the stale 'prospecting' and the E2E next move hit the 409.
+            assert fetched.stage == OpportunityStage.QUALIFIED
+
+            proposal, _ = await self._make_service(session).change_stage(
+                qualified.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+                stage=OpportunityStage.PROPOSAL,
+            )
+            assert proposal.id is not None
+
+        async with async_session_factory() as session:
+            repo = CrmRepository(session)
+            fetched = await repo.get_opportunity(
+                proposal.id,
+                tenant_id=tenant_a,
+                scope=DataScope.ALL,
+                user_id=None,
+                team_id=None,
+            )
+            assert fetched is not None
+            assert fetched.stage == OpportunityStage.PROPOSAL
 
 
 class TestSalesRepository:
