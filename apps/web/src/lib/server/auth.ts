@@ -13,6 +13,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { SERVICE_UNAVAILABLE_MESSAGE } from "@/lib/api/error-messages";
 import { deriveApex } from "@/lib/auth/apex";
 import { RESERVED_SLUGS } from "@/lib/auth/reserved-slugs";
 import { captureBffException } from "@/lib/server/sentry";
@@ -340,7 +341,7 @@ export function backendError(result: BackendCallResult) {
     // The internal fetch never got a response (backend down / connection
     // refused) - surface a 502 + actionable copy instead of a generic 400.
     return NextResponse.json(
-      { error: "Identity service is unavailable. Please try again." },
+      { error: SERVICE_UNAVAILABLE_MESSAGE },
       { status: 502 },
     );
   }
