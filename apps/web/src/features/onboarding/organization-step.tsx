@@ -427,8 +427,8 @@ function OrganizationStep({
                         : slugAvailability === "available"
                           ? "This URL is available."
                           : workspaceSlug
-                            ? `Your workspace will live at ${workspaceSlug}.signin.${typeof window !== "undefined" ? window.location.hostname.split(".").slice(1).join(".") || "skyrict.com" : "skyrict.com"}`
-                            : "Your workspace will live at your-slug.signin.skyrict.com"
+                            ? `Your workspace will live at ${workspaceSlug}.signin.${typeof window !== "undefined" ? window.location.hostname.split(".").slice(1).join(".") || "skyrict.in" : "skyrict.in"}`
+                            : "Your workspace will live at your-slug.signin.skyrict.in"
                 }
                 error={
                     errors.workspaceSlug?.message ??
