@@ -110,19 +110,16 @@ export async function whichMfaPath(
 }
 
 /**
- * Complete the TOTP challenge on the login form and wait for the handoff to
- * the workspace host. The OTP form submits itself as soon as the last digit is
- * filled, so no click is needed - and none is safe (the button is mid-flight
- * disabled).
+ * One full TOTP challenge round: try the current, previous, and next 30s
+ * windows. Returns true when the handoff landed on the workspace host - or
+ * when the form visibly rejected the code (the caller treats both as "attempt
+ * consumed"; a rejection is detected so the next round can start from a clean
+ * form instead of waiting out the handoff that will never happen).
  */
-export async function completeMfaChallenge(
+async function playChallengeRound(
     page: Page,
     secret: string,
-): Promise<void> {
-    // Try the current, previous, and next 30s windows. A single-window code
-    // races the TOTP boundary (and a code already consumed earlier in the same
-    // window by the setup project); when it is stale the form rejects it
-    // inline and then waits forever for a handoff that never happens.
+): Promise<boolean> {
     for (const offset of [0, -1, 1]) {
         await fillOtp(page, "Two-factor code", totp(secret, offset));
         const landed = page
@@ -137,8 +134,71 @@ export async function completeMfaChallenge(
             .then(() => false)
             .catch(() => false);
         if (await Promise.race([landed, rejected])) {
-            return;
+            return true;
         }
+    }
+    return false;
+}
+
+/**
+ * Complete the TOTP challenge on the login form and wait for the handoff to
+ * the workspace host. The OTP form submits itself as soon as the last digit is
+ * filled, so no click is needed - and none is safe (the button is mid-flight
+ * disabled).
+ */
+export async function completeMfaChallenge(
+    page: Page,
+    secret: string,
+): Promise<void> {
+    // Try the current, previous, and next 30s windows. A single-window code
+    // races the TOTP boundary (and a code already consumed earlier in the same
+    // window by the setup project); when it is stale the form rejects it
+    // inline and then waits forever for a handoff that never happens.
+    if (await playChallengeRound(page, secret)) {
+        return;
+    }
+
+    // All three windows rejected. Two distinct root causes are possible under
+    // parallel workers on a fresh stack:
+    //   1. a TOTP clock boundary crossed between code generation and the
+    //      form's own verify (a reload opens a fresh 30s window); or
+    //   2. a divergent enrollment state - the persisted secret belongs to a
+    //      DIFFERENT enrollment than the server's current one, or the server
+    //      thinks the admin is NOT enrolled at all while the harness expected
+    //      a challenge (the previous attempt's enrollment never committed).
+    // Reload the signin surface (the server re-drives the correct MFA surface)
+    // and re-detect the path instead of bouncing with a confusing handoff
+    // error for a stale secret. The capture listener must attach BEFORE the
+    // reload: a redirect to /setup-mfa calls the MFA setup API on mount.
+    const getMfaSecret = installMfaSecretCapture(page);
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    let path: MfaPath;
+    try {
+        path = await whichMfaPath(page, 10_000);
+    } catch {
+        await waitForWorkspace(page);
+        return;
+    }
+
+    if (path === "enrollment") {
+        // The server wants a fresh enrollment (the admin's MFA never
+        // committed). Complete the REAL path; the persisted-secret fallback
+        // still lets the verify loop land if the capture races the reload.
+        await expect(
+            page.getByRole("heading", { name: "Protect your account" }),
+        ).toBeVisible({ timeout: 10_000 });
+        await enrollMfaAndFinish(page, {
+            secretGetter: getMfaSecret,
+            knownSecret: secret,
+        });
+        return;
+    }
+
+    // Still a challenge: give the reloaded form one more full round before
+    // reporting the MFA rejection.
+    if (await playChallengeRound(page, secret)) {
+        return;
     }
     await waitForWorkspace(page);
 }

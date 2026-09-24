@@ -18,6 +18,8 @@
  * alongside the app's 401 recovery (that race revokes the token family).
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+
 import {
   expect,
   test as base,
@@ -26,6 +28,7 @@ import {
 } from "@playwright/test";
 
 import {
+  TOTP_SECRET_FILE,
   assertSessionReachesBff,
   completeMfaChallenge,
   enrollMfaAndFinish,
@@ -80,9 +83,16 @@ export const test = base.extend<{}, { workspace: AuthSession }>({
         ).toBeTruthy();
         await completeMfaChallenge(page, enrolledSecret);
       } else {
+        // Persist the worker's OWN enrollment secret, mirroring auth.setup.ts:
+        // a worker that lands on the enrollment path must leave the persisted
+        // secret aligned with the server's, or the NEXT worker's challenge arm
+        // verifies a stale secret and bounces with "That code didn't match"
+        // for every window.
+        mkdirSync("e2e/.auth", { recursive: true });
         await enrollMfaAndFinish(page, {
           secretGetter: getMfaSecret,
           knownSecret: enrolledSecret,
+          onWritten: (secret) => writeFileSync(TOTP_SECRET_FILE, secret, "utf8"),
         });
       }
 

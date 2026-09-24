@@ -76,43 +76,73 @@ export class BffApi {
     private async accessToken(): Promise<string | null> {
         if (this.fixedToken) return this.fixedToken;
         if (!this.tokenPromise) {
-            this.tokenPromise = this.request
-                .get("/api/auth/session")
-                .then(async (response) => {
-                    if (!response.ok()) {
-                        // 401/500 from the session route is the signature of a
-                        // revoked or unusable refresh family - surface it now
-                        // instead of sending an unauthenticated request that
-                        // fails later with the backend's generic 401.
-                        throw new Error(
-                            `Session restore failed with HTTP ${response.status()}` +
-                                ` (${await response.text().catch(() => "")})`,
-                        );
-                    }
-                    const body = (await response.json().catch(() => ({}))) as {
-                        accessToken?: string | null;
-                        authenticated?: boolean;
-                    };
-                    // Authenticated workspace calls run under the username
-                    // fixture, so a session response with no access token is
-                    // a real failure. Throw with the payload so CI pins down
-                    // whether identity rejected the refresh or the /users/me
-                    // probe failed - not the misleading downstream 401.
-                    const token = body.accessToken ?? null;
-                    if (!token) {
-                        throw new Error(
-                            `Authenticated session returned no access token` +
-                                ` (session: ${JSON.stringify(body)})`,
-                        );
-                    }
-                    this.token = token;
-                    return token;
-                })
-                .finally(() => {
-                    this.tokenPromise = null;
-                });
+            this.tokenPromise = this.fetchAccessToken().finally(() => {
+                this.tokenPromise = null;
+            });
         }
         return this.tokenPromise;
+    }
+
+    /** GET /api/auth/session through the shared cookie jar. */
+    private async readSession(): Promise<{
+        body: { accessToken?: string | null; authenticated?: boolean };
+    }> {
+        const response = await this.request.get("/api/auth/session");
+        if (!response.ok()) {
+            // 401/500 from the session route is the signature of a revoked or
+            // unusable refresh family - surface it now instead of sending an
+            // unauthenticated request that fails later with the backend's
+            // generic 401.
+            throw new Error(
+                `Session restore failed with HTTP ${response.status()}` +
+                    ` (${await response.text().catch(() => "")})`,
+            );
+        }
+        return {
+            body: (await response.json().catch(() => ({}))) as {
+                accessToken?: string | null;
+                authenticated?: boolean;
+            },
+        };
+    }
+
+    private async fetchAccessToken(): Promise<string | null> {
+        let { body } = await this.readSession();
+
+        if (!body.accessToken) {
+            // The BFF returns 200 {authenticated:false} in two very different
+            // situations: (1) the refresh rotation succeeded but the /users/me
+            // profile probe blipped - the rotated refresh cookie is STILL in
+            // the jar, so a retry succeeds; or (2) identity rejected the
+            // refresh (reuse/revoke or a network dead-end) and the BFF cleared
+            // the cookie, so the retry fails fast with the same body. Retry
+            // once with a short backoff so a transient cold-stack probe
+            // failure cannot kill the whole worker run; the cleared-cookie
+            // case is unchanged in outcome.
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            body = (await this.readSession()).body;
+        }
+
+        // Authenticated workspace calls run under the username fixture, so a
+        // session response with no access token is a real failure. Throw with
+        // the payload and the jar state so CI pins down whether identity
+        // rejected the refresh, the /users/me probe failed, or the cookie was
+        // cleared - not the misleading downstream 401.
+        const token = body.accessToken ?? null;
+        if (!token) {
+            const state = await this.request.storageState().catch(() => null);
+            const sessionCookiePresent =
+                state?.cookies.some(
+                    (cookie) => cookie.name === "skyrict_session",
+                ) ?? false;
+            throw new Error(
+                `Authenticated session returned no access token` +
+                    ` (session: ${JSON.stringify(body)}, ` +
+                    `sessionCookiePresent: ${sessionCookiePresent})`,
+            );
+        }
+        this.token = token;
+        return token;
     }
 
     async raw<T>(
