@@ -237,49 +237,51 @@ function InventoryPanel() {
                     128 SKUs, 3 low
                 </span>
             </div>
-            <table className="w-full text-left">
-                <thead>
-                    <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
-                        <th className="px-3.5 py-2 font-medium">Product</th>
-                        <th className="px-3.5 py-2 text-right font-medium">Stock</th>
-                        <th className="px-3.5 py-2 text-right font-medium">Cover</th>
-                        <th className="px-3.5 py-2 text-right font-medium">Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {inventoryRows.map((row, index) => (
-                        <tr
-                            key={row.sku}
-                            className="sky-row border-b border-border/40 last:border-0"
-                            style={delay(1000 + index * 70)}
-                        >
-                            <td className="px-3.5 py-2">
-                                <div className="flex items-center gap-2">
-                                    <span
-                                        aria-hidden="true"
-                                        className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                                    />
-                                    <span className="text-xs font-medium text-foreground">
-                                        {row.name}
-                                    </span>
-                                    <span className="font-mono text-[10px] text-muted-foreground">
-                                        {row.sku}
-                                    </span>
-                                </div>
-                            </td>
-                            <td className="px-3.5 py-2 text-right font-mono text-[11px] tabular-nums text-foreground">
-                                {row.stock}
-                            </td>
-                            <td className="px-3.5 py-2 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                                {row.cover}
-                            </td>
-                            <td className="px-3.5 py-2 text-right">
-                                <StatusChip status={row.status} />
-                            </td>
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <th className="px-3.5 py-2 font-medium">Product</th>
+                            <th className="px-3.5 py-2 text-right font-medium">Stock</th>
+                            <th className="px-3.5 py-2 text-right font-medium">Cover</th>
+                            <th className="px-3.5 py-2 text-right font-medium">Status</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {inventoryRows.map((row, index) => (
+                            <tr
+                                key={row.sku}
+                                className="sky-row border-b border-border/40 last:border-0"
+                                style={delay(1000 + index * 70)}
+                            >
+                                <td className="px-3.5 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <span
+                                            aria-hidden="true"
+                                            className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                                        />
+                                        <span className="text-xs font-medium text-foreground">
+                                            {row.name}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-muted-foreground">
+                                            {row.sku}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td className="px-3.5 py-2 text-right font-mono text-[11px] tabular-nums text-foreground">
+                                    {row.stock}
+                                </td>
+                                <td className="px-3.5 py-2 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                                    {row.cover}
+                                </td>
+                                <td className="px-3.5 py-2 text-right">
+                                    <StatusChip status={row.status} />
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
