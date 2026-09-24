@@ -836,6 +836,33 @@ export function pathFor(categoryId: string, slug: string): string {
     return `/docs/${categoryId}/${slug}`;
 }
 
+/**
+ * Canonical docs-surface route for a guide, e.g. /getting-started/create-account.
+ *
+ * The docs.skyrict.in surface serves the /docs tree without the /docs prefix
+ * in the browser URL, so metadata canonicals must omit it. The docs layout's
+ * metadataBase (https://docs.skyrict.in) resolves it to the public docs
+ * hostname on every surface, including the Vercel deployment fallback.
+ */
+export function surfacePathFor(categoryId: string, slug: string): string {
+    return `/${categoryId}/${slug}`;
+}
+
+/**
+ * Docs nav href (the public /docs route) for a browser pathname.
+ *
+ * The middleware serves the docs.skyrict.in surface at the /docs tree without
+ * exposing /docs in the URL, so there usePathname() reports the public form
+ * (/getting-started), while docs nav hrefs and the fallback host
+ * (skyrict.vercel.app/docs) use the /docs form. Normalize both sides so the
+ * sidebar highlights the current article on every surface.
+ */
+export function docsActiveHref(pathname: string): string {
+    if (pathname.startsWith("/docs")) return pathname;
+    if (pathname === "/") return "/docs";
+    return `/docs${pathname}`;
+}
+
 export function getCategory(categoryId: string): DocCategory | undefined {
     return categoryById.get(categoryId);
 }

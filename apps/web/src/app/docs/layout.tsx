@@ -4,6 +4,12 @@ import Link from "next/link";
 import { DocsShell } from "@/components/docs/docs-shell";
 
 export const metadata: Metadata = {
+    // The docs hostname is the canonical public origin for the /docs tree on
+    // every surface that serves it (docs.skyrict.in, Vercel deployment
+    // fallback, web.skyrict.in). Resolving relative URLs against it makes the
+    // emitted canonical/OG links point at https://docs.skyrict.in/... even on
+    // the fallback hosts.
+    metadataBase: new URL("https://docs.skyrict.in"),
     title: {
         default: "Docs",
         template: "%s · Docs",
@@ -15,7 +21,9 @@ export const metadata: Metadata = {
         follow: true,
     },
     alternates: {
-        canonical: "/docs",
+        // Docs-surface root: on the canonical host the browser URL is
+        // docs.skyrict.in/ (no /docs prefix).
+        canonical: "/",
     },
 };
 

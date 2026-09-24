@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
-import { docCategories, docsNav } from "@/content/docs";
+import { docCategories, docsActiveHref, docsNav } from "@/content/docs";
 import { cn } from "@/lib/utils";
 
 function NavSidebar({
@@ -71,6 +71,12 @@ function DocsShell({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const [navigationOpen, setNavigationOpen] = useState(false);
     const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+    // On docs.skyrict.in the middleware serves the /docs tree at the surface
+    // root, so usePathname() reports /getting-started while nav hrefs use the
+    // /docs form; normalize so the sidebar highlights the current article on
+    // every surface (docs hostname, apex, and Vercel fallback).
+    const activeHref = docsActiveHref(pathname);
 
     useEffect(() => {
         function onKeyDown(event: KeyboardEvent) {
@@ -195,7 +201,7 @@ function DocsShell({ children }: { children: React.ReactNode }) {
 
             <div className="flex flex-1 items-stretch">
                 <NavSidebar
-                    activeHref={pathname}
+                    activeHref={activeHref}
                     className="sticky top-14 hidden max-h-[calc(100dvh-3.5rem)] w-64 shrink-0 self-start border-r border-border/70 lg:block"
                 />
 
@@ -240,7 +246,7 @@ function DocsShell({ children }: { children: React.ReactNode }) {
                         </div>
                         <NavSidebar
                             id="docs-navigation"
-                            activeHref={pathname}
+                            activeHref={activeHref}
                             onNavigate={closeNavigation}
                             className="h-[calc(100dvh-3.5rem)]"
                         />

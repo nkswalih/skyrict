@@ -13,6 +13,7 @@ import {
     orderedArticles,
     pathFor,
     relatedFor,
+    surfacePathFor,
     type DocArticle,
 } from "@/content/docs";
 import { cn } from "@/lib/utils";
@@ -38,7 +39,7 @@ export async function generateMetadata({
         title: article.title,
         description: article.description,
         alternates: {
-            canonical: pathFor(category, slug),
+            canonical: surfacePathFor(category, slug),
         },
     };
 }
