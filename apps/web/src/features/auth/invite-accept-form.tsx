@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Lock, Mail, UserRound } from "lucide-react";
 import { z } from "zod";
 
+import { NETWORK_ERROR_MESSAGE } from "@/lib/api/error-messages";
 import { AuthButton } from "@/lib/auth/AuthButton";
 import { AuthInput } from "@/lib/auth/AuthInput";
 
@@ -127,9 +128,7 @@ function InviteAcceptForm({
                 cache: "no-store",
             });
         } catch {
-            setSubmitError(
-                "Network error - check your connection and try again.",
-            );
+            setSubmitError(NETWORK_ERROR_MESSAGE);
             return;
         }
 

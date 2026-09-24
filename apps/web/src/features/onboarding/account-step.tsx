@@ -11,6 +11,7 @@ import { Mail } from "lucide-react";
 import { env } from "@/config/env";
 import { RiskChallenge } from "@/components/onboarding/risk-challenge";
 import { checkEmailAvailability, signupStart } from "@/lib/api/auth-api";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/api/error-messages";
 import { AuthButton } from "@/lib/auth/AuthButton";
 import { AuthInput } from "@/lib/auth/AuthInput";
 
@@ -54,7 +55,7 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
       availabilityFailed = true;
     }
     if (availabilityFailed) {
-      setSubmitError("Could not reach the signup service. Is the backend running? Try again.");
+      setSubmitError(NETWORK_ERROR_MESSAGE);
       return;
     }
     if (!available) {
