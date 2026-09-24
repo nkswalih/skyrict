@@ -27,6 +27,7 @@ import {
     resolvePlanPrice,
 } from "@/features/billing/billing-utils";
 import { AuthButton } from "@/lib/auth/AuthButton";
+import { deriveApex } from "@/lib/auth/apex";
 
 const PLAN_IDS: ReadonlySet<string> = new Set<BillingPlanId>([
     "starter",
@@ -62,7 +63,7 @@ function isComplete(
 /** Build the tenant-specific sign-in URL (same convention as the old org step). */
 function signinTarget(slug: string, email: string): string {
     const { protocol, hostname, port } = window.location;
-    const apex = hostname.split(".").slice(1).join(".") || hostname;
+    const apex = deriveApex(hostname);
     return `${protocol}//${slug}.signin.${apex}${port ? `:${port}` : ""}/signin?email=${encodeURIComponent(email)}`;
 }
 

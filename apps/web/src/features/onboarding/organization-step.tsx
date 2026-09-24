@@ -25,6 +25,7 @@ import { countries, industries } from "@/config/onboarding";
 import type { BillingPlanId } from "@/lib/api/billing-api";
 import { checkWorkspaceSlug, createOrganization } from "@/lib/api/auth-api";
 import { AuthButton } from "@/lib/auth/AuthButton";
+import { deriveApex } from "@/lib/auth/apex";
 import { AuthInput } from "@/lib/auth/AuthInput";
 import { ProvisioningScreen } from "@/features/onboarding/provisioning-screen";
 import { saveWizardSession } from "@/features/onboarding/wizard-session";
@@ -427,7 +428,7 @@ function OrganizationStep({
                         : slugAvailability === "available"
                           ? "This URL is available."
                           : workspaceSlug
-                            ? `Your workspace will live at ${workspaceSlug}.signin.${typeof window !== "undefined" ? window.location.hostname.split(".").slice(1).join(".") || "skyrict.in" : "skyrict.in"}`
+                            ? `Your workspace will live at ${workspaceSlug}.signin.${typeof window !== "undefined" ? deriveApex(window.location.hostname) : "skyrict.in"}`
                             : "Your workspace will live at your-slug.signin.skyrict.in"
                 }
                 error={
