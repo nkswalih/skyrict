@@ -15,7 +15,10 @@ interface ErrorStateProps {
  */
 export function ErrorState({ message, onRetry }: ErrorStateProps) {
     return (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-10 text-center">
+        <div
+            role="alert"
+            className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-10 text-center"
+        >
             <AlertCircle
                 aria-hidden="true"
                 className="size-5 shrink-0 text-destructive"

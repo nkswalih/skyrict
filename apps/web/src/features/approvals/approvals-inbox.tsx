@@ -36,7 +36,7 @@ import {
     type ApprovalInstance,
     type ApprovalSuggestion,
 } from "@/lib/api/approval-api";
-import { onApiError } from "@/lib/api/error-toast";
+import { apiErrorMessage, onApiError } from "@/lib/api/error-toast";
 
 type InboxState =
     | { state: "loading" }
@@ -116,12 +116,6 @@ type DetailState =
     | { state: "error"; message: string }
     | { state: "ready"; instance: ApprovalInstance };
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error
-        ? error.message
-        : "Request failed. Please try again.";
-}
-
 function ReviewDialog({ instanceId, onClose, onDecided }: ReviewDialogProps) {
     const [detail, setDetail] = useState<DetailState>({ state: "loading" });
     const [reason, setReason] = useState("");
@@ -133,7 +127,7 @@ function ReviewDialog({ instanceId, onClose, onDecided }: ReviewDialogProps) {
         getApprovalInstance(instanceId)
             .then((instance) => setDetail({ state: "ready", instance }))
             .catch((error: unknown) =>
-                setDetail({ state: "error", message: errorMessage(error) }),
+                setDetail({ state: "error", message: apiErrorMessage(error) }),
             );
     }, [instanceId]);
 
@@ -152,7 +146,7 @@ function ReviewDialog({ instanceId, onClose, onDecided }: ReviewDialogProps) {
             );
             onDecided(result);
         } catch (error: unknown) {
-            setSubmitError(errorMessage(error));
+            setSubmitError(apiErrorMessage(error));
             onApiError(error);
         } finally {
             setSubmitting(null);
@@ -411,7 +405,7 @@ export function ApprovalsInbox() {
                 setInbox({ state: "ready", items, notice: null }),
             )
             .catch((error: unknown) =>
-                setInbox({ state: "error", message: errorMessage(error) }),
+                setInbox({ state: "error", message: apiErrorMessage(error) }),
             );
     }, []);
 

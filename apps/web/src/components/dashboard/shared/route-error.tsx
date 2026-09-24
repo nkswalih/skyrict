@@ -30,13 +30,16 @@ export function RouteError({
     }, [error]);
 
     return (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-10 text-center">
+        <div
+            role="alert"
+            className="flex flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-10 text-center"
+        >
             <AlertCircle
                 aria-hidden="true"
                 className="size-5 shrink-0 text-destructive"
             />
             <p className="mt-3 text-sm font-medium text-foreground">
-                {error.message || "Something went wrong."}
+                Something went wrong loading this page.
             </p>
             {error.digest ? (
                 <p className="mt-1 text-xs text-muted-foreground">

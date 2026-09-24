@@ -19,7 +19,7 @@ import {
     type BillingPlanId,
     type BillingSubscription,
 } from "@/lib/api/billing-api";
-import { onApiError } from "@/lib/api/error-toast";
+import { apiErrorMessage, onApiError } from "@/lib/api/error-toast";
 import {
     formatPriceCents,
     purchasablePlans,
@@ -29,12 +29,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const BILLING_MANAGE = "billing.manage";
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error
-        ? error.message
-        : "Request failed. Please try again.";
-}
 
 function PlanCardSkeleton() {
     return (
@@ -190,7 +184,7 @@ export function PlansPage() {
                 setSubscription(nextSubscription);
                 setPlans(nextPlans);
             })
-            .catch((error: unknown) => setLoadError(errorMessage(error)));
+            .catch((error: unknown) => setLoadError(apiErrorMessage(error)));
     }, []);
 
     useEffect(() => {
@@ -225,7 +219,7 @@ export function PlansPage() {
             const session = await createCheckoutSession(planId, billingInterval);
             window.location.assign(session.url);
         } catch (error) {
-            setActionError(errorMessage(error));
+            setActionError(apiErrorMessage(error));
             onApiError(error, { description: "The checkout session could not be started." });
             setPendingCheckout(null);
         }
@@ -238,7 +232,7 @@ export function PlansPage() {
             const session = await createPortalSession();
             window.location.assign(session.url);
         } catch (error) {
-            setActionError(errorMessage(error));
+            setActionError(apiErrorMessage(error));
             onApiError(error, { description: "The billing portal could not be opened." });
             setPortalPending(false);
         }
