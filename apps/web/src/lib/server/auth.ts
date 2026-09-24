@@ -29,22 +29,37 @@ export function apiBase(target?: string): string {
 
 export type Surface = "marketing" | "signup" | "signin" | "workspace" | "unknown";
 
-const APEX_HOST = /^([a-z0-9-]+)\.(localhost|skyrict\.com)$/;
-const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.com)$/;
+const APEX_HOST = /^([a-z0-9-]+)\.(localhost|skyrict\.in)$/;
+const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.in)$/;
+
+/**
+ * Vercel Preview deployment hostnames (`<project>-git-<branch>-<hash>.vercel.app`
+ * and the shorter `<project>-<hash>.vercel.app` aliases). Previews are allowed
+ * to render only the marketing surface - they are never treated as tenant
+ * subdomains, so no auth path, BFF call, or workspace rewrite is reachable
+ * from an ephemeral deployment.
+ */
+const VERCEL_PREVIEW_HOST = /^([a-z0-9-]+)\.vercel\.app$/;
 
 /**
  * Resolve which of the four subdomain surfaces a Host header maps to.
  *
  * The regexes are *parsers*, not gates: hosts that do not match an allowlisted
- * origin (dev: `*.localhost` + `localhost`; prod: `*.skyrict.com`,
- * `*.signin.skyrict.com`) resolve to `unknown` and are rejected downstream -
- * no acme fallback, no env fallback in the production posture.
+ * origin (dev: `*.localhost` + `localhost`; prod: `*.skyrict.in`,
+ * `*.signin.skyrict.in`; preview: `*.vercel.app`) resolve to `unknown` and are
+ * rejected downstream - no acme fallback, no env fallback in the production
+ * posture.
  */
 export function hostSurface(
   host: string | null | undefined,
 ): { surface: Surface; slug: string } {
   const value = (host ?? "").trim().toLowerCase().replace(/:\d+$/, "");
-  if (value === "localhost" || value === "127.0.0.1" || value === "skyrict.com") {
+  if (
+    value === "localhost" ||
+    value === "127.0.0.1" ||
+    value === "skyrict.in" ||
+    VERCEL_PREVIEW_HOST.test(value)
+  ) {
     return { surface: "marketing", slug: "" };
   }
   const signin = SIGNIN_HOST.exec(value);
