@@ -18,7 +18,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { SESSION_COOKIE, hostSurface } from "@/lib/server/auth";
+import {
+    SESSION_COOKIE,
+    hostSurface,
+    signinOrigin,
+    signupOrigin,
+} from "@/lib/server/auth";
 
 const AUTH_PATHS = [
     "/login",
@@ -46,37 +51,6 @@ function isAuthPath(pathname: string): boolean {
         pathname.startsWith("/register/") ||
         pathname.startsWith("/mfa/")
     );
-}
-
-function baseParts(request: NextRequest): {
-    protocol: string;
-    port: string;
-    apex: string;
-} {
-    // Derive port from the Host header, not request.nextUrl (which uses the
-    // server's own socket port, ignoring the client-facing port behind a proxy).
-    // request.nextUrl.port is e.g. 3100 (Next.js listen port) while Host
-    // carries 3000 (the nginx edge port the browser connected to).
-    const host = request.headers.get("host") ?? "";
-    const hostname = host.replace(/:\d+$/, "").toLowerCase();
-    const port = host.includes(":") ? `:${host.split(":").pop()}` : "";
-    const apex = hostname.split(".").slice(1).join(".") || hostname;
-    return { protocol: request.nextUrl.protocol, port, apex };
-}
-
-function signupOrigin(request: NextRequest): string {
-    const { protocol, port, apex } = baseParts(request);
-    return `${protocol}//signup.${apex}${port}/signup`;
-}
-
-function signinOrigin(
-    request: NextRequest,
-    slug: string,
-    error?: string,
-): string {
-    const { protocol, port, apex } = baseParts(request);
-    const signin = `${protocol}//${slug}.signin.${apex}${port}/signin`;
-    return error ? `${signin}?error=${encodeURIComponent(error)}` : signin;
 }
 
 function notFound(): NextResponse {
@@ -109,7 +83,10 @@ export function middleware(request: NextRequest) {
             // Signup-only marketing site: auth paths leave via the signup origin.
             if (isAuthPath(pathname) || pathname.startsWith("/dashboard")) {
                 return NextResponse.redirect(
-                    new URL(signupOrigin(request), request.url),
+                    new URL(
+                        signupOrigin(host, request.nextUrl.protocol),
+                        request.url,
+                    ),
                 );
             }
             return NextResponse.next();
@@ -151,7 +128,10 @@ export function middleware(request: NextRequest) {
 
             if (isAuthPath(pathname)) {
                 return NextResponse.redirect(
-                    new URL(signinOrigin(request, slug), request.url),
+                    new URL(
+                        signinOrigin(host, request.nextUrl.protocol, slug),
+                        request.url,
+                    ),
                 );
             }
 
@@ -166,7 +146,8 @@ export function middleware(request: NextRequest) {
                 return NextResponse.redirect(
                     new URL(
                         signinOrigin(
-                            request,
+                            host,
+                            request.nextUrl.protocol,
                             slug,
                             "Your session could not be established. Please sign in again.",
                         ),
