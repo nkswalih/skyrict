@@ -67,6 +67,20 @@ describe("hostSurface", () => {
         });
     });
 
+    it("maps docs.skyrict.in to the docs surface, never a workspace", () => {
+        expect(hostSurface("docs.skyrict.in")).toEqual({
+            surface: "docs",
+            slug: "",
+        });
+    });
+
+    it("maps docs.localhost to the docs surface for dev parity", () => {
+        expect(hostSurface("docs.localhost")).toEqual({
+            surface: "docs",
+            slug: "",
+        });
+    });
+
     it("maps Vercel preview hosts to the marketing surface", () => {
         expect(
             hostSurface(

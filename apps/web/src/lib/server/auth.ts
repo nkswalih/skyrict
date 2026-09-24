@@ -30,7 +30,13 @@ export function apiBase(target?: string): string {
   return process.env.API_PROXY_TARGET ?? "http://localhost:8000";
 }
 
-export type Surface = "marketing" | "signup" | "signin" | "workspace" | "unknown";
+export type Surface =
+  | "marketing"
+  | "signup"
+  | "signin"
+  | "workspace"
+  | "docs"
+  | "unknown";
 
 const APEX_HOST = /^([a-z0-9-]+)\.(localhost|skyrict\.in)$/;
 const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.in)$/;
@@ -45,7 +51,7 @@ const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.in)$/;
 const VERCEL_PREVIEW_HOST = /^([a-z0-9-]+)\.vercel\.app$/;
 
 /**
- * Resolve which of the four subdomain surfaces a Host header maps to.
+ * Resolve which of the five subdomain surfaces a Host header maps to.
  *
  * The regexes are *parsers*, not gates: hosts that do not match an allowlisted
  * origin (dev: `*.localhost` + `localhost`; prod: `*.skyrict.in`,
@@ -64,6 +70,12 @@ export function hostSurface(
     VERCEL_PREVIEW_HOST.test(value)
   ) {
     return { surface: "marketing", slug: "" };
+  }
+  // The docs surface is a reserved platform hostname, never a tenant
+  // workspace: docs.skyrict.in (prod) and docs.localhost (dev) serve the
+  // documentation tree at the /docs route.
+  if (value === "docs.skyrict.in" || value === "docs.localhost") {
+    return { surface: "docs", slug: "" };
   }
   const signin = SIGNIN_HOST.exec(value);
   if (signin) {
