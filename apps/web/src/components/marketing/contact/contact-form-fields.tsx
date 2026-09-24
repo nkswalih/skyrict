@@ -55,7 +55,6 @@ function ContactFormFields({
                         id="name"
                         name="name"
                         autoComplete="name"
-                        placeholder="Ada Operandi"
                         value={values.name}
                         disabled={loading}
                         onChange={(event) =>
@@ -82,7 +81,6 @@ function ContactFormFields({
                         name="email"
                         type="email"
                         autoComplete="work email"
-                        placeholder="ada@company.com"
                         value={values.email}
                         disabled={loading}
                         onChange={(event) =>
@@ -114,7 +112,6 @@ function ContactFormFields({
                         id="company"
                         name="company"
                         autoComplete="organization"
-                        placeholder="Operandi Inc."
                         value={values.company}
                         disabled={loading}
                         onChange={(event) =>
@@ -192,7 +189,6 @@ function ContactFormFields({
                     id="message"
                     name="message"
                     rows={6}
-                    placeholder="Which systems do you run, and what do you want Skyrict to surface for your team?"
                     value={values.message}
                     disabled={loading}
                     onChange={(event) =>
