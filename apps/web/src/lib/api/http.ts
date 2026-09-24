@@ -6,11 +6,21 @@
  * lives in an httpOnly cookie the browser cannot read), then retries once.
  */
 
+import {
+  classifyError,
+  errorUserMessage,
+  type ErrorKind,
+} from "@/lib/api/error-messages";
 import { getAccessToken, getTenantSlug, setAccessToken } from "@/lib/auth/session-store";
 import { browserSigninUrl } from "@/lib/auth/client-urls";
 
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * Normalized failure category (see `classifyError` in error-messages).
+   * Lets error surfaces decide copy/retry policy without string-matching.
+   */
+  readonly kind: ErrorKind;
   /**
    * The raw backend detail, kept for logs and devtools. Never render this
    * directly - `message` is already user-safe (see `toApiError`).
@@ -27,6 +37,7 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.kind = classifyError(status);
     this.detail = options.detail ?? message;
     this.permissionDenied = options.permissionDenied ?? false;
   }
@@ -52,8 +63,11 @@ function isPermissionDenial(detail: string): boolean {
 
 /**
  * Build the error for a failed response. A 403 that is the backend's
- * missing-permission refusal is normalized to a user-safe message; every other
- * failure keeps its own detail so genuine failures stay diagnosable.
+ * missing-permission refusal is normalized to a user-safe message. Transport
+ * failures (5xx/408/429) get a status-safe copy so raw backend detail never
+ * reaches the UI - it can name internal services or leak stack fragments -
+ * while the raw text stays on `ApiError.detail` and is logged. Every other
+ * failure keeps its own detail so genuine causes stay diagnosable.
  *
  * This is a UX/leak guard, NOT authorization: the backend still decides, and a
  * caller that needs the key (debugging, telemetry) reads `ApiError.detail`.
@@ -65,6 +79,11 @@ function toApiError(status: number, detail: string): ApiError {
       detail,
       permissionDenied: true,
     });
+  }
+  const userMessage = errorUserMessage(status);
+  if (userMessage !== null) {
+    console.warn(`[api] ${classifyError(status)}: ${detail}`);
+    return new ApiError(status, userMessage, { detail });
   }
   return new ApiError(status, detail, { detail });
 }
