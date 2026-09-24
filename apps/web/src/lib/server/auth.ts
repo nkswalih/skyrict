@@ -13,8 +13,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { deriveApex } from "@/lib/auth/apex";
 import { RESERVED_SLUGS } from "@/lib/auth/reserved-slugs";
 import { captureBffException } from "@/lib/server/sentry";
+
+export { deriveApex };
 
 export const SESSION_COOKIE = "skyrict_session";
 
@@ -90,6 +93,38 @@ export function resolveTenantSlug(host: string | null | undefined): string {
   if (slug) return slug;
   if (process.env.NODE_ENV === "production") return "";
   return process.env.TENANT_SLUG ?? "";
+}
+
+/**
+ * Port-stripped URL parts for building cross-surface URLs. The port comes
+ * from the raw Host header (the port the browser connected to), never from
+ * request.nextUrl, which reports the server's own socket port behind a proxy.
+ */
+export function baseParts(host: string): { port: string; apex: string } {
+  const hostname = host.replace(/:\d+$/, "").toLowerCase();
+  const port = host.includes(":") ? `:${host.split(":").pop()}` : "";
+  return { port, apex: deriveApex(hostname) };
+}
+
+/** Absolute `{protocol}//signup.{apex}{port}/signup` for the current host. */
+export function signupOrigin(host: string, protocol: string): string {
+  const { port, apex } = baseParts(host);
+  return `${protocol}//signup.${apex}${port}/signup`;
+}
+
+/**
+ * Absolute `{protocol}//{slug}.signin.{apex}{port}/signin` for the current
+ * tenant, with an optional URL-encoded `error` query parameter.
+ */
+export function signinOrigin(
+  host: string,
+  protocol: string,
+  slug: string,
+  error?: string,
+): string {
+  const { port, apex } = baseParts(host);
+  const signin = `${protocol}//${slug}.signin.${apex}${port}/signin`;
+  return error ? `${signin}?error=${encodeURIComponent(error)}` : signin;
 }
 
 /**
