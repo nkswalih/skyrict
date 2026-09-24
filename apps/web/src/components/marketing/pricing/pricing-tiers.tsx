@@ -1,20 +1,22 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useMemo, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, CheckCheck, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ErrorPanel } from "@/components/ui/error-panel";
 import {
     formatPriceForCurrency,
     resolvePlanPrice,
 } from "@/features/billing/billing-utils";
-import { ApiError, getSignupPlans } from "@/lib/api/auth-api";
+import { getSignupPlans } from "@/lib/api/auth-api";
 import type {
     BillingCurrency,
     BillingInterval,
     BillingPlan,
 } from "@/lib/api/billing-api";
+import { describeLoadError } from "@/lib/api/error-messages";
 import { BETA_MARKET_LABEL } from "@/lib/billing/currency";
 import { cn } from "@/lib/utils";
 
@@ -344,13 +346,14 @@ function PricingTiers({
     const [billing, setBilling] = useState<BillingInterval>("month");
     const [plans, setPlans] = useState<BillingPlan[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState("");
+    const [loadError, setLoadError] = useState<unknown>(null);
+    const [retrying, setRetrying] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         const load = () => {
             setLoading(true);
-            setLoadError("");
+            setLoadError(null);
             getSignupPlans()
                 .then((catalog) => {
                     if (cancelled) return;
@@ -358,11 +361,7 @@ function PricingTiers({
                 })
                 .catch((error: unknown) => {
                     if (cancelled) return;
-                    setLoadError(
-                        error instanceof ApiError
-                            ? error.message
-                            : "Could not load plans. Try again.",
-                    );
+                    setLoadError(error);
                 })
                 .finally(() => {
                     if (!cancelled) setLoading(false);
@@ -373,6 +372,32 @@ function PricingTiers({
             cancelled = true;
         };
     }, []);
+
+    /** Retry is safe here: loading the catalog is a read-only GET. */
+    async function handleRetry() {
+        setRetrying(true);
+        setLoadError(null);
+        try {
+            setPlans(await getSignupPlans());
+        } catch (error) {
+            setLoadError(error);
+        } finally {
+            setRetrying(false);
+            setLoading(false);
+        }
+    }
+
+    const loadPresentation = useMemo(
+        () =>
+            loadError
+                ? describeLoadError(loadError, {
+                      title: "Plans are temporarily unavailable",
+                      retryableMessage:
+                          "We couldn't load the latest plans right now. Take a moment and try again.",
+                  })
+                : null,
+        [loadError],
+    );
 
     return (
         <div className="space-y-10">
@@ -445,31 +470,25 @@ function PricingTiers({
                     <PlanCardSkeleton />
                     <span className="sr-only">Loading pricing</span>
                 </div>
-            ) : loadError ? (
-                <div className="mx-auto w-full max-w-lg space-y-3 text-center">
-                    <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                        {loadError}
-                    </p>
-                    <Button
-                        variant="outline"
-                        onClick={() => {
-                            setLoading(true);
-                            setLoadError("");
-                            getSignupPlans()
-                                .then((catalog) => setPlans(catalog))
-                                .catch((error: unknown) =>
-                                    setLoadError(
-                                        error instanceof ApiError
-                                            ? error.message
-                                            : "Could not load plans. Try again.",
-                                    ),
-                                )
-                                .finally(() => setLoading(false));
-                        }}
-                    >
-                        Retry
-                    </Button>
-                </div>
+            ) : loadError && loadPresentation ? (
+                <ErrorPanel
+                    title={loadPresentation.title}
+                    message={loadPresentation.message}
+                    onRetry={
+                        loadPresentation.retryable ? handleRetry : undefined
+                    }
+                    retryLabel={retrying ? "Loading…" : "Retry"}
+                    secondary={
+                        <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground"
+                        >
+                            <Link href="/">Continue browsing</Link>
+                        </Button>
+                    }
+                />
             ) : plans.length > 0 ? (
                 <>
                     <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">

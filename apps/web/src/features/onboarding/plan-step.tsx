@@ -1,6 +1,7 @@
 "use client";
 
 import { Spinner } from "@/components/ui/spinner";
+import { ErrorPanel } from "@/components/ui/error-panel";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, CheckCheck, X } from "lucide-react";
@@ -23,9 +24,10 @@ import type {
     BillingPlan,
     BillingPlanId,
 } from "@/lib/api/billing-api";
-import { ApiError, getSignupPlans } from "@/lib/api/auth-api";
-import { BETA_MARKET_LABEL } from "@/lib/billing/currency";
+import { getSignupPlans } from "@/lib/api/auth-api";
+import { describeLoadError } from "@/lib/api/error-messages";
 import { AuthButton } from "@/lib/auth/AuthButton";
+import { BETA_MARKET_LABEL } from "@/lib/billing/currency";
 import { cn } from "@/lib/utils";
 
 function formatUsers(plan: BillingPlan): string {
@@ -755,7 +757,7 @@ function PlanStep({
     const [currency] = useState<BillingCurrency>(initialCurrency);
     const [plans, setPlans] = useState<BillingPlan[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState("");
+    const [loadError, setLoadError] = useState<unknown>(null);
     const [selected, setSelected] = useState<BillingPlanId>("starter");
 
     useEffect(() => {
@@ -770,11 +772,7 @@ function PlanStep({
             })
             .catch((error: unknown) => {
                 if (cancelled) return;
-                setLoadError(
-                    error instanceof ApiError
-                        ? error.message
-                        : "Could not load plans. Try again.",
-                );
+                setLoadError(error);
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -785,6 +783,23 @@ function PlanStep({
         // The default selection is stable; the catalog effect only runs once.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    /** Retry is safe here: loading the catalog is a read-only GET. */
+    async function handleRetry() {
+        setLoading(true);
+        setLoadError(null);
+        try {
+            const catalog = await getSignupPlans();
+            setPlans(catalog);
+            if (!catalog.some((plan) => plan.id === selected)) {
+                setSelected("starter");
+            }
+        } catch (error) {
+            setLoadError(error);
+        } finally {
+            setLoading(false);
+        }
+    }
 
     const selectedPlan = useMemo(
         () => plans.find((plan) => plan.id === selected),
@@ -804,11 +819,18 @@ function PlanStep({
     }
 
     if (loadError) {
+        const presentation = describeLoadError(loadError, {
+            title: "Plans are temporarily unavailable",
+            retryableMessage:
+                "We couldn't load the plans right now. Please try again in a moment.",
+        });
         return (
             <div className="space-y-4">
-                <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                    {loadError}
-                </p>
+                <ErrorPanel
+                    title={presentation.title}
+                    message={presentation.message}
+                    onRetry={presentation.retryable ? handleRetry : undefined}
+                />
                 <AuthButton
                     type="button"
                     className="w-full"
