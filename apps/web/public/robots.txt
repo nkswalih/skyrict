@@ -19,5 +19,9 @@ Disallow: /invite
 Disallow: /forgot-password
 Disallow: /reset-password
 
-Host: https://skyrict.in
+# The same robots.txt serves every surface (one app, marketing + docs
+# hosts), so no single Host: directive can be correct on all of them.
+# Sitemaps are declared per host instead; the docs sitemap is referenced
+# directly so docs.skyrict.in crawlers find it without the apex index.
 Sitemap: https://skyrict.in/sitemap.xml
+Sitemap: https://docs.skyrict.in/sitemap-docs.xml
