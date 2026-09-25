@@ -248,6 +248,46 @@ async function login(page) {
   await waitForWorkspaceSettled(page);
 }
 
+// Login is harness setup, never a measured surface - the budgets below cover
+// the ERP routes only, so re-running setup cannot flatter a score. The cold
+// signin + MFA handoff is still the flakiest part of a fresh CI stack: the
+// first enrollment has been observed bouncing back to
+// {slug}.signin.{apex}/signin?error=... (the workspace /api/auth/handoff 303)
+// instead of landing on the workspace, which the e2e harness absorbs by
+// reloading and re-detecting the MFA path (see e2e/helpers/auth-flow.ts
+// completeMfaChallenge). Absorb it the same way here: ONE retry from a clean
+// cookie jar, and only for that bounce - a deterministic break still fails the
+// gate. Every failed attempt writes evidence into RESULTS_DIR (uploaded as the
+// lighthouse-results artifact) so a CI failure names its own cause instead of
+// only reporting a Playwright timeout.
+const LOGIN_ATTEMPTS = 2;
+
+/** Best-effort bounce evidence: landing URL + error, plus a screenshot. */
+async function captureLoginFailure(attempt, error, page) {
+  const name = `login-failure-${attempt}`;
+  try {
+    fs.writeFileSync(
+      path.join(RESULTS_DIR, `${name}.json`),
+      JSON.stringify(
+        {
+          base: BASE,
+          url: page.url(),
+          error: String(error?.message ?? error),
+          at: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+    );
+    await page.screenshot({
+      path: path.join(RESULTS_DIR, `${name}.png`),
+      fullPage: true,
+    });
+  } catch (captureError) {
+    console.warn(`  could not write ${name} diagnostics: ${captureError}`);
+  }
+}
+
 async function harvestCookieHeader() {
   // Each harvest must sign in from a CLEAN cookie jar. The shared persistent
   // profile retains the previous harvest's session cookie plus the rotations
@@ -258,21 +298,36 @@ async function harvestCookieHeader() {
   // renders and waitForWorkspaceSettled times out (see auth-flow.ts
   // waitForWorkspaceSettled; CI hit this on the 3rd of 4 URL harvests).
   // Wipe the jar so every URL is measured under one fresh session family.
-  await browser.clearCookies();
-  const page = await browser.newPage({ locale: "en-US" });
-  try {
-    await login(page);
-    const state = await browser.storageState();
-    const cookies = state.cookies
-      .filter((c) => c.name === SESSION_COOKIE)
-      .map((c) => `${c.name}=${c.value}`);
-    if (cookies.length === 0) {
-      throw new Error("Authenticated session cookie was not present after login.");
+  let lastError;
+  for (let attempt = 1; attempt <= LOGIN_ATTEMPTS; attempt += 1) {
+    await browser.clearCookies();
+    const page = await browser.newPage({ locale: "en-US" });
+    try {
+      await login(page);
+      const state = await browser.storageState();
+      const cookies = state.cookies
+        .filter((c) => c.name === SESSION_COOKIE)
+        .map((c) => `${c.name}=${c.value}`);
+      if (cookies.length === 0) {
+        throw new Error("Authenticated session cookie was not present after login.");
+      }
+      return cookies.join("; ");
+    } catch (error) {
+      lastError = error;
+      // Only a handoff bounce (?error=...) is retryable: it consumed no
+      // session state, so a fresh jar starts a fresh token family. Anything
+      // else (missing MFA secret, no session cookie) is a real setup failure.
+      const bounced = /[?&]error=/.test(page.url());
+      await captureLoginFailure(attempt, error, page);
+      if (!bounced || attempt === LOGIN_ATTEMPTS) throw error;
+      console.warn(
+        `  login attempt ${attempt}/${LOGIN_ATTEMPTS} bounced to ${page.url()} - retrying from a clean cookie jar`,
+      );
+    } finally {
+      await page.close();
     }
-    return cookies.join("; ");
-  } finally {
-    await page.close();
   }
+  throw lastError;
 }
 
 // ---------------------------------------------------------------------------

@@ -148,6 +148,27 @@ jobs:
           SESSION_COOKIE_SECURE: "false"
           PORT: "3100"
 
+      # ---- Pre-warm the first-enrollment handoff ---------------------------
+      # Mirror of the e2e workflow's pre-warm step: the FIRST enrollment handoff
+      # on a freshly booted CI stack pays a one-shot cost (first render of the
+      # workspace shell, cold BFF -> identity connection pool) that can push the
+      # signin/MFA/handoff chain past its budget, and the audit's very first
+      # harvest pays that cost before it measures anything. Exercise it OUTSIDE
+      # the audit so only warm, steady-state code is timed. curl cannot resolve
+      # *.localhost, so probe the Next server directly on 127.0.0.1:3100 with the
+      # real Host headers (identical to what nginx forwards). Sessionless
+      # 307s/302s are expected and still warm the routes + middleware + BFF.
+      - name: Pre-warm the first-enrollment handoff
+        run: |
+          for host in default.localhost default.signin.localhost; do
+            for path in / /signin /setup-mfa; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" \
+                -H "Host: $host" "http://127.0.0.1:3100$path" || true)
+              echo "Pre-warmed http://$host$path -> $code"
+            done
+          done
+        timeout-minutes: 5
+
       # ---- Lighthouse ------------------------------------------------------
       - name: Install Playwright chromium
         run: pnpm --filter @skyrict/web exec playwright install --with-deps chromium
@@ -173,6 +194,36 @@ jobs:
           # snapshots are written under scripts/perf/lighthouse-results/debug/
           # and uploaded with the results artifact below.
           E2E_LOGIN_TIMEOUT_MS: "60000"
+
+      # ---- Failure diagnostics ----------------------------------------------
+      # The audit's login is harness setup, and when the signin + MFA handoff
+      # bounces to {slug}.signin.{apex}/signin?error=... the Next.js process
+      # exits with nothing but a Playwright timeout - the results dir then holds
+      # only the dot-named chromium profile, which upload-artifact skips by
+      # default, so the failure ships no evidence at all (CI run 36056112311).
+      # Capture what the e2e workflow captures for the same class of bounce so
+      # the exact 303 branch is nameable: identity/core logs, the nginx access
+      # stream, the Next.js log, and a Postgres dump of the auth tables
+      # (audit_logs -> AUTH_REFRESH_REUSE_DETECTED, sessions -> token-family
+      # hashes, handoff_tokens -> whether redeem already consumed the token).
+      # Written INSIDE the results dir so the artifact step below picks it up.
+      - name: Capture stack diagnostics
+        if: always()
+        run: |
+          set +e
+          out=apps/web/scripts/perf/lighthouse-results/stack-diagnostics
+          mkdir -p "$out"
+          for svc in identity core nginx postgres; do
+            docker compose -f infra/docker/docker-compose.e2e.yml logs --no-color --timestamps "$svc" \
+              > "$out/$svc.log" 2>&1
+          done
+          cp /tmp/next.log "$out/next.log" 2>/dev/null
+          docker compose -f infra/docker/docker-compose.e2e.yml exec -T postgres sh -lc \
+            'PGPASSWORD=skyrict pg_dump -U skyrict -d skyrict_identity --data-only --no-owner \
+             --table=audit_logs --table=sessions --table=handoff_tokens --table=users' \
+            > "$out/auth-state.sql" 2>&1
+          du -sh "$out"/* 2>/dev/null
+        timeout-minutes: 5
 
       # ---- Artifacts -------------------------------------------------------
       - name: Upload Lighthouse results
