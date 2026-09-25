@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     description: "Sign in to your Skyrict workspace.",
 };
 
-const SIGNIN_HOST_RE = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.com)$/;
+const SIGNIN_HOST_RE = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.in)$/;
 
 export default async function LoginPage({
     searchParams,

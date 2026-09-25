@@ -21,7 +21,7 @@ export function getAccessToken(): string | null {
 export function getTenantSlug(): string {
     if (typeof window !== "undefined") {
         const match =
-            /^([a-z0-9-]+)\.(?:signin\.)?(?:localhost|skyrict\.com)$/.exec(
+            /^([a-z0-9-]+)\.(?:signin\.)?(?:localhost|skyrict\.in)$/.exec(
                 window.location.hostname,
             );
         if (match && !RESERVED_SLUGS.has(match[1])) return match[1];
