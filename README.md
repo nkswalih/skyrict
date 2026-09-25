@@ -135,7 +135,7 @@ Everything runs through the **Makefile**: see [Development](#development) for th
 <summary><strong>Local multi-tenant routing</strong>: subdomain-based tenant isolation on localhost</summary>
 
 The identity service is multi-tenant: in production each tenant reaches it via its own subdomain
-(`https://acme.skyrict.com/...`) and the ingress injects an `X-Tenant-Slug` header before forwarding.
+(`https://acme.skyrict.in/...`) and the ingress injects an `X-Tenant-Slug` header before forwarding.
 The dev stack mirrors that contract locally, so tenant resolution behaves identically in both
 environments.
 
