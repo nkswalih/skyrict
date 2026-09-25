@@ -96,7 +96,7 @@ function SecurityStep({ email, vt }: { email: string; vt: string }) {
                 setSubmitError(
                     error instanceof ApiError
                         ? error.message
-                        : "Something went wrong. Try again.",
+                        : "We couldn't complete this step. Please try again.",
                 );
             });
     }

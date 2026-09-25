@@ -9,6 +9,11 @@
  * keeps it in memory only.
  */
 
+import {
+    classifyError,
+    errorUserMessage,
+    NETWORK_ERROR_MESSAGE,
+} from "@/lib/api/error-messages";
 import { ApiError } from "@/lib/api/http";
 import type {
     BillingCurrency,
@@ -62,22 +67,40 @@ async function bffPost<T>(path: string, body: unknown): Promise<T> {
             cache: "no-store",
         });
     } catch {
-        throw new ApiError(
-            0,
-            "Network error - check your connection and try again.",
-        );
+        throw new ApiError(0, NETWORK_ERROR_MESSAGE);
     }
 
     const payload = (await res.json().catch(() => ({}))) as T & {
         error?: string;
     };
     if (!res.ok) {
-        throw new ApiError(
-            res.status,
-            payload.error ?? "Request failed. Please try again.",
-        );
+        throw bffError(res.status, payload.error, "Request failed. Please try again.");
     }
     return payload as T;
+}
+
+/**
+ * Build the error for a failed BFF response. Mirrors `toApiError` in
+ * @/lib/api/http: transport/5xx/429 failures get a status-safe copy (the raw
+ * BFF `error` text can name internal services or leak stack fragments), while
+ * validation/conflict/session/permission messages keep their backend text. The
+ * raw error stays on `ApiError.detail` and is logged.
+ */
+function bffError(
+    status: number,
+    payloadError: string | undefined,
+    fallback: string,
+): ApiError {
+    const userMessage = errorUserMessage(status);
+    if (userMessage !== null) {
+        console.warn(`[api] ${classifyError(status)}: ${payloadError ?? ""}`);
+        return new ApiError(status, userMessage, {
+            detail: payloadError ?? userMessage,
+        });
+    }
+    return new ApiError(status, payloadError ?? fallback, {
+        detail: payloadError ?? "",
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +130,7 @@ export async function loginEmailPassword(input: {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -115,10 +138,10 @@ export async function loginEmailPassword(input: {
         .json()
         .catch(() => ({}))) as BffLoginResponse;
     if (!response.ok) {
-        throw new ApiError(
+        throw bffError(
             response.status,
-            payload.error ??
-                "Unable to sign in. Check your credentials and try again.",
+            payload.error,
+            "Unable to sign in. Check your credentials and try again.",
         );
     }
 
@@ -171,7 +194,7 @@ export async function verifyMfa(input: {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -182,9 +205,10 @@ export async function verifyMfa(input: {
         return { status: "invalid" };
     }
     if (!response.ok) {
-        throw new ApiError(
+        throw bffError(
             response.status,
-            payload.error ?? "Unable to verify the code.",
+            payload.error,
+            "Unable to verify the code.",
         );
     }
     if (!payload.accessToken || !payload.user) {
@@ -284,7 +308,7 @@ export async function getCaptcha(): Promise<{
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -294,9 +318,10 @@ export async function getCaptcha(): Promise<{
         error?: string;
     };
     if (!res.ok) {
-        throw new ApiError(
+        throw bffError(
             res.status,
-            payload.error ?? "Could not load the security code.",
+            payload.error,
+            "Could not load the security code.",
         );
     }
     if (!payload.captchaId || !payload.image) {
@@ -390,7 +415,7 @@ export async function getSignupPlans(): Promise<BillingPlan[]> {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -399,10 +424,7 @@ export async function getSignupPlans(): Promise<BillingPlan[]> {
         error?: string;
     };
     if (!res.ok) {
-        throw new ApiError(
-            res.status,
-            payload.error ?? "Could not load plans.",
-        );
+        throw bffError(res.status, payload.error, "Could not load plans.");
     }
     return Array.isArray(payload.data) ? payload.data : [];
 }
@@ -464,7 +486,7 @@ export async function setupMfa(): Promise<MfaSetup> {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -475,10 +497,7 @@ export async function setupMfa(): Promise<MfaSetup> {
         error?: string;
     };
     if (!res.ok) {
-        throw new ApiError(
-            res.status,
-            payload.error ?? "Could not start MFA setup.",
-        );
+        throw bffError(res.status, payload.error, "Could not start MFA setup.");
     }
 
     return {
@@ -503,7 +522,7 @@ export async function regenerateBackupCodes(): Promise<{
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -512,9 +531,10 @@ export async function regenerateBackupCodes(): Promise<{
         error?: string;
     };
     if (!res.ok) {
-        throw new ApiError(
+        throw bffError(
             res.status,
-            payload.error ?? "Could not regenerate recovery codes.",
+            payload.error,
+            "Could not regenerate recovery codes.",
         );
     }
 
@@ -574,7 +594,7 @@ export async function confirmMfaSetup(input: {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
 
@@ -586,10 +606,7 @@ export async function confirmMfaSetup(input: {
         return { status: "invalid" };
     }
     if (!res.ok) {
-        throw new ApiError(
-            res.status,
-            payload.error ?? "Could not verify the code.",
-        );
+        throw bffError(res.status, payload.error, "Could not verify the code.");
     }
     return payload.ok ? { status: "ok" } : { status: "invalid" };
 }
@@ -607,10 +624,7 @@ interface BffAvatarResponse {
 async function bffAvatarResult(res: Response): Promise<AuthUser> {
     const payload = (await res.json().catch(() => ({}))) as BffAvatarResponse;
     if (!res.ok) {
-        throw new ApiError(
-            res.status,
-            payload.error ?? "Could not update your avatar.",
-        );
+        throw bffError(res.status, payload.error, "Could not update your avatar.");
     }
     if (!payload.user) {
         throw new ApiError(502, "Unexpected avatar response.");
@@ -633,7 +647,7 @@ export async function uploadAvatar(file: File): Promise<AuthUser> {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
     return bffAvatarResult(res);
@@ -650,7 +664,7 @@ export async function removeAvatar(): Promise<AuthUser> {
     } catch {
         throw new ApiError(
             0,
-            "Network error - check your connection and try again.",
+            NETWORK_ERROR_MESSAGE,
         );
     }
     return bffAvatarResult(res);

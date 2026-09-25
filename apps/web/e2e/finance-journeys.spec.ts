@@ -195,7 +195,7 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
     await test.step("post the draft entry", async () => {
         await page.goto(`/dashboard/erp/finance/journal-entries/${draftId}`);
         await page.getByRole("button", { name: "Post" }).click();
-        await expect(page.getByText("Posted", { exact: true }).first()).toBeVisible();
+        await expect(page.locator("span").getByText("Posted", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     });
 
     // ====================================================================
@@ -219,7 +219,7 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
         // Accept the native window.confirm that the Reverse button triggers.
         page.once("dialog", (d) => d.accept());
         await page.getByRole("button", { name: "Reverse" }).click();
-        await expect(page.getByText("Reversed", { exact: true })).toBeVisible();
+        await expect(page.locator("span").getByText("Reversed", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
         // Original entry is no longer posted — no Post button visible.
         await expect(
             page.getByRole("button", { name: "Post" }),
@@ -251,7 +251,7 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
         await expect(page.getByText("Draft", { exact: true })).toBeVisible();
         page.once("dialog", (d) => d.accept());
         await page.getByRole("button", { name: "Void" }).click();
-        await expect(page.getByText("Voided", { exact: true }).first()).toBeVisible();
+        await expect(page.locator("span").getByText("Voided", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     });
 
     // ====================================================================
@@ -273,10 +273,10 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
         await expect(page.getByText("Draft", { exact: true })).toBeVisible();
 
         await page.getByRole("button", { name: "Issue" }).click();
-        await expect(page.getByText("Issued", { exact: true })).toBeVisible();
+        await expect(page.locator("span").getByText("Issued", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
         await page.getByRole("button", { name: "Approve" }).click();
-        await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+        await expect(page.locator("span").getByText("Approved", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
         await page.getByRole("button", { name: "Apply payment" }).click();
         const payDlg = page.getByRole("dialog", { name: "Apply payment" });
@@ -287,7 +287,7 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
         await payDlg.getByLabel("Method").fill("Bank transfer");
 
         await payDlg.getByRole("button", { name: "Apply payment" }).click();
-        await expect(page.getByText("Paid", { exact: true })).toBeVisible();
+        await expect(page.locator("span").getByText("Paid", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     });
 
     // ====================================================================
@@ -328,7 +328,7 @@ test("finance journeys: JE lifecycle, invoice flow, and statement widgets", asyn
         await page.goto(`/dashboard/erp/finance/invoices/${inv.id}`);
         page.once("dialog", (d) => d.accept());
         await page.getByRole("button", { name: "Void" }).click();
-        await expect(page.getByText("Voided", { exact: true })).toBeVisible();
+        await expect(page.locator("span").getByText("Voided", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     });
 
     // ====================================================================

@@ -11,6 +11,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, apiFetch, apiPost, PERMISSION_DENIED_MESSAGE } from "@/lib/api/http";
+import {
+    RATE_LIMITED_MESSAGE,
+    SERVICE_UNAVAILABLE_MESSAGE,
+    TIMEOUT_MESSAGE,
+} from "@/lib/api/error-messages";
 import { getAccessToken, setAccessToken } from "@/lib/auth/session-store";
 
 interface RecordedRequest {
@@ -192,6 +197,110 @@ describe("permission-denied errors", () => {
 
         expect(error!.permissionDenied).toBe(false);
         expect(error!.message).toBe("Missing required permission: x");
+    });
+});
+
+describe("transport/server failure sanitization", () => {
+    beforeEach(() => {
+        // Skip session hydration: every /api/v1 call goes straight to `respond`.
+        setAccessToken("tok-1");
+        vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it("replaces 503 backend detail with safe copy, keeping detail for logs", async () => {
+        respond = () =>
+            json(
+                { detail: "Identity service is unavailable. Please try again." },
+                503,
+            );
+
+        const error = await apiFetch("/api/v1/billing/signup/plans").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+
+        expect(error).not.toBeNull();
+        expect(error!.status).toBe(503);
+        expect(error!.kind).toBe("service_unavailable");
+        // Page UI renders `message`: it must never name internal services.
+        expect(error!.message).toBe(SERVICE_UNAVAILABLE_MESSAGE);
+        expect(error!.message).not.toContain("Identity service");
+        // The raw detail stays available for logs and debugging.
+        expect(error!.detail).toBe(
+            "Identity service is unavailable. Please try again.",
+        );
+        expect(console.warn).toHaveBeenCalledWith(
+            expect.stringContaining("Identity service is unavailable"),
+        );
+    });
+
+    it("replaces 500 with safe copy", async () => {
+        respond = () => json({ detail: "internal error: traceback ..." }, 500);
+
+        const error = await apiFetch("/api/v1/billing/plan").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+
+        expect(error!.kind).toBe("server_error");
+        expect(error!.message).toBe(SERVICE_UNAVAILABLE_MESSAGE);
+        expect(error!.message).not.toContain("traceback");
+        expect(error!.detail).toBe("internal error: traceback ...");
+    });
+
+    it("replaces 408 and 429 with their safe copies", async () => {
+        respond = () => json({ detail: "request timed out" }, 408);
+
+        const timeout = await apiFetch("/api/v1/analytics/timeouts").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+        expect(timeout!.kind).toBe("timeout");
+        expect(timeout!.message).toBe(TIMEOUT_MESSAGE);
+
+        respond = () => json({ detail: "Too many requests" }, 429);
+        const limited = await apiFetch("/api/v1/analytics/rate").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+        expect(limited!.kind).toBe("rate_limited");
+        expect(limited!.message).toBe(RATE_LIMITED_MESSAGE);
+    });
+
+    it("keeps backend messages for validation, conflict, and not-found", async () => {
+        respond = () => json({ detail: "Email is required" }, 422);
+        const validation = await apiFetch("/api/v1/crm/leads").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+        expect(validation!.kind).toBe("validation");
+        expect(validation!.message).toBe("Email is required");
+
+        respond = () => json({ detail: "Rule already exists" }, 409);
+        const conflict = await apiFetch("/api/v1/automations").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+        expect(conflict!.kind).toBe("conflict");
+        expect(conflict!.message).toBe("Rule already exists");
+
+        respond = () => json({ detail: "Not found" }, 404);
+        const missing = await apiFetch("/api/v1/invoices/xyz").then(
+            () => null,
+            (err: unknown) => err as ApiError,
+        );
+        expect(missing!.kind).toBe("not_found");
+        expect(missing!.message).toBe("Not found");
+    });
+
+    it("derives kind on directly-constructed ApiErrors (no signature change)", () => {
+        const error = new ApiError(403, "forbidden");
+        expect(error.kind).toBe("forbidden");
+        expect(error.message).toBe("forbidden");
     });
 });
 

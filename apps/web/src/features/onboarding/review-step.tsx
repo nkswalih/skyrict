@@ -1,5 +1,6 @@
 "use client";
 
+import { ErrorPanel } from "@/components/ui/error-panel";
 import { Spinner } from "@/components/ui/spinner";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -21,12 +22,14 @@ import type {
     BillingPlan,
     BillingPlanId,
 } from "@/lib/api/billing-api";
-import { ApiError, getSignupPlans } from "@/lib/api/auth-api";
+import { getSignupPlans } from "@/lib/api/auth-api";
+import { describeLoadError } from "@/lib/api/error-messages";
 import {
     formatPriceForCurrency,
     resolvePlanPrice,
 } from "@/features/billing/billing-utils";
 import { AuthButton } from "@/lib/auth/AuthButton";
+import { deriveApex } from "@/lib/auth/apex";
 
 const PLAN_IDS: ReadonlySet<string> = new Set<BillingPlanId>([
     "starter",
@@ -62,7 +65,7 @@ function isComplete(
 /** Build the tenant-specific sign-in URL (same convention as the old org step). */
 function signinTarget(slug: string, email: string): string {
     const { protocol, hostname, port } = window.location;
-    const apex = hostname.split(".").slice(1).join(".") || hostname;
+    const apex = deriveApex(hostname);
     return `${protocol}//${slug}.signin.${apex}${port ? `:${port}` : ""}/signin?email=${encodeURIComponent(email)}`;
 }
 
@@ -87,7 +90,7 @@ function ReviewStep({
 }) {
     const [plans, setPlans] = useState<BillingPlan[]>([]);
     const [loadingPlans, setLoadingPlans] = useState(true);
-    const [loadError, setLoadError] = useState("");
+    const [loadError, setLoadError] = useState<unknown>(null);
 
     const session = useMemo(() => {
         const raw = loadWizardSession();
@@ -119,11 +122,7 @@ function ReviewStep({
             })
             .catch((error: unknown) => {
                 if (cancelled) return;
-                setLoadError(
-                    error instanceof ApiError
-                        ? error.message
-                        : "Could not load plan details. Try again.",
-                );
+                setLoadError(error);
             })
             .finally(() => {
                 if (!cancelled) setLoadingPlans(false);
@@ -248,9 +247,13 @@ function ReviewStep({
                     <span className="sr-only">Loading plan details</span>
                 </div>
             ) : loadError ? (
-                <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                    {loadError}
-                </p>
+                <ErrorPanel
+                    {...describeLoadError(loadError, {
+                        title: "Plan details are temporarily unavailable",
+                        retryableMessage:
+                            "We couldn't load your plan details right now. Please try again in a moment.",
+                    })}
+                />
             ) : (
                 <div className="space-y-3">
                     <AuthButton

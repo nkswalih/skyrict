@@ -3,10 +3,10 @@ export const site = {
     tagline: "AI Business Operating System",
     description:
         "Skyrict connects your live operations, inventory, sales, cash, and orders, to continuous market signals. AI agents act on the synthesis.",
-    url: "https://skyrict.com",
+    url: "https://skyrict.in",
 };
 
-export const contactEmail = "sales@skyrict.com";
+export const contactEmail = "sales@skyrict.in";
 
 export const navLinks = [
     { label: "Product", href: "/product" },

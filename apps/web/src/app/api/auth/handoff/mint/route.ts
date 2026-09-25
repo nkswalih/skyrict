@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { deriveApex } from "@/lib/auth/apex";
+
 import {
     SESSION_COOKIE,
     applySessionCookie,
@@ -26,7 +28,7 @@ function workspaceUrl(request: NextRequest, slug: string): string {
     // the redeem route rejects the surface with "Invalid request origin.".
     const apex = hostname.includes(".signin.")
         ? hostname.split(".signin.").pop() ?? ""
-        : hostname.split(".").slice(1).join(".") || hostname;
+        : deriveApex(hostname);
     const tenant = slug || resolveTenantSlug(host) || "app";
     return `${request.nextUrl.protocol}//${tenant}.${apex}${port}`;
 }

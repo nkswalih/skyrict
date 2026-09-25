@@ -13,8 +13,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { SERVICE_UNAVAILABLE_MESSAGE } from "@/lib/api/error-messages";
+import { deriveApex } from "@/lib/auth/apex";
 import { RESERVED_SLUGS } from "@/lib/auth/reserved-slugs";
 import { captureBffException } from "@/lib/server/sentry";
+
+export { deriveApex };
 
 export const SESSION_COOKIE = "skyrict_session";
 
@@ -27,25 +31,52 @@ export function apiBase(target?: string): string {
   return process.env.API_PROXY_TARGET ?? "http://localhost:8000";
 }
 
-export type Surface = "marketing" | "signup" | "signin" | "workspace" | "unknown";
+export type Surface =
+  | "marketing"
+  | "signup"
+  | "signin"
+  | "workspace"
+  | "docs"
+  | "unknown";
 
-const APEX_HOST = /^([a-z0-9-]+)\.(localhost|skyrict\.com)$/;
-const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.com)$/;
+const APEX_HOST = /^([a-z0-9-]+)\.(localhost|skyrict\.in)$/;
+const SIGNIN_HOST = /^([a-z0-9-]+)\.signin\.(localhost|skyrict\.in)$/;
 
 /**
- * Resolve which of the four subdomain surfaces a Host header maps to.
+ * Vercel Preview deployment hostnames (`<project>-git-<branch>-<hash>.vercel.app`
+ * and the shorter `<project>-<hash>.vercel.app` aliases). Previews are allowed
+ * to render only the marketing surface - they are never treated as tenant
+ * subdomains, so no auth path, BFF call, or workspace rewrite is reachable
+ * from an ephemeral deployment.
+ */
+const VERCEL_PREVIEW_HOST = /^([a-z0-9-]+)\.vercel\.app$/;
+
+/**
+ * Resolve which of the five subdomain surfaces a Host header maps to.
  *
  * The regexes are *parsers*, not gates: hosts that do not match an allowlisted
- * origin (dev: `*.localhost` + `localhost`; prod: `*.skyrict.com`,
- * `*.signin.skyrict.com`) resolve to `unknown` and are rejected downstream -
- * no acme fallback, no env fallback in the production posture.
+ * origin (dev: `*.localhost` + `localhost`; prod: `*.skyrict.in`,
+ * `*.signin.skyrict.in`; preview: `*.vercel.app`) resolve to `unknown` and are
+ * rejected downstream - no acme fallback, no env fallback in the production
+ * posture.
  */
 export function hostSurface(
   host: string | null | undefined,
 ): { surface: Surface; slug: string } {
   const value = (host ?? "").trim().toLowerCase().replace(/:\d+$/, "");
-  if (value === "localhost" || value === "127.0.0.1" || value === "skyrict.com") {
+  if (
+    value === "localhost" ||
+    value === "127.0.0.1" ||
+    value === "skyrict.in" ||
+    VERCEL_PREVIEW_HOST.test(value)
+  ) {
     return { surface: "marketing", slug: "" };
+  }
+  // The docs surface is a reserved platform hostname, never a tenant
+  // workspace: docs.skyrict.in (prod) and docs.localhost (dev) serve the
+  // documentation tree at the /docs route.
+  if (value === "docs.skyrict.in" || value === "docs.localhost") {
+    return { surface: "docs", slug: "" };
   }
   const signin = SIGNIN_HOST.exec(value);
   if (signin) {
@@ -75,6 +106,38 @@ export function resolveTenantSlug(host: string | null | undefined): string {
   if (slug) return slug;
   if (process.env.NODE_ENV === "production") return "";
   return process.env.TENANT_SLUG ?? "";
+}
+
+/**
+ * Port-stripped URL parts for building cross-surface URLs. The port comes
+ * from the raw Host header (the port the browser connected to), never from
+ * request.nextUrl, which reports the server's own socket port behind a proxy.
+ */
+export function baseParts(host: string): { port: string; apex: string } {
+  const hostname = host.replace(/:\d+$/, "").toLowerCase();
+  const port = host.includes(":") ? `:${host.split(":").pop()}` : "";
+  return { port, apex: deriveApex(hostname) };
+}
+
+/** Absolute `{protocol}//signup.{apex}{port}/signup` for the current host. */
+export function signupOrigin(host: string, protocol: string): string {
+  const { port, apex } = baseParts(host);
+  return `${protocol}//signup.${apex}${port}/signup`;
+}
+
+/**
+ * Absolute `{protocol}//{slug}.signin.{apex}{port}/signin` for the current
+ * tenant, with an optional URL-encoded `error` query parameter.
+ */
+export function signinOrigin(
+  host: string,
+  protocol: string,
+  slug: string,
+  error?: string,
+): string {
+  const { port, apex } = baseParts(host);
+  const signin = `${protocol}//${slug}.signin.${apex}${port}/signin`;
+  return error ? `${signin}?error=${encodeURIComponent(error)}` : signin;
 }
 
 /**
@@ -278,7 +341,7 @@ export function backendError(result: BackendCallResult) {
     // The internal fetch never got a response (backend down / connection
     // refused) - surface a 502 + actionable copy instead of a generic 400.
     return NextResponse.json(
-      { error: "Identity service is unavailable. Please try again." },
+      { error: SERVICE_UNAVAILABLE_MESSAGE },
       { status: 502 },
     );
   }

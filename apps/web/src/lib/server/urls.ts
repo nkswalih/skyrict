@@ -8,7 +8,7 @@
 
 import { headers } from "next/headers";
 
-import { hostSurface, resolveTenantSlug } from "@/lib/server/auth";
+import { baseParts, hostSurface, resolveTenantSlug } from "@/lib/server/auth";
 
 interface OriginParts {
     proto: string;
@@ -24,9 +24,7 @@ async function originParts(): Promise<OriginParts> {
     const proto =
         forwarded?.split(",")[0]?.trim() ??
         (process.env.NODE_ENV === "production" ? "https" : "http");
-    const hostname = host.replace(/:\d+$/, "").toLowerCase();
-    const port = host.includes(":") ? `:${host.split(":").pop()}` : "";
-    const apex = hostname.split(".").slice(1).join(".") || hostname;
+    const { port, apex } = baseParts(host);
     return { proto, port, apex, host };
 }
 

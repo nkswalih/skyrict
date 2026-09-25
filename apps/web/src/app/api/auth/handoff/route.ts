@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import {
     applySessionCookie,
+    baseParts,
     callBackend,
     hostSurface,
 } from "@/lib/server/auth";
@@ -61,10 +62,7 @@ export async function OPTIONS(request: NextRequest) {
 /** Absolute `{slug}.signin.{apex}/signin?error=...` for this tenant. */
 function signinUrl(request: NextRequest, slug: string, error?: string): string {
     const proto = request.nextUrl.protocol;
-    const host = request.headers.get("host") ?? "";
-    const port = host.includes(":") ? host.slice(host.indexOf(":")) : "";
-    const hostname = host.replace(/:\d+$/, "").toLowerCase();
-    const apex = hostname.split(".").slice(1).join(".") || hostname;
+    const { port, apex } = baseParts(request.headers.get("host") ?? "");
     const base = `${proto}//${slug}.signin.${apex}${port}/signin`;
     return error ? `${base}?error=${encodeURIComponent(error)}` : base;
 }

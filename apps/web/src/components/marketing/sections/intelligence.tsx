@@ -23,8 +23,8 @@ function Intelligence() {
         <section id="intelligence" className="scroll-mt-20 border-t border-border/40">
             <div className="mx-auto w-full max-w-6xl px-6 py-20 sm:py-28">
                 <RevealSection>
-                    <div className="grid items-center gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
-                        <div className="order-2 lg:order-1">
+                    <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-16">
+                        <div className="order-2 min-w-0 lg:order-1">
                             <div className="overflow-hidden rounded-xl border border-border bg-card">
                                 <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
                                     <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -84,7 +84,7 @@ function Intelligence() {
                                 </div>
                             </div>
                         </div>
-                        <div className="order-1 lg:order-2">
+                        <div className="order-1 min-w-0 lg:order-2">
                             <h2 className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                                 The market, read continuously.
                             </h2>

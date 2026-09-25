@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
     alternates: {
-        canonical: "/docs",
+        // Docs-surface root: resolved against the docs layout metadataBase
+        // (https://docs.skyrict.in), with no /docs prefix in the browser URL.
+        canonical: "/",
     },
 };
 

@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "framework": "nextjs",
-  "rootDirectory": "apps/web",
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @skyrict/web run build",
   "regions": ["sin1"]

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { SERVICE_UNAVAILABLE_MESSAGE } from "@/lib/api/error-messages";
 import {
     apiBase,
     assertSameOrigin,
@@ -58,7 +59,7 @@ export async function PUT(request: NextRequest) {
     } catch (error) {
         captureBffException(error, "/avatars/me", "identity");
         return NextResponse.json(
-            { error: "Identity service is unavailable. Please try again." },
+            { error: SERVICE_UNAVAILABLE_MESSAGE },
             { status: 502 },
         );
     }

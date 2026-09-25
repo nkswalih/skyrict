@@ -38,6 +38,7 @@ import {
 import { invitationState, type InvitationStatus } from "@/lib/invitation-status";
 import { ListSkeleton } from "@/components/ui/page-skeletons";
 import { cn, copyToClipboard } from "@/lib/utils";
+import { deriveApex } from "@/lib/auth/apex";
 
 type Status =
     | { state: "loading" }
@@ -112,8 +113,7 @@ function SkeletonRows() {
 /** `{slug}.signin.{apex}/invite?token=...` link for a freshly created invite. */
 function inviteLink(token: string): string {
     const hostname = window.location.hostname;
-    const parts = hostname.split(".");
-    const signinHost = `${parts[0]}.signin.${parts.slice(1).join(".")}`;
+    const signinHost = `${hostname.split(".")[0]}.signin.${deriveApex(hostname)}`;
     const port = window.location.port ? `:${window.location.port}` : "";
     return `${window.location.protocol}//${signinHost}${port}/invite?token=${encodeURIComponent(token)}`;
 }

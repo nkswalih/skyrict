@@ -11,6 +11,7 @@ import { Mail } from "lucide-react";
 import { env } from "@/config/env";
 import { RiskChallenge } from "@/components/onboarding/risk-challenge";
 import { checkEmailAvailability, signupStart } from "@/lib/api/auth-api";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/api/error-messages";
 import { AuthButton } from "@/lib/auth/AuthButton";
 import { AuthInput } from "@/lib/auth/AuthInput";
 
@@ -54,7 +55,7 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
       availabilityFailed = true;
     }
     if (availabilityFailed) {
-      setSubmitError("Could not reach the signup service. Is the backend running? Try again.");
+      setSubmitError(NETWORK_ERROR_MESSAGE);
       return;
     }
     if (!available) {
@@ -133,18 +134,18 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
         ) : null}
       </div>
 
-      <p className="pt-1 text-center text-[11px] leading-relaxed text-muted-foreground">
+      <p className="pt-1 text-center text-[11px] leading-relaxed text-pretty text-muted-foreground">
         By signing up, I agree to the Skyrict{" "}
         <Link
           href="/terms"
-          className="underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
         >
           Terms of Service
         </Link>{" "}
         and{" "}
         <Link
           href="/privacy"
-          className="underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
         >
           Privacy Policy
         </Link>

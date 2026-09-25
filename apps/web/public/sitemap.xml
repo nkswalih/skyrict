@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://skyrict.com/</loc>
-    <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://skyrict.com/terms</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://skyrict.com/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-</urlset>
+<!--
+  Sitemap index for the one-app-many-hosts marketing site.
+
+  Each surface owns a separate sitemap because search engines treat
+  subdomains as distinct sites: the marketing host (skyrict.in) and the
+  docs host (docs.skyrict.in) must each declare their own URLs. The
+  middleware matcher skips dotted paths, so these files serve unchanged on
+  every host.
+
+  Regenerate the child sitemaps when routes change; the vitest suite
+  (src/content/sitemap.test.ts) fails if they drift from the content
+  registry or the marketing route list.
+-->
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://skyrict.in/sitemap-marketing.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://docs.skyrict.in/sitemap-docs.xml</loc>
+  </sitemap>
+</sitemapindex>

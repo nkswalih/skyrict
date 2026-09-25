@@ -31,7 +31,7 @@ const nextConfig = {
               "frame-ancestors 'none'; base-uri 'self'; " +
               // The workspace handoff is submitted via a top-level form POST
               // from the auth subdomains, so form-action must include the
-              // workspace origins (dev: *.localhost:3000, prod: *.skyrict.com).
+              // workspace origins (dev: *.localhost:3000, prod: *.skyrict.in).
               "form-action 'self' http://*.localhost:3000 https://*.skyrict.in; " +
               "object-src 'none'",
           },
