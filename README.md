@@ -269,8 +269,8 @@ serves health; AI calls then return a typed `503 ai_unavailable`.
 AI_DATABASE_URL=postgresql+asyncpg://...     # ai-agent's own DB
 AI_REDIS_URL=redis://localhost:6379/0        # distributed rate limiting
 AI_JWT_PUBLIC_KEY_PATH=./secrets/jwt_public.pem
-AI_JWKS_ISSUER=https://auth.skyrict.io
-AI_JWKS_AUDIENCE=api.skyrict.io
+AI_JWKS_ISSUER=https://api.skyrict.in
+AI_JWKS_AUDIENCE=api.skyrict.in
 AI_PROVIDER=openrouter                       # or groq/openai/omniroute/agentrouter/generic
 AI_MODEL=meta-llama/llama-3-8b-instruct
 AI_API_KEY=sk-or-...

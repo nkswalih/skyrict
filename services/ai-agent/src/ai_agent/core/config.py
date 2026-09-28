@@ -78,7 +78,7 @@ class Settings(BaseSettings):
         ..., description="path to RSA public key PEM for verifying identity tokens - REQUIRED"
     )
     JWKS_ISSUER: str = Field(
-        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
+        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://api.skyrict.in"
     )
     JWKS_AUDIENCE: str = Field(
         ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"

@@ -62,7 +62,7 @@ def _make_valid_settings(tmp_path: Path, **overrides) -> dict:
         "REDIS_URL": "redis://localhost:6379/0",
         "JWT_PRIVATE_KEY_PATH": private_path,
         "JWT_PUBLIC_KEY_PATH": public_path,
-        "JWKS_ISSUER": "https://auth.skyrict.io",
+        "JWKS_ISSUER": "https://api.skyrict.in",
         "JWKS_AUDIENCE": "api.skyrict.in",
         "BASE_DOMAIN": "skyrict.com",
         **overrides,
