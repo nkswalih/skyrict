@@ -42,7 +42,6 @@ def _make_limiter(client: object) -> RateLimiter:
     # Pre-injected client: the limiter must NOT touch the shared pool.
     limiter = RateLimiter()
     limiter._client = client  # type: ignore[assignment]
-    limiter._owns_client = False
     return limiter
 
 
@@ -93,3 +92,90 @@ class TestFailOpen:
             await limiter.is_allowed(key="ai:nl_query:t-2:u-2", limit=5, window_seconds=60)
         # Fail-closed maps to the typed 503 contract (AI_UNAVAILABLE), not 500.
         assert exc_info.value.code == "AI_UNAVAILABLE"
+
+
+class TestSharedClientUnavailable:
+    """An unusable shared pool must take the same path as a dropped one.
+
+    `_get_client` used to be called *outside* the try block, so the import of
+    the shared pool - and anything else raised while acquiring a client -
+    escaped as an unhandled exception. A 500 is neither fail-open nor
+    fail-closed: it happens to close, but only on the endpoint that happened to
+    call the limiter, and it reports a server fault for what is a
+    configuration error. `RATE_LIMIT_FAIL_CLOSED` never saw it.
+
+    `_make_limiter` injects a client, so it cannot reach this path; these
+    tests use the owning constructor.
+    """
+
+    @staticmethod
+    def _unbuildable_shared_pool(
+        monkeypatch: pytest.MonkeyPatch,
+        error: Exception,
+    ) -> None:
+        """Make `from ai_agent.core.redis import redis_client` raise.
+
+        Implemented as a module whose `__getattr__` raises, so the *import
+        statement itself* fails. Storing a `property` on a module would not do:
+        module attribute access returns the property object rather than
+        invoking it, so the acquisition would silently succeed and both tests
+        below would pass whether or not the code under test was correct.
+        """
+        import sys
+        import types
+
+        class _UnusablePool(types.ModuleType):
+            def __getattr__(self, name: str) -> object:
+                if name == "redis_client":
+                    raise error
+                raise AttributeError(name)
+
+        monkeypatch.setitem(
+            sys.modules, "ai_agent.core.redis", _UnusablePool("ai_agent.core.redis")
+        )
+
+    async def test_the_fake_actually_breaks_acquisition(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Guards the guard: without this, a fake that cannot fail would make the
+        # two tests below pass unconditionally, and the mutation-proof of the
+        # whole change would be worthless.
+        self._unbuildable_shared_pool(monkeypatch, ValueError("unusable"))
+        with pytest.raises(ValueError, match="unusable"):
+            await RateLimiter()._get_client()
+
+    async def test_unusable_pool_fails_open_by_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._unbuildable_shared_pool(monkeypatch, ValueError("Redis URL must specify a scheme"))
+        monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_CLOSED", False)
+        limiter = RateLimiter()
+
+        allowed = await limiter.is_allowed(key="ai:nl_query:t-3:u-1", limit=5, window_seconds=60)
+        assert allowed is True
+
+    async def test_unusable_pool_fail_closed_maps_to_503(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._unbuildable_shared_pool(monkeypatch, ValueError("Redis URL must specify a scheme"))
+        monkeypatch.setattr(settings, "RATE_LIMIT_FAIL_CLOSED", True)
+        limiter = RateLimiter()
+
+        with pytest.raises(AiUnavailableError) as exc_info:
+            await limiter.is_allowed(key="ai:nl_query:t-3:u-2", limit=5, window_seconds=60)
+        assert exc_info.value.code == "AI_UNAVAILABLE"
+
+    async def test_a_second_call_reuses_the_shared_pool(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The shared pool is imported once and cached; without this, every
+        # guarded request would re-resolve the module.
+        limiter = _make_limiter(FakeRedis())
+        kwargs = {"key": "ai:nl_query:t-4:u-1", "limit": 5, "window_seconds": 60}
+
+        await limiter.is_allowed(**kwargs)
+        client_after_first = limiter._client
+        await limiter.is_allowed(**kwargs)
+
+        assert limiter._client is client_after_first

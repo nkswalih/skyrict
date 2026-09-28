@@ -50,11 +50,19 @@ class RateLimiter:
 
     def __init__(self, *, redis_client: AsyncRedis | None = None) -> None:
         self._client: AsyncRedis | None = redis_client
-        self._owns_client = redis_client is None
 
-    async def _get_client(self) -> AsyncRedis | None:
-        """Return the shared Redis client (created by core.redis); None if unusable."""
-        if self._client is None and self._owns_client:
+    async def _get_client(self) -> AsyncRedis:
+        """Return the shared Redis client (created by core.redis).
+
+        Deliberately called from *inside* the try block in `is_allowed`. An
+        unusable client is an infrastructure failure exactly like a dropped
+        connection, and must honour ``RATE_LIMIT_FAIL_CLOSED`` rather than
+        escaping as an unhandled 500. A 500 is neither fail-open nor
+        fail-closed: it happens to close, but only on the endpoint that
+        happened to call the limiter, and it reports a server fault for what is
+        a configuration error.
+        """
+        if self._client is None:
             # The service owns ONE shared Redis pool (core.redis), closed by
             # the lifespan at shutdown - the limiter must not create another.
             from ai_agent.core.redis import redis_client
@@ -64,10 +72,8 @@ class RateLimiter:
 
     async def is_allowed(self, *, key: str, limit: int, window_seconds: int) -> bool:
         """Return True when the key is within the limit for this window."""
-        client = await self._get_client()
-        if client is None:
-            return True
         try:
+            client = await self._get_client()
             window = int(time.time()) // max(window_seconds, 1)
             rl_key = f"rl:{key}:{window}"
             count = int(await client.incr(rl_key))
