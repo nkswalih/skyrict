@@ -27,30 +27,37 @@ from skyrict_common.exceptions import (
     UserNotFoundError,
     ValidationError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 logger = logging.getLogger("{name}.exceptions")
 
+# Module-private alias of the shared public error contract. An RFC 7807 problem
+# `type` is a published identifier that clients branch on, so the base belongs in
+# skyrict-common rather than being restated per service - that is how it drifted
+# to a retired domain in every service at once (pre-release audit finding 16).
+_PROBLEM_BASE = PROBLEM_BASE_URL
+
 _STATUS_MAP: dict[type, tuple[int, str]] = {
-    TokenExpiredError: (401, "https://api.skyrict.io/problems/token-expired"),
-    TokenInvalidError: (401, "https://api.skyrict.io/problems/token-invalid"),
-    AuthenticationError: (401, "https://api.skyrict.io/problems/authentication-error"),
-    AuthorizationError: (403, "https://api.skyrict.io/problems/authorization-error"),
-    MFARequiredError: (403, "https://api.skyrict.io/problems/mfa-required"),
-    UserNotFoundError: (404, "https://api.skyrict.io/problems/user-not-found"),
-    TenantNotFoundError: (404, "https://api.skyrict.io/problems/tenant-not-found"),
-    UserAlreadyExistsError: (409, "https://api.skyrict.io/problems/user-already-exists"),
-    ValidationError: (422, "https://api.skyrict.io/problems/validation-error"),
-    RateLimitExceededError: (429, "https://api.skyrict.io/problems/rate-limit-exceeded"),
-    TenantDisabledError: (403, "https://api.skyrict.io/problems/tenant-disabled"),
-    UserDisabledError: (403, "https://api.skyrict.io/problems/user-disabled"),
-    TenantContextMissingError: (400, "https://api.skyrict.io/problems/tenant-context-missing"),
+    TokenExpiredError: (401, f"{_PROBLEM_BASE}/token-expired"),
+    TokenInvalidError: (401, f"{_PROBLEM_BASE}/token-invalid"),
+    AuthenticationError: (401, f"{_PROBLEM_BASE}/authentication-error"),
+    AuthorizationError: (403, f"{_PROBLEM_BASE}/authorization-error"),
+    MFARequiredError: (403, f"{_PROBLEM_BASE}/mfa-required"),
+    UserNotFoundError: (404, f"{_PROBLEM_BASE}/user-not-found"),
+    TenantNotFoundError: (404, f"{_PROBLEM_BASE}/tenant-not-found"),
+    UserAlreadyExistsError: (409, f"{_PROBLEM_BASE}/user-already-exists"),
+    ValidationError: (422, f"{_PROBLEM_BASE}/validation-error"),
+    RateLimitExceededError: (429, f"{_PROBLEM_BASE}/rate-limit-exceeded"),
+    TenantDisabledError: (403, f"{_PROBLEM_BASE}/tenant-disabled"),
+    UserDisabledError: (403, f"{_PROBLEM_BASE}/user-disabled"),
+    TenantContextMissingError: (400, f"{_PROBLEM_BASE}/tenant-context-missing"),
 }
 
 
 async def skyrict_error_handler(request: Request, exc: SkyrictError) -> JSONResponse:
     """Map SkyrictError to an RFC 7807 problem+json response."""
     status_code, problem_type = _STATUS_MAP.get(
-        type(exc), (500, "https://api.skyrict.io/problems/internal-error")
+        type(exc), (500, f"{_PROBLEM_BASE}/internal-error")
     )
 
     body: dict = {
@@ -80,7 +87,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
     return JSONResponse(
         status_code=500,
         content={
-            "type": "https://api.skyrict.io/problems/internal-error",
+            "type": f"{_PROBLEM_BASE}/internal-error",
             "status": 500,
             "title": "Internal Server Error",
             "detail": "An unexpected error occurred. Please try again later.",

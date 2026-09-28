@@ -19,28 +19,12 @@ API_V1_PREFIX = "/api/v1"
 SERVICE_NAME = "identity"
 SERVICE_VERSION = "0.1.0"
 
-# ---------------------------------------------------------------------------
-# Problem type URIs (RFC 7807)
-# ---------------------------------------------------------------------------
-PROBLEM_BASE_URL = "https://api.skyrict.io/problems"
-
-PROBLEM_TOKEN_EXPIRED = f"{PROBLEM_BASE_URL}/token-expired"
-PROBLEM_TOKEN_INVALID = f"{PROBLEM_BASE_URL}/token-invalid"
-PROBLEM_TOKEN_REUSE_DETECTED = f"{PROBLEM_BASE_URL}/token-reuse-detected"
-PROBLEM_AUTHENTICATION_ERROR = f"{PROBLEM_BASE_URL}/authentication-error"
-PROBLEM_EMAIL_NOT_VERIFIED = f"{PROBLEM_BASE_URL}/email-not-verified"
-PROBLEM_AUTHORIZATION_ERROR = f"{PROBLEM_BASE_URL}/authorization-error"
-PROBLEM_MFA_REQUIRED = f"{PROBLEM_BASE_URL}/mfa-required"
-PROBLEM_USER_NOT_FOUND = f"{PROBLEM_BASE_URL}/user-not-found"
-PROBLEM_TENANT_NOT_FOUND = f"{PROBLEM_BASE_URL}/tenant-not-found"
-PROBLEM_USER_ALREADY_EXISTS = f"{PROBLEM_BASE_URL}/user-already-exists"
-PROBLEM_VALIDATION_ERROR = f"{PROBLEM_BASE_URL}/validation-error"
-PROBLEM_RATE_LIMIT_EXCEEDED = f"{PROBLEM_BASE_URL}/rate-limit-exceeded"
-PROBLEM_TENANT_DISABLED = f"{PROBLEM_BASE_URL}/tenant-disabled"
-PROBLEM_USER_DISABLED = f"{PROBLEM_BASE_URL}/user-disabled"
-PROBLEM_TENANT_CONTEXT_MISSING = f"{PROBLEM_BASE_URL}/tenant-context-missing"
-PROBLEM_TENANT_MISMATCH = f"{PROBLEM_BASE_URL}/tenant-mismatch"
-PROBLEM_INTERNAL_ERROR = f"{PROBLEM_BASE_URL}/internal-error"
+# NOTE: RFC 7807 problem types are NOT defined here. They used to be - a
+# PROBLEM_BASE_URL literal plus 21 derived PROBLEM_* constants, none of which
+# anything outside this file ever read, alongside a second, live copy in
+# core/exceptions.py. Two definitions of one published contract is how the base
+# drifted to a retired domain (pre-release audit finding 16). The base now lives
+# in skyrict_common.problems, and core/exceptions.py is the only consumer.
 
 # ---------------------------------------------------------------------------
 # Default values
@@ -296,8 +280,3 @@ INVITATION_TOKEN_EXPIRE_DAYS = 7
 # Employee-portal invites are shorter-lived (spec: single-use, 72h).
 EMPLOYEE_INVITE_TOKEN_EXPIRE_HOURS = 72
 DEFAULT_INVITE_ROLE = "standard_user"
-
-PROBLEM_INVITATION_NOT_FOUND = f"{PROBLEM_BASE_URL}/invitation-not-found"
-PROBLEM_INVITATION_EXPIRED = f"{PROBLEM_BASE_URL}/invitation-expired"
-PROBLEM_INVITATION_ALREADY_USED = f"{PROBLEM_BASE_URL}/invitation-already-used"
-PROBLEM_INVITATION_EMAIL_MISMATCH = f"{PROBLEM_BASE_URL}/invitation-email-mismatch"

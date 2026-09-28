@@ -35,6 +35,7 @@ from skyrict_common.exceptions import (
     SessionNotFoundError,
     SkyrictError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 
 class TeamNotFoundError(NotFoundError):
@@ -153,7 +154,7 @@ async def test_not_found_returns_rfc7807(http_client: httpx.AsyncClient) -> None
     _assert_rfc7807_shape(
         response.json(),
         404,
-        "https://api.skyrict.io/problems/not-found",
+        f"{PROBLEM_BASE_URL}/not-found",
         "User does not exist",
     )
     assert response.json()["title"] == "NotFoundError"
@@ -164,7 +165,7 @@ async def test_unmapped_subclass_maps_via_mro(http_client: httpx.AsyncClient) ->
     response = await http_client.get("/test/boom/team-not-found")
     assert response.status_code == 404
     body = response.json()
-    assert body["type"] == "https://api.skyrict.io/problems/not-found"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/not-found"
     assert body["title"] == "TeamNotFoundError"
 
 
@@ -174,7 +175,7 @@ async def test_permission_denied_returns_403(http_client: httpx.AsyncClient) -> 
     _assert_rfc7807_shape(
         response.json(),
         403,
-        "https://api.skyrict.io/problems/permission-denied",
+        f"{PROBLEM_BASE_URL}/permission-denied",
         "You do not have permission to access this resource",
     )
 
@@ -185,7 +186,7 @@ async def test_conflict_returns_409(http_client: httpx.AsyncClient) -> None:
     _assert_rfc7807_shape(
         response.json(),
         409,
-        "https://api.skyrict.io/problems/conflict",
+        f"{PROBLEM_BASE_URL}/conflict",
         "A user with this email already exists",
     )
 
@@ -194,7 +195,7 @@ async def test_session_not_found_returns_404(http_client: httpx.AsyncClient) -> 
     response = await http_client.get("/test/boom/session-not-found")
     assert response.status_code == 404
     body = response.json()
-    assert body["type"] == "https://api.skyrict.io/problems/session-not-found"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/session-not-found"
 
 
 async def test_mfa_verification_returns_403(http_client: httpx.AsyncClient) -> None:
@@ -202,7 +203,7 @@ async def test_mfa_verification_returns_403(http_client: httpx.AsyncClient) -> N
     response = await http_client.get("/test/boom/mfa-verification")
     assert response.status_code == 403
     body = response.json()
-    assert body["type"] == "https://api.skyrict.io/problems/mfa-verification-error"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/mfa-verification-error"
 
 
 async def test_request_validation_error_returns_422(http_client: httpx.AsyncClient) -> None:
@@ -212,7 +213,7 @@ async def test_request_validation_error_returns_422(http_client: httpx.AsyncClie
     _assert_rfc7807_shape(
         body,
         422,
-        "https://api.skyrict.io/problems/validation-error",
+        f"{PROBLEM_BASE_URL}/validation-error",
         body["detail"],
     )
     assert body["title"] == "Validation Error"
@@ -225,7 +226,7 @@ async def test_route_not_found_returns_rfc7807(http_client: httpx.AsyncClient) -
     response = await http_client.get("/test/does-not-exist")
     assert response.status_code == 404
     body = response.json()
-    assert body["type"] == "https://api.skyrict.io/problems/http-404"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/http-404"
     assert body["status"] == 404
     assert isinstance(body["instance"], str)
 
@@ -234,7 +235,7 @@ async def test_unhandled_exception_returns_sanitized_500(http_client: httpx.Asyn
     response = await http_client.get("/test/boom/unhandled")
     assert response.status_code == 500
     body = response.json()
-    assert body["type"] == "https://api.skyrict.io/problems/internal-error"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/internal-error"
     assert body["title"] == "Internal Server Error"
     assert body["detail"] == "An unexpected error occurred. Please try again later."
 
@@ -297,7 +298,7 @@ def test_no_skyrict_subclass_falls_through_to_generic_internal_error(exc_cls) ->
     assert problem_type != f"{identity_exceptions._PROBLEM_BASE}/internal-error", (
         f"{exc_cls.__name__} unmapped - resolves to generic internal-error"
     )
-    assert problem_type.startswith("https://api.skyrict.io/problems/")
+    assert problem_type.startswith(f"{PROBLEM_BASE_URL}/")
 
 
 @pytest.mark.parametrize(

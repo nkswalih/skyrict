@@ -30,12 +30,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ai_agent.core.constants import (
-    PROBLEM_AI_DATA_RESIDENCY,
-    PROBLEM_AI_INVALID_RESPONSE,
-    PROBLEM_AI_RATE_LIMITED,
-    PROBLEM_AI_UNAVAILABLE,
-)
 from skyrict_common.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -51,6 +45,7 @@ from skyrict_common.exceptions import (
     TokenInvalidError,
     ValidationError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 __all__ = [
     "AiDataResidencyError",
@@ -136,7 +131,13 @@ class AiDataResidencyError(SkyrictError):
     code = "AI_DATA_RESIDENCY"
 
 
-_PROBLEM_BASE = "https://api.skyrict.io/problems"
+# Module-private alias of the shared public error contract. An RFC 7807 problem
+# `type` is a published identifier that clients branch on, so the base belongs
+# in one place in skyrict-common rather than being restated per service. It was
+# restated per service, twice over (once here, once in core/constants.py), and
+# drifted to a retired domain while the live host moved on - pre-release audit
+# finding 16. The alias keeps the f-strings below short and file-private.
+_PROBLEM_BASE = PROBLEM_BASE_URL
 
 # Mapping from exception type to HTTP status code and problem type URI.
 # Lookup walks the MRO (exact type wins, base classes provide the generic
@@ -154,11 +155,12 @@ _STATUS_MAP: dict[type, tuple[int, str]] = {
     NotFoundError: (404, f"{_PROBLEM_BASE}/not-found"),
     TenantNotFoundError: (404, f"{_PROBLEM_BASE}/tenant-not-found"),
     ValidationError: (422, f"{_PROBLEM_BASE}/validation-error"),
-    # AI error contract (SKY-57).
-    AiUnavailableError: (503, PROBLEM_AI_UNAVAILABLE),
-    AiInvalidResponseError: (502, PROBLEM_AI_INVALID_RESPONSE),
-    AiRateLimitError: (429, PROBLEM_AI_RATE_LIMITED),
-    AiDataResidencyError: (422, PROBLEM_AI_DATA_RESIDENCY),
+    # AI error contract (SKY-57). The frontend mock-fallback policy keys off
+    # `ai-unavailable` - keep the slug stable.
+    AiUnavailableError: (503, f"{_PROBLEM_BASE}/ai-unavailable"),
+    AiInvalidResponseError: (502, f"{_PROBLEM_BASE}/ai-invalid-response"),
+    AiRateLimitError: (429, f"{_PROBLEM_BASE}/ai-rate-limited"),
+    AiDataResidencyError: (422, f"{_PROBLEM_BASE}/ai-data-residency"),
 }
 
 _DEFAULT_STATUS = (500, f"{_PROBLEM_BASE}/internal-error")
