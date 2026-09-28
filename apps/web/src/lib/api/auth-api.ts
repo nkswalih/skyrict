@@ -227,23 +227,25 @@ export async function verifyMfa(input: {
 // Onboarding wizard (through the BFF)
 // ---------------------------------------------------------------------------
 
-export interface RiskAssessment {
-    requiresCaptcha: boolean;
-    requiresChallenge: boolean;
-    signals: string[];
-}
-
-export async function assessRisk(): Promise<RiskAssessment> {
-    return {
-        requiresCaptcha: true,
-        requiresChallenge: false,
-        signals: [],
-    };
-}
-
-export async function solveCaptcha(): Promise<{ status: "ok" }> {
-    return { status: "ok" };
-}
+// NOTE: there is deliberately no client-side "assess risk" or "solve captcha"
+// helper here.
+//
+// Both existed and both were hardcoded stubs returning a fabricated verdict
+// (assessRisk() always said a captcha was required; solveCaptcha() always
+// returned "ok" without a network call). The sign-up UI rendered a checkbox
+// that flipped itself to "Verified" purely because a stub said so, while the
+// server had verified nothing. Combined with identity failing closed on an
+// unconfigured Turnstile secret, that produced the worst possible outcome: the
+// user was told they were verified, filled in the entire form, and only then
+// learned from a 4xx that nothing had ever been checked.
+//
+// Risk scoring is a server-side decision, made from signals the browser cannot
+// see (IP reputation, prior failure counts, account age). Duplicating it on the
+// client can only ever be wrong. The real challenge is the server-issued text
+// CAPTCHA at GET /api/v1/auth/signup/captcha, answered and verified as part of
+// POST /api/v1/auth/signup/password.
+//
+// See docs/runbooks/pre-release-audit-2026-09.md finding 23.
 
 export async function signupStart(input: {
     email: string;

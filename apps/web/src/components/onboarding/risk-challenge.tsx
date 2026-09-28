@@ -1,16 +1,35 @@
 "use client";
-import { AiGlyph, Logo } from "@/components/brand/logo";
+import { Logo } from "@/components/brand/logo";
 
-import { Spinner } from "@/components/ui/spinner";
 import { useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 
-import { Checkbox } from "@/components/ui/checkbox";
 import { TurnstileWidget } from "@/components/onboarding/turnstile-widget";
+import {
+    canProceed,
+    resolveRiskGate,
+    type RiskGateMode,
+} from "@/components/onboarding/risk-gate";
 import { env } from "@/config/env";
-import { assessRisk, solveCaptcha } from "@/lib/api/auth-api";
 import { cn } from "@/lib/utils";
 
+/**
+ * The anti-bot gate in front of self-service sign-up.
+ *
+ * One rule governs this component: it must never report a verification that
+ * did not happen.
+ *
+ * A Turnstile token being issued is NOT a verification. Cloudflare checks the
+ * browser and hands back a token; the server exchanges that token for a verdict
+ * at sign-up time. So this component may say "checking", and it may let the user
+ * through to the form once a token exists - but it must not claim the user is
+ * verified, because at this point nobody has verified anything.
+ *
+ * The previous implementation had a checkbox that called a hardcoded stub
+ * returning `{ status: "ok" }` and flipped itself to "Verified" without a single
+ * network call, so the user was told they had passed a check that never ran.
+ * See docs/runbooks/pre-release-audit-2026-09.md finding 23.
+ */
 function RiskChallenge({
     demoCaptcha = false,
     onValidChange,
@@ -18,57 +37,69 @@ function RiskChallenge({
     onTokenChange,
 }: {
     demoCaptcha?: boolean;
+    /** True once a challenge token exists and is ready to submit. */
     onValidChange?: (valid: boolean) => void;
     onShowChange?: (visible: boolean) => void;
     onTokenChange?: (token: string | null) => void;
 }) {
     const [show, setShow] = useState(false);
-    const [state, setState] = useState<"idle" | "verifying" | "verified">(
-        "idle",
-    );
-    const [checked, setChecked] = useState(false);
-    const [done, setDone] = useState(false);
+    const [token, setToken] = useState<string | null>(null);
 
-    const useTurnstile = Boolean(env.turnstileSiteKey);
+    // The policy lives in risk-gate.ts so it can be tested without a DOM; this
+    // component is only its renderer. See that file for why the client is never
+    // entitled to claim a verification.
+    const mode: RiskGateMode = resolveRiskGate({
+        turnstileSiteKey: env.turnstileSiteKey,
+        demoCaptcha,
+    });
+
+    // The honeypot. A real, off-screen, name="website" input that a human never
+    // sees and a bot fills in. Kept in every branch - it is the one defence
+    // that still works when the challenge provider is missing.
+    const honeypot = (
+        <input
+            aria-hidden="true"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            className="absolute -left-[9999px] h-0 w-0"
+        />
+    );
 
     useEffect(() => {
-        let cancelled = false;
-        assessRisk().then((risk) => {
-            if (cancelled) return;
-            const visible = risk.requiresCaptcha || demoCaptcha;
-            setShow(visible);
-            onShowChange?.(visible);
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [demoCaptcha, onShowChange]);
+        // No round trip. The previous implementation asked assessRisk() whether
+        // a captcha was required, but that was a stub that always answered yes,
+        // so the request bought nothing and could only ever disagree with the
+        // server.
+        //
+        // Reports only the mode-derived decision. Every token-driven change
+        // goes through handleToken, which is the single source for those - two
+        // paths reporting validity would be able to contradict each other.
+        // canProceed(mode, null) is the answer with no token in hand: a
+        // challenge is not satisfied, an unavailable gate is not satisfied, and
+        // a gate that does not apply does not obstruct anything.
+        const visible = mode !== "hidden";
+        setShow(visible);
+        onShowChange?.(visible);
+        onValidChange?.(canProceed(mode, null));
+    }, [mode, onShowChange, onValidChange]);
 
-    if (useTurnstile) {
-        if (!show) {
-            return (
-                <div aria-hidden="true" className="hidden">
-                    <input
-                        name="website"
-                        tabIndex={-1}
-                        autoComplete="off"
-                        aria-hidden="true"
-                        className="absolute -left-[9999px] h-0 w-0"
-                    />
-                </div>
-            );
-        }
+    function handleToken(next: string | null) {
+        setToken(next);
+        onTokenChange?.(next);
+        // canProceed, not `Boolean(next)`: in the unavailable mode a stray token
+        // must not open a closed gate.
+        onValidChange?.(canProceed(mode, next));
+    }
 
-        function handleToken(token: string | null) {
-            onTokenChange?.(token);
-            onValidChange?.(Boolean(token));
-            setDone(Boolean(token));
-        }
+    if (!show) {
+        return <div aria-hidden="true" className="hidden">{honeypot}</div>;
+    }
 
-        // Full-page verification in the style of Cloudflare's challenge pages:
-        // a full-viewport screen with the brand and the Turnstile widget cross-
-        // fades away as soon as a token is issued, revealing the form beneath.
-        // The widget stays mounted (invisible) so expired tokens re-open it.
+    // --- Provider configured: the managed challenge -------------------------
+    if (mode === "challenge") {
+        const done = Boolean(token);
+
         return (
             <div
                 aria-hidden={done}
@@ -82,114 +113,60 @@ function RiskChallenge({
                     <div className="flex flex-col items-center gap-2">
                         <Logo className="text-foreground" />
                         <h2 className="font-display text-xl font-semibold text-foreground">
-                            Verifying you are human
+                            One quick check
                         </h2>
+                        {/* Truthful on both counts: a check IS running, and it
+                            has not finished yet. The old copy - "Verifying you
+                            are human" - asserted an outcome the client cannot
+                            know and has not earned. */}
                         <p className="text-sm text-muted-foreground">
-                            This protects Skyrict from automated abuse.
+                            Confirm you&apos;re human so we can keep automated
+                            sign-ups out.
                         </p>
                     </div>
                     <TurnstileWidget
                         siteKey={env.turnstileSiteKey}
                         onTokenChange={handleToken}
                     />
+                    <p className="text-xs text-muted-foreground">
+                        Your answers are checked when you submit, not just in
+                        your browser.
+                    </p>
                 </div>
             </div>
         );
     }
 
-    async function handleToggle(checked: boolean | "indeterminate") {
-        if (!checked) {
-            setState("idle");
-            setChecked(false);
-            onValidChange?.(false);
-            onTokenChange?.(null);
-            return;
-        }
-        setState("verifying");
-        const result = await solveCaptcha();
-        if (result.status === "ok") {
-            setState("verified");
-            setChecked(true);
-            onValidChange?.(true);
-            onTokenChange?.(null);
-        } else {
-            setState("idle");
-            setChecked(false);
-            onValidChange?.(false);
-            onTokenChange?.(null);
-        }
-    }
-
-    if (!show) {
-        return (
-            <div aria-hidden="true" className="hidden">
-                <input
-                    name="website"
-                    tabIndex={-1}
-                    autoComplete="off"
-                    aria-hidden="true"
-                    className="absolute -left-[9999px] h-0 w-0"
-                />
-            </div>
-        );
-    }
-
+    // --- No provider configured: say so, and do not let anyone through -------
+    // The deployment is misconfigured. Rendering a control that looks like a
+    // gate but passes everyone is strictly worse than refusing: it hides the
+    // fault from the user and from the operator, and it leaves the sign-up
+    // endpoint to reject every attempt with an opaque 4xx. Say what is wrong.
     return (
-        <div className="rounded-lg border border-border bg-muted/40 p-3 shadow-sm">
-            <div className="flex items-center gap-3">
-                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-card">
-                    <ShieldCheck
+        <div
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 shadow-sm"
+        >
+            <div className="flex items-start gap-3">
+                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-destructive/40 bg-card">
+                    <ShieldAlert
                         aria-hidden="true"
-                        className="size-5 text-primary"
-                    />
-                    <span
-                        aria-hidden="true"
-                        className={cn(
-                            "pointer-events-none absolute inset-0 rounded-full opacity-30 transition-transform",
-                            "bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.9),transparent_45%)]",
-                        )}
+                        className="size-5 text-destructive"
                     />
                 </div>
-                <label className="flex flex-1 cursor-pointer items-center gap-3">
-                    <Checkbox
-                        checked={checked}
-                        onCheckedChange={handleToggle}
-                        disabled={state === "verifying"}
-                        aria-label="I'm not a robot"
-                    />
-                    <span className="text-sm font-medium">
-                        I&apos;m not a robot
-                    </span>
-                    {state === "verifying" && (
-                        <Spinner
-                            aria-hidden="true"
-                            className="ml-auto size-4 text-muted-foreground"
-                        />
-                    )}
-                    {state === "verified" && (
-                        <AiGlyph
-                            aria-hidden="true"
-                            className="ml-auto size-4 text-primary"
-                        />
-                    )}
-                </label>
+                <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                        Sign-up is unavailable
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        No CAPTCHA provider is configured for this environment,
+                        so sign-up is closed rather than left unprotected. An
+                        administrator needs to set the Turnstile site key. We are
+                        not showing a check that would not actually be enforced.
+                    </p>
+                </div>
             </div>
-            <div className="mt-2 flex items-center justify-between border-t border-border/70 pt-2">
-                <p className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <AiGlyph aria-hidden="true" className="size-3" />
-                    Skyrict Shield
-                </p>
-                <p className="font-mono text-[10px] text-muted-foreground">
-                    {state === "verified" ? "Verified" : <>Privacy Terms</>}
-                </p>
-            </div>
-            <input
-                aria-hidden="true"
-                name="website"
-                tabIndex={-1}
-                autoComplete="off"
-                className="absolute -left-[9999px] h-0 w-0"
-            />
+            {honeypot}
         </div>
     );
 }
