@@ -1,0 +1,319 @@
+# =============================================================================
+# Skyrict API Gateway - nginx configuration
+#
+# Azure Container Apps ingress is host-based only: it cannot route on path. To
+# serve a single public origin (api.skyrict.in) in front of identity, core and
+# ai-agent, the path-based split has to live in a reverse proxy. This file is
+# that proxy. It is rendered by /docker-entrypoint.sh, which substitutes:
+#
+#   __RESOLVER__           the container's upstream DNS server
+#   __IDENTITY_BACKEND__   identity base URL  (default http://identity:8000)
+#   __IDENTITY_HOST__      identity Host header value
+#   __CORE_BACKEND__       core base URL      (default http://core:8001)
+#   __CORE_HOST__          core Host header value
+#
+# ROUTE MAP DRIFT WARNING
+# ----------------------
+# The `skyrict_api_segment` map below is a DUPLICATE of the segment list in
+# apps/web/src/app/api/v1/[...path]/route.ts. Both implement the same rule:
+#
+#   the first path segment after /api/v1/ selects the backend, and a path
+#   ending in /download always goes to core regardless of segment.
+#
+# Drift here silently misroutes traffic - a wrong segment sends a CRM request
+# to identity, which answers a well-formed 404 that looks like a client bug.
+# apps/web/src/lib/server/gateway-route-map.test.ts asserts the two lists match. If
+# you add a segment to one, add it to the other.
+# =============================================================================
+
+worker_processes auto;
+# /tmp because the image runs as non-root: /var/run is not writable by uid 101
+# in every base-image variant, and a failed pid write is a crash loop.
+error_log /var/log/nginx/error.log warn;
+pid /tmp/nginx.pid;
+
+events {
+    # ACA load balancing: one gateway replica serves concurrent SSE streams and
+    # long-lived requests, so keep the file-descriptor ceiling high. Each SSE
+    # client holds a connection for the life of the turn.
+    worker_connections 4096;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # Upstream target is included so a misroute is visible in the access log
+    # without having to correlate against the nginx config.
+    log_format  gateway  '$remote_addr $host "$request" $status $body_bytes_sent '
+                         'rt=$request_time urt=$upstream_response_time '
+                         'up=$skyrict_api_backend';
+
+    access_log  /var/log/nginx/access.log  gateway;
+
+    # Resolved at request time, not at startup. ACA replaces a container app's
+    # replica IP on every revision change; an upstream block resolved once at
+    # boot would go stale and 502 every request until the gateway restarted.
+    # Only required because proxy_pass below uses variables - nginx cannot
+    # resolve a literal at request time.
+    resolver  __RESOLVER__  ipv6=off  valid=30s;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout  75s;
+    server_tokens   off;
+
+    # All temp paths under /tmp because the image runs as non-root: nginx
+    # creates these directories at config load, and /var/cache/nginx is
+    # root-owned in the base image, so leaving the defaults fails with EACCES and
+    # the gateway never starts. Most of these stay effectively unused - the API
+    # location sets proxy_request_buffering and proxy_buffering off for SSE - but
+    # nginx still creates every one of them at startup, so all five must move.
+    client_body_temp_path /tmp/nginx/client-body;
+    proxy_temp_path       /tmp/nginx/proxy;
+    fastcgi_temp_path     /tmp/nginx/fastcgi;
+    uwsgi_temp_path       /tmp/nginx/uwsgi;
+    scgi_temp_path        /tmp/nginx/scgi;
+
+    # Document uploads travel as multipart/form-data through /api/v1/documents.
+    # 32m matches the backend's own per-file ceiling; below it nginx would
+    # reject with its own HTML 413 instead of the API's JSON error envelope.
+    client_max_body_size    32m;
+    client_body_timeout     120s;
+    client_header_timeout   30s;
+
+    # ------------------------------------------------------------------------
+    # Route map - see the DRIFT WARNING above before editing.
+    # ------------------------------------------------------------------------
+
+    # First path segment after the API prefix, with the /download rule folded in.
+    # "" when the path is not under /api/v1/ at all, which routes to identity by
+    # the default below.
+    #
+    # Keyed on $request_uri, NOT $uri. The location block below rewrites $uri to
+    # strip the /api/v1 prefix, and if this map read $uri it would evaluate
+    # against the already-stripped path, match nothing, and send every request
+    # to identity. $request_uri is the original request-line URI, unaffected by
+    # the rewrite. The segment regex stops at "?" so a query string never leaks
+    # into the segment - /api/v1/documents?page=1 must route to core.
+    #
+    # nginx tests regex keys in declaration order and takes the first match, so
+    # the /download override must be declared before the segment pattern. The
+    # override yields "documents" because route.ts:69-70 sends every /download
+    # path to core regardless of segment: those are byte streams out of the
+    # document/report store and identity does not serve them. Overriding the
+    # SEGMENT rather than the resolved backend keeps the target map below at a
+    # single level of indirection - a map whose value is another map's variable
+    # makes proxy_pass fail at runtime with "invalid URL prefix".
+    map $request_uri $skyrict_api_segment {
+        default                                "";
+        "~^/api/v1/.*/download(\?.*)?$"        documents;
+        "~^/api/v1/([^/?]+)"                   $1;
+    }
+
+    # Segment -> backend URL. The values are substituted at render time so the
+    # map result is a literal URL; nginx does not re-expand a variable that a
+    # map value refers to, so indirection here would break proxy_pass.
+    map $skyrict_api_segment $skyrict_api_backend {
+        default                __IDENTITY_BACKEND__;
+
+        crm                    __CORE_BACKEND__;
+        sales                  __CORE_BACKEND__;
+        finance                __CORE_BACKEND__;
+        inventory              __CORE_BACKEND__;
+        hr                     __CORE_BACKEND__;
+        payroll                __CORE_BACKEND__;
+        portal                 __CORE_BACKEND__;
+        ai                     __CORE_BACKEND__;
+        approval               __CORE_BACKEND__;
+        dashboards             __CORE_BACKEND__;
+        reports                __CORE_BACKEND__;
+        documents              __CORE_BACKEND__;
+        notifications          __CORE_BACKEND__;
+    }
+
+    # ACA's internal ingress matches the Host header against the target app's
+    # FQDN. The incoming Host is api.skyrict.in, which is not one of them, so
+    # the gateway rewrites Host to the backend's own name. Forwarding the public
+    # Host makes ACA fail to match a route and return 404.
+    map $skyrict_api_backend $skyrict_api_host {
+        default                    __IDENTITY_HOST__;
+        "__CORE_BACKEND__"         __CORE_HOST__;
+    }
+
+    # route.ts:69-70's /download rule is folded into the segment map above, so
+    # this map holds literals only. A map whose value is another map's variable
+    # makes proxy_pass fail at runtime with "invalid URL prefix".
+
+    # ------------------------------------------------------------------------
+    # Shared proxy settings
+    # ------------------------------------------------------------------------
+
+    # Client headers (Authorization, X-Tenant-Slug, Origin, Range, Cookie) are
+    # forwarded as-is by nginx's default, and that default is load-bearing: the
+    # session-cookie fallback and the tenant routing hint both depend on those
+    # headers arriving unchanged. Do not replace this with an explicit
+    # allow-list without re-testing the cookie-only and multipart paths.
+
+    proxy_set_header X-Real-IP          $remote_addr;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-Host   $host;
+    proxy_set_header X-Forwarded-Port   $server_port;
+
+    # ---------------------------------------------------------------------
+    # Server
+    # ---------------------------------------------------------------------
+
+    # server_name is the wildcard on purpose. One container serves whichever
+    # hostname the managed certificate is bound to, and ACA already restricts
+    # which hostnames reach this app at the ingress. Matching only
+    # api.skyrict.in here would reject requests that arrive with the
+    # container's own generated FQDN - which is exactly how ACA validates a
+    # custom domain before it will issue the certificate for it.
+    server {
+        listen      8080 default_server;
+        server_name _;
+
+        # A gateway is the last hop before the internet; do not advertise
+        # the nginx version in responses or on error pages.
+        server_tokens off;
+
+        # ------------------------------------------------------------------------
+        # The API
+        # ------------------------------------------------------------------------
+
+        location /api/v1/ {
+            # ACA internal routing needs the target app's own name in Host.
+            proxy_set_header Host $skyrict_api_host;
+
+            # The path is forwarded UNCHANGED, prefix included. The backends
+            # mount their routers at /api/v1 - identity serves /api/v1/health,
+            # core serves /api/v1/crm/... - so stripping the prefix here would
+            # 404 every real request. The BFF strips and re-adds it for its own
+            # reasons: it strips to pick the segment (route.ts:59-65) and
+            # re-adds it in callBackend (auth.ts:235 builds
+            # `${apiBase(target)}/api/v1${path}`). The gateway has no reason to
+            # touch the path at all, and leaving it alone makes the public path
+            # and the upstream path identical by construction rather than by two
+            # copies of the same rule having to agree.
+            #
+            # The /download override is applied upstream of this, in
+            # $skyrict_api_segment, so there is nothing to add here.
+            #
+            # Variables in proxy_pass: the URI and query string must be supplied
+            # explicitly, because nginx does not append the original args to a
+            # variable-form target. Without $is_args$args every filtered list
+            # endpoint silently drops its pagination.
+            proxy_pass $skyrict_api_backend$uri$is_args$args;
+
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+
+            # Buffering off is mandatory for the chat SSE stream. With buffering on,
+            # nginx holds tokens until the response completes and the browser shows
+            # an empty panel for the whole turn, then dumps it all at once.
+            proxy_buffering         off;
+            proxy_cache             off;
+            proxy_request_buffering off;
+            add_header X-Accel-Buffering "no" always;
+
+            # An agent turn can spend minutes inside tool calls, and the stream
+            # stays open for the whole turn rather than per chunk.
+            proxy_connect_timeout  10s;
+            proxy_send_timeout     3600s;
+            proxy_read_timeout     3600s;
+        }
+
+        # Bare /api/v1 with no resource. Not a real endpoint; 404 in the API's
+        # envelope so clients see the same error shape as every other miss.
+        location = /api/v1 {
+            default_type application/json;
+            return 404 '{"detail":"No API route for this path."}';
+        }
+
+        # ------------------------------------------------------------------------
+        # Probes
+        # ------------------------------------------------------------------------
+
+        # Liveness: nginx is up and the config loaded. Deliberately does NOT check
+        # the backends. If it did, a core rollout would fail the gateway's own
+        # liveness and ACA would restart the gateway in a loop instead of waiting
+        # for core to come back.
+        location = /healthz {
+            access_log off;
+            default_type application/json;
+            return 200 '{"status":"healthy","component":"gateway"}';
+        }
+
+        # Readiness: does the API actually work right now? Probes identity, and on
+        # any non-2xx from identity falls through to core. Both are real HTTP
+        # requests to /api/v1/health, so this catches a backend that is up but
+        # failing - a dead database, a bad config - which a DNS check would not.
+        #
+        # ACA treats any non-2xx as not ready, which is the intent: a gateway that
+        # cannot reach a backend must not receive traffic.
+        location = /readyz {
+            access_log off;
+            default_type application/json;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout    5s;
+            proxy_send_timeout    5s;
+            proxy_next_upstream   off;
+            proxy_http_version 1.1;
+
+            # Host is set per-target, not from the route map: $skyrict_api_host
+            # resolves to identity for /readyz (the URI matches no API segment), so
+            # the core probe below would otherwise send identity's name.
+            proxy_set_header Host __IDENTITY_HOST__;
+            proxy_set_header Connection "";
+
+            # The target goes through a variable, not a literal URL. A literal
+            # proxy_pass is resolved when the config is loaded, so a backend that
+            # is unreachable at boot - a scaled-to-zero sibling, a mid-rollout
+            # replacement - fails `nginx -t` and puts the gateway into
+            # CrashLoopBackOff. A variable target is resolved per request by the
+            # `resolver` above, which is the behaviour the API locations rely on
+            # and the probes have to match.
+            set $probe_backend __IDENTITY_BACKEND__;
+            proxy_pass $probe_backend/api/v1/health;
+
+            error_page 500 502 503 504 = @readyz_core;
+        }
+
+        # Reached only when identity is unhealthy. Propagates core's own status, so
+        # a healthy core can mask an identity outage - acceptable, because the
+        # useful question for the orchestrator is "is any path to the API open",
+        # and identity's own probes report its failure separately.
+        location @readyz_core {
+            access_log off;
+            default_type application/json;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout    5s;
+            proxy_send_timeout    5s;
+            proxy_next_upstream   off;
+            proxy_http_version 1.1;
+
+            proxy_set_header Host __CORE_HOST__;
+            proxy_set_header Connection "";
+
+            # Variable target for the same reason as /readyz above: resolve per
+            # request, not at config load. nginx also forbids a URI part on
+            # proxy_pass inside a named location, so the health path is set with
+            # a rewrite and the target is given without one. With `break`, the
+            # rewritten $uri is what gets sent.
+            set $probe_backend __CORE_BACKEND__;
+            rewrite ^ /api/v1/health break;
+            proxy_pass $probe_backend;
+        }
+
+        # Anything else on this host is a 404 in the API's envelope. There is no
+        # default upstream on purpose: this host serves the API, not the web app,
+        # and silently proxying an unmatched path would mask routing mistakes.
+        location / {
+            default_type application/json;
+            return 404 '{"detail":"No API route for this path. The public API is served under /api/v1/."}';
+        }
+    }
+}
