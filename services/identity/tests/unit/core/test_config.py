@@ -4,7 +4,8 @@ Covers all four staging/production fail-fast checks:
   1. JWT key paths pointing at committed test fixtures
   2. DEBUG=true
   3. CORS_ORIGINS contains '*'
-  4. BASE_DOMAIN missing (tenant subdomain resolution)
+  4. BASE_DOMAIN missing or not a plain domain (tenant subdomain resolution,
+     and the CORS origin regex derived from it)
 """
 
 from __future__ import annotations
@@ -62,8 +63,8 @@ def _make_valid_settings(tmp_path: Path, **overrides) -> dict:
         "REDIS_URL": "redis://localhost:6379/0",
         "JWT_PRIVATE_KEY_PATH": private_path,
         "JWT_PUBLIC_KEY_PATH": public_path,
-        "JWKS_ISSUER": "https://auth.skyrict.io",
-        "JWKS_AUDIENCE": "api.skyrict.io",
+        "JWKS_ISSUER": "https://api.skyrict.in",
+        "JWKS_AUDIENCE": "api.skyrict.in",
         "BASE_DOMAIN": "skyrict.com",
         **overrides,
     }
@@ -214,6 +215,45 @@ class TestProductionSafety:
         )
         assert s.BASE_DOMAIN == "skyrict.com"
 
+    @pytest.mark.parametrize(
+        "bad_domain",
+        [
+            "https://skyrict.in",  # scheme
+            "skyrict.in:443",  # port
+            "localhost:3000",  # host and port
+            "*.skyrict.in",  # wildcard
+            "skyrict.in/tenant",  # path
+        ],
+    )
+    def test_raises_production_unusable_base_domain(self, tmp_path: Path, bad_domain: str):
+        """A BASE_DOMAIN that is set but not a plain domain must refuse to boot.
+
+        Worse than empty: an empty one is caught by the check above, whereas a
+        malformed one resolves no tenant from a Host header *and* degrades the
+        derived CORS regex to None, so tenant origins stop being allowed with
+        no error logged anywhere.
+        """
+        with pytest.raises(RuntimeError, match="plain domain name"):
+            Settings(
+                **_make_valid_settings(
+                    tmp_path,
+                    ENVIRONMENT=Environment.PRODUCTION,
+                    BASE_DOMAIN=bad_domain,
+                )
+            )
+
+    def test_dev_allows_unusable_base_domain(self, tmp_path: Path):
+        """The validity rule is production-only. Local development runs with an
+        empty or host:port BASE_DOMAIN and must not fail to import."""
+        s = Settings(
+            **_make_valid_settings(
+                tmp_path,
+                ENVIRONMENT=Environment.DEV,
+                BASE_DOMAIN="localhost:3000",
+            )
+        )
+        assert s.BASE_DOMAIN == "localhost:3000"
+
 
 class TestMissingRequiredVars:
     """Omitting any required variable must fail fast and name the variable.
@@ -240,6 +280,27 @@ class TestMissingRequiredVars:
         kwargs.pop(field)
         with pytest.raises(ValidationError) as excinfo:
             Settings(**kwargs)  # _env_file=None already in _make_valid_settings
+        assert field in str(excinfo.value)
+
+    # An environment variable that is *set* to "" is present, so Field(...)
+    # accepted it. That is not hypothetical: `redisUrlOverride` defaults to ''
+    # in the IaC, and passing deployManagedRedis=false without setting it
+    # handed identity REDIS_URL='' - which passed settings and then raised
+    # "Redis URL must specify one of the following schemes" at import, minutes
+    # after a green pipeline. DATABASE_URL has the identical defect against
+    # SQLAlchemy. See skyrict_common.config_types and audit finding 10.
+    @pytest.mark.parametrize("field", ["DATABASE_URL", "REDIS_URL"])
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_connection_url_is_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, blank: str
+    ):
+        monkeypatch.setenv(f"IDENTITY_{field}", blank)
+        kwargs = _make_valid_settings(tmp_path)
+        kwargs.pop(field, None)
+        with pytest.raises(ValidationError) as excinfo:
+            Settings(**kwargs)
+        # The message must name the variable, or the operator is back to
+        # grepping pod logs for a driver's error text.
         assert field in str(excinfo.value)
 
     @pytest.mark.parametrize("field", REQUIRED_FIELDS)

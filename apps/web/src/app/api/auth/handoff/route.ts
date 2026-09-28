@@ -11,7 +11,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const ALLOWED_ORIGIN =
-    /^https?:\/\/(?:signup\.|(?:[a-z0-9-]+)\.signin\.)(?:localhost|skyrict\.com)(?::\d+)?$/;
+    /^https?:\/\/(?:signup\.|(?:[a-z0-9-]+)\.signin\.)(?:localhost|skyrict\.in)(?::\d+)?$/;
 
 function allowedOrigin(origin: string | null): boolean {
     // `null` (the header value sent for opaque origins) and a missing header are

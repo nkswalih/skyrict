@@ -14,6 +14,8 @@ from pathlib import Path  # noqa: TC003  # pydantic resolves annotations at runt
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from skyrict_common.cors import is_valid_base_domain
+
 
 class Environment(enum.StrEnum):
     """Deployment environments - exactly four, no ad-hoc values."""
@@ -92,10 +94,10 @@ class Settings(BaseSettings):
         ..., description="path to RSA public key PEM for verifying identity tokens - REQUIRED"
     )
     JWKS_ISSUER: str = Field(
-        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
+        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://api.skyrict.in"
     )
     JWKS_AUDIENCE: str = Field(
-        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.io"
+        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"
     )
 
     # --- CORS ---
@@ -491,7 +493,8 @@ class Settings(BaseSettings):
           1. The public key must not point at committed test fixtures.
           2. DEBUG must be False.
           3. CORS_ORIGINS must not contain wildcard '*'.
-          4. BASE_DOMAIN must be set (tenant subdomain resolution).
+          4. BASE_DOMAIN must be set and be a plain domain name (tenant subdomain
+           resolution, and the CORS origin regex derived from it).
         """
         if self.ENVIRONMENT not in (Environment.STAGING, Environment.PRODUCTION):
             return self
@@ -522,6 +525,17 @@ class Settings(BaseSettings):
                 "CORE_BASE_DOMAIN is required in staging/production so "
                 "tenant subdomains (e.g. acme.skyrict.com) can be resolved "
                 "from the Host header."
+            )
+        elif not is_valid_base_domain(self.BASE_DOMAIN):
+            # A BASE_DOMAIN that is set but unusable (a scheme, a port, a
+            # wildcard) is worse than an empty one. It resolves nothing from a
+            # Host header, and the CORS regex derived from it degrades to None,
+            # so tenant origins silently stop being allowed with no error
+            # anywhere. Refuse to boot instead.
+            errors.append(
+                f"CORE_BASE_DOMAIN must be a plain domain name such as "
+                f"'skyrict.in' (no scheme, port, path or wildcard), but is "
+                f"{self.BASE_DOMAIN!r}."
             )
 
         if errors:

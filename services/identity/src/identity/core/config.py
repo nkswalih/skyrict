@@ -14,6 +14,12 @@ from pathlib import Path  # noqa: TC003  # pydantic resolves annotations at runt
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# NonEmptyStr is a runtime type here: pydantic builds the field validator while
+# creating the class, so moving it into a TYPE_CHECKING block would fail at
+# import. Same reason Path above carries a noqa.
+from skyrict_common.config_types import NonEmptyStr  # noqa: TC001
+from skyrict_common.cors import is_valid_base_domain
+
 
 class Environment(enum.StrEnum):
     """Deployment environments - exactly four, no ad-hoc values."""
@@ -48,7 +54,9 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False, description="enable debug mode")
 
     # --- Database (CRITICAL - no default) ---
-    DATABASE_URL: str = Field(..., description="async PostgreSQL connection string - REQUIRED")
+    DATABASE_URL: NonEmptyStr = Field(
+        ..., description="async PostgreSQL connection string - REQUIRED, must not be empty"
+    )
 
     # --- DB connection pool (SKY-99, ADR-007) ---
     # Env-driven so staging/production can size the pool to the actual
@@ -84,7 +92,13 @@ class Settings(BaseSettings):
     )
 
     # --- Redis (CRITICAL - no default) ---
-    REDIS_URL: str = Field(..., description="Redis connection - REQUIRED")
+    # NonEmptyStr, not str: REDIS_URL='' is exactly what a `redisUrlOverride`
+    # left at its empty default produces, and `Redis.from_url("")` raises a
+    # scheme error at import - long after a green pipeline. Rejecting it here
+    # names the variable instead. See skyrict_common.config_types.
+    REDIS_URL: NonEmptyStr = Field(
+        ..., description="Redis connection - REQUIRED, must not be empty"
+    )
 
     # --- JWT RS256 (CRITICAL - all four required) ---
     JWT_PRIVATE_KEY_PATH: Path = Field(
@@ -94,10 +108,10 @@ class Settings(BaseSettings):
         ..., description="path to RSA public key PEM for verification - REQUIRED"
     )
     JWKS_ISSUER: str = Field(
-        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
+        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://api.skyrict.in"
     )
     JWKS_AUDIENCE: str = Field(
-        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.io"
+        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, description="access token TTL")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="refresh token TTL")
@@ -564,7 +578,8 @@ class Settings(BaseSettings):
           1. JWT key paths must not point at committed test fixtures.
           2. DEBUG must be False.
           3. CORS_ORIGINS must not contain wildcard '*'.
-          4. BASE_DOMAIN must be set (tenant subdomain resolution).
+          4. BASE_DOMAIN must be set and be a plain domain name (tenant subdomain
+           resolution, and the CORS origin regex derived from it).
         """
         if self.ENVIRONMENT not in (Environment.STAGING, Environment.PRODUCTION):
             return self
@@ -605,6 +620,17 @@ class Settings(BaseSettings):
                 "IDENTITY_BASE_DOMAIN is required in staging/production so "
                 "tenant subdomains (e.g. acme.skyrict.com) can be resolved "
                 "from the Host header."
+            )
+        elif not is_valid_base_domain(self.BASE_DOMAIN):
+            # A BASE_DOMAIN that is set but unusable (a scheme, a port, a
+            # wildcard) is worse than an empty one. It resolves nothing from a
+            # Host header, and the CORS regex derived from it degrades to None,
+            # so tenant origins silently stop being allowed with no error
+            # anywhere. Refuse to boot instead.
+            errors.append(
+                f"IDENTITY_BASE_DOMAIN must be a plain domain name such as "
+                f"'skyrict.in' (no scheme, port, path or wildcard), but is "
+                f"{self.BASE_DOMAIN!r}."
             )
 
         if errors:

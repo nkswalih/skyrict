@@ -41,20 +41,26 @@ class RateLimiter:
 
     def __init__(self, *, redis_client: AsyncRedis | None = None) -> None:
         self._client: AsyncRedis | None = redis_client
-        self._owns_client = redis_client is None
 
-    async def _get_client(self) -> AsyncRedis | None:
-        """Return the Redis client, creating it lazily; None if unusable."""
-        if self._client is None and self._owns_client:
+    async def _get_client(self) -> AsyncRedis:
+        """Return the Redis client, constructing it on first use.
+
+        Deliberately called from *inside* the try block in `is_allowed`. An
+        unbuildable client - a malformed ``REDIS_URL``, an unimportable driver -
+        is an infrastructure failure exactly like a dropped connection, and must
+        honour ``RATE_LIMIT_FAIL_CLOSED`` rather than escaping as an unhandled
+        500. A 500 is neither fail-open nor fail-closed: it happens to close,
+        but only on the endpoint that happened to call the limiter, and it
+        reports a server fault for what is a configuration error.
+        """
+        if self._client is None:
             self._client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
         return self._client
 
     async def is_allowed(self, *, key: str, limit: int, window_seconds: int) -> bool:
         """Return True when the key is within the limit for this window."""
-        client = await self._get_client()
-        if client is None:
-            return True
         try:
+            client = await self._get_client()
             window = int(time.time()) // max(window_seconds, 1)
             rl_key = f"rl:{key}:{window}"
             count = int(await client.incr(rl_key))

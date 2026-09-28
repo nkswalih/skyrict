@@ -16,6 +16,8 @@ from sqlalchemy import select
 from core.models.tenant import TenantModel
 
 if TYPE_CHECKING:
+    import uuid
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -29,3 +31,11 @@ class TenantRepository:
         """Return the tenant with the given slug, or None."""
         result = await self.session.execute(select(TenantModel).where(TenantModel.slug == slug))
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, tenant_id: str | uuid.UUID) -> TenantModel | None:
+        """Return the tenant with the given primary key, or None.
+
+        Used when the tenant comes from a verified JWT ``tenant_id`` claim,
+        which identifies the tenant by id rather than by slug.
+        """
+        return await self.session.get(TenantModel, tenant_id)

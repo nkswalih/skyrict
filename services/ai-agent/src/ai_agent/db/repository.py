@@ -9,6 +9,7 @@ context exists.
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -29,6 +30,14 @@ class TenantRepository:
         """Return the tenant with the given slug, or None."""
         result = await self.session.execute(select(TenantModel).where(TenantModel.slug == slug))
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, tenant_id: str | uuid.UUID) -> TenantModel | None:
+        """Return the tenant with the given primary key, or None.
+
+        Used when the tenant comes from a verified JWT ``tenant_id`` claim,
+        which identifies the tenant by id rather than by slug.
+        """
+        return await self.session.get(TenantModel, tenant_id)
 
     async def list_active(self) -> list[TenantModel]:
         """Return every active tenant, oldest first.

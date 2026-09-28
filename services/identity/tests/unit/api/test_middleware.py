@@ -19,7 +19,7 @@ from identity.api.middleware import (
 )
 from identity.core.config import Environment, settings
 from identity.core.exceptions import TenantMismatchError
-from identity.features.auth.security import cross_check_jwt_tenant
+from identity.features.auth.security import cross_check_jwt_tenant, cross_check_routing_hint
 
 
 def _make_request(headers: dict[str, str]) -> Request:
@@ -142,6 +142,27 @@ class TestCrossCheckJwtTenant:
     def test_missing_jwt_claim_is_treated_as_mismatch(self):
         with pytest.raises(TenantMismatchError):
             cross_check_jwt_tenant(None, "tenant-aaa")
+
+
+class TestCrossCheckRoutingHint:
+    """The routing hint is cross-checked against the SIGNED token's tenant.
+
+    This is the control that makes the shared-host X-Tenant-Slug fallback
+    safe: the hint picks which tenant a request is ABOUT, and any disagreement
+    with the credential is refused before tenant data is read.
+    """
+
+    def test_match_passes(self):
+        cross_check_routing_hint("globex", "globex")  # no raise
+
+    def test_mismatch_raises(self):
+        # Credential for one tenant, naming another - a cross-tenant attempt.
+        with pytest.raises(TenantMismatchError):
+            cross_check_routing_hint("globex", "evil")
+
+    def test_empty_tenant_slug_cannot_match(self):
+        with pytest.raises(TenantMismatchError):
+            cross_check_routing_hint("", "globex")
 
 
 class TestIsTenantRequiredPath:

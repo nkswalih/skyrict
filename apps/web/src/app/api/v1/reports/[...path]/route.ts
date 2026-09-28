@@ -14,13 +14,13 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { reportsKpis } from "@/lib/mock/erp";
+import { resolveBffAuth } from "@/lib/server/bff-auth";
 import {
   applySessionCookie,
   assertSameOrigin,
   callBackend,
   callBackendStream,
   resolveTenantSlug,
-  sessionAccessToken,
 } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
@@ -58,23 +58,11 @@ async function reportsProxy(request: NextRequest): Promise<Response> {
   // Resolve the access token. Bearer headers (the client's in-memory access
   // token) win; raw same-origin fetches carry only the session cookie, so
   // mint a fresh access token from it server-side and write the rotated
-  // refresh cookie back on the response.
-  const authorization = request.headers.get("authorization");
-  let token: string | null = null;
-  let rotatedRefreshToken: string | null = null;
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    token = authorization.slice("Bearer ".length);
-  } else {
-    const session = await sessionAccessToken(request);
-    if (!session) {
-      return NextResponse.json(
-        { detail: "Missing Authorization header" },
-        { status: 401 },
-      );
-    }
-    token = session.token;
-    rotatedRefreshToken = session.refreshToken;
-  }
+  // refresh cookie back on the response. Shared with every other BFF route -
+  // see pre-release audit finding 26.
+  const auth = await resolveBffAuth(request);
+  if (!auth.ok) return auth.response;
+  const { token, rotatedRefreshToken } = auth;
   const tenantSlug = resolveTenantSlug(request.headers.get("host"));
 
   // Relay CSV exports without buffering the body: only the download-relevant

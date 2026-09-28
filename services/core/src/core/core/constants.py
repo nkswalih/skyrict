@@ -110,23 +110,12 @@ SERVICE_VERSION = "0.1.0"
 ALGORITHM_RS256 = "RS256"
 TOKEN_TYPE_ACCESS = "access"
 
-# ---------------------------------------------------------------------------
-# Problem type URIs (RFC 7807)
-# ---------------------------------------------------------------------------
-PROBLEM_BASE_URL = "https://api.skyrict.io/problems"
-
-PROBLEM_TOKEN_INVALID = f"{PROBLEM_BASE_URL}/token-invalid"
-PROBLEM_TOKEN_EXPIRED = f"{PROBLEM_BASE_URL}/token-expired"
-PROBLEM_AUTHENTICATION_ERROR = f"{PROBLEM_BASE_URL}/authentication-error"
-PROBLEM_TENANT_CONTEXT_MISSING = f"{PROBLEM_BASE_URL}/tenant-context-missing"
-PROBLEM_TENANT_MISMATCH = f"{PROBLEM_BASE_URL}/tenant-mismatch"
-PROBLEM_TENANT_NOT_FOUND = f"{PROBLEM_BASE_URL}/tenant-not-found"
-PROBLEM_TENANT_DISABLED = f"{PROBLEM_BASE_URL}/tenant-disabled"
-PROBLEM_PERMISSION_DENIED = f"{PROBLEM_BASE_URL}/permission-denied"
-PROBLEM_NOT_FOUND = f"{PROBLEM_BASE_URL}/not-found"
-PROBLEM_CONFLICT = f"{PROBLEM_BASE_URL}/conflict"
-PROBLEM_VALIDATION_ERROR = f"{PROBLEM_BASE_URL}/validation-error"
-PROBLEM_INTERNAL_ERROR = f"{PROBLEM_BASE_URL}/internal-error"
+# NOTE: RFC 7807 problem types are NOT defined here. They used to be - a
+# PROBLEM_BASE_URL literal plus 12 derived PROBLEM_* constants, none of which
+# anything outside this file ever read, alongside a second, live copy in
+# core/exceptions.py. Two definitions of one published contract is how the base
+# drifted to a retired domain (pre-release audit finding 16). The base now lives
+# in skyrict_common.problems, and core/exceptions.py is the only consumer.
 
 # ---------------------------------------------------------------------------
 # Finance - document numbering

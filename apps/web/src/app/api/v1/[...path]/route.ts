@@ -1,13 +1,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { resolveBffAuth } from "@/lib/server/bff-auth";
 import {
   applySessionCookie,
   assertSameOrigin,
   callBackend,
   callBackendRaw,
   resolveTenantSlug,
-  sessionAccessToken,
 } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
@@ -33,28 +33,19 @@ async function proxy(request: NextRequest) {
   }
 
   const slug = resolveTenantSlug(request.headers.get("host"));
-  const authorization = request.headers.get("authorization");
 
   // Resolve the access token. Bearer headers (the client's in-memory access
   // token) win; raw same-origin fetches carry only the session cookie, so
   // mint a fresh access token from it server-side - the same silent refresh
   // the /api/auth/refresh route performs, keeping identity's single rotation
   // per request and returning the rotated refresh cookie for write-back.
-  let token: string | null = null;
-  let rotatedRefreshToken: string | null = null;
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    token = authorization.slice("Bearer ".length);
-  } else {
-    const session = await sessionAccessToken(request);
-    if (!session) {
-      return NextResponse.json(
-        { detail: "Missing Authorization header" },
-        { status: 401 },
-      );
-    }
-    token = session.token;
-    rotatedRefreshToken = session.refreshToken;
-  }
+  //
+  // resolveBffAuth is shared with every other BFF route so the cookie bridge
+  // cannot be dropped from one handler and not another - see pre-release audit
+  // finding 26, where three streaming routes had lost it.
+  const auth = await resolveBffAuth(request);
+  if (!auth.ok) return auth.response;
+  const { token, rotatedRefreshToken } = auth;
 
   const pathname = request.nextUrl.pathname.replace(/^\/api\/v1\//, "");
   const path = `/${pathname}${request.nextUrl.search}`;

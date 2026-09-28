@@ -904,7 +904,7 @@ frozen against a fixed clock.
 
 Every problem type above is the exact suffix of the RFC 7807 `type` returned by
 core's `_STATUS_MAP` (`services/core/src/core/core/exceptions.py`); the base URI
-is always `https://api.skyrict.io/problems`. Unmapped/unexpected failures return
+is always `https://api.skyrict.in/problems`. Unmapped/unexpected failures return
 `/internal-error` (500) with no internals leaked. Core applies no per-request
 rate limiting - upstream rate limits surface as HTTP 429 via the generic
 `http-429` problem type.

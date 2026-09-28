@@ -35,6 +35,7 @@ from skyrict_common.exceptions import (
     TokenInvalidError,
     ValidationError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 __all__ = [
     "ApprovalDefinitionMissingError",
@@ -215,7 +216,13 @@ class ApprovalDefinitionMissingError(SkyrictError):
     code = "APPROVAL_DEFINITION_MISSING"
 
 
-_PROBLEM_BASE = "https://api.skyrict.io/problems"
+# Module-private alias of the shared public error contract. An RFC 7807 problem
+# `type` is a published identifier that clients branch on, so the base belongs
+# in one place in skyrict-common rather than being restated per service. It was
+# restated per service, twice over (once here, once in core/constants.py), and
+# drifted to a retired domain while the live host moved on - pre-release audit
+# finding 16. The alias keeps the ~30 f-strings below short and file-private.
+_PROBLEM_BASE = PROBLEM_BASE_URL
 
 # Mapping from exception type to HTTP status code and problem type URI.
 # Lookup walks the MRO (exact type wins, base classes provide the generic

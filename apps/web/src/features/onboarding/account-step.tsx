@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -31,6 +31,16 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
+
+  // Stable identity. Passed to RiskChallenge, which reports the gate decision
+  // from an effect keyed on this callback - an inline arrow would be a new
+  // function on every render, re-firing that effect each time and re-reporting
+  // validity the parent had already applied.
+  const handleCaptchaValid = useCallback((valid: boolean) => {
+    setCaptchaValid(valid);
+    if (valid) setCaptchaError(false);
+  }, []);
+
   const {
     register,
     handleSubmit,
@@ -113,10 +123,7 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
           demoCaptcha={demoCaptcha}
           onShowChange={setCaptchaVisible}
           onTokenChange={setCaptchaToken}
-          onValidChange={(valid) => {
-            setCaptchaValid(valid);
-            if (valid) setCaptchaError(false);
-          }}
+          onValidChange={handleCaptchaValid}
         />
         {captchaVisible && !captchaValid ? (
           <p className="mt-1.5 text-xs font-medium text-muted-foreground">

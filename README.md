@@ -135,7 +135,7 @@ Everything runs through the **Makefile**: see [Development](#development) for th
 <summary><strong>Local multi-tenant routing</strong>: subdomain-based tenant isolation on localhost</summary>
 
 The identity service is multi-tenant: in production each tenant reaches it via its own subdomain
-(`https://acme.skyrict.com/...`) and the ingress injects an `X-Tenant-Slug` header before forwarding.
+(`https://acme.skyrict.in/...`) and the ingress injects an `X-Tenant-Slug` header before forwarding.
 The dev stack mirrors that contract locally, so tenant resolution behaves identically in both
 environments.
 
@@ -269,8 +269,8 @@ serves health; AI calls then return a typed `503 ai_unavailable`.
 AI_DATABASE_URL=postgresql+asyncpg://...     # ai-agent's own DB
 AI_REDIS_URL=redis://localhost:6379/0        # distributed rate limiting
 AI_JWT_PUBLIC_KEY_PATH=./secrets/jwt_public.pem
-AI_JWKS_ISSUER=https://auth.skyrict.io
-AI_JWKS_AUDIENCE=api.skyrict.io
+AI_JWKS_ISSUER=https://api.skyrict.in
+AI_JWKS_AUDIENCE=api.skyrict.in
 AI_PROVIDER=openrouter                       # or groq/openai/omniroute/agentrouter/generic
 AI_MODEL=meta-llama/llama-3-8b-instruct
 AI_API_KEY=sk-or-...

@@ -20,6 +20,7 @@ from ai_agent.core.exceptions import (
     skyrict_error_handler,
     unhandled_error_handler,
 )
+from skyrict_common.cors import tenant_origin_regex
 
 
 def create_app() -> FastAPI:
@@ -60,6 +61,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        # Kept identical to identity and core. ai-agent is not in the public
+        # route map today - core proxies to it server-to-server, where CORS
+        # never applies - but it already declares CORS configuration, and
+        # three copies of this policy that can drift is the failure mode that
+        # produced the wrong published domain three times.
+        allow_origin_regex=tenant_origin_regex(settings.BASE_DOMAIN),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -10,6 +10,7 @@ import {
 
 import { InviteAcceptForm } from "@/features/auth/invite-accept-form";
 import { AuthButton } from "@/lib/auth/AuthButton";
+import { classifyInviteProblem } from "@/lib/invitation-problem-types";
 import { apiBase } from "@/lib/server/auth";
 
 export const metadata: Metadata = {
@@ -18,10 +19,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-const PROBLEM_BASE = "https://api.skyrict.io/problems";
-const PROBLEM_INVITATION_EXPIRED = `${PROBLEM_BASE}/invitation-expired`;
-const PROBLEM_INVITATION_ALREADY_USED = `${PROBLEM_BASE}/invitation-already-used`;
 
 interface VerifyData {
     email: string;
@@ -63,10 +60,9 @@ async function verifyInvitation(token: string): Promise<VerifyResult> {
                 },
             };
         }
-        if (payload.type === PROBLEM_INVITATION_EXPIRED)
-            return { status: "expired" };
-        if (payload.type === PROBLEM_INVITATION_ALREADY_USED)
-            return { status: "used" };
+        const problem = classifyInviteProblem(payload.type);
+        if (problem === "expired") return { status: "expired" };
+        if (problem === "alreadyUsed") return { status: "used" };
         return { status: "invalid" };
     } catch {
         return { status: "unavailable" };

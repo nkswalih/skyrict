@@ -80,3 +80,61 @@ class TestRateLimiter:
         limiter = RateLimiter(redis_client=BrokenRedis())
         with pytest.raises(RateLimitUnavailableError):
             await limiter.enforce(key="login:ip", limit=1, window_seconds=3600)
+
+
+class TestClientConstructionFailure:
+    """An unbuildable Redis client must take the same path as a dropped one.
+
+    `_get_client` used to be called *outside* the try block, so a construction
+    failure escaped as an unhandled ValueError - a 500, which is neither
+    fail-open nor fail-closed. It reported a server fault for what is a
+    configuration error, and `RATE_LIMIT_FAIL_CLOSED` never saw it.
+
+    These tests exercise the owning path (`RateLimiter()` with no injected
+    client), which is the only one that constructs; the tests above all inject,
+    so none of them reach it.
+    """
+
+    async def test_construction_failure_fails_open_by_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _explode(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("Redis URL must specify one of the following schemes")
+
+        monkeypatch.setattr("identity.core.rate_limit.Redis.from_url", _explode)
+        monkeypatch.setattr("identity.core.rate_limit.settings.RATE_LIMIT_FAIL_CLOSED", False)
+        limiter = RateLimiter()
+
+        assert await limiter.is_allowed(key="login:ip", limit=1, window_seconds=3600) is True
+
+    async def test_construction_failure_fails_closed_when_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _explode(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("Redis URL must specify one of the following schemes")
+
+        monkeypatch.setattr("identity.core.rate_limit.Redis.from_url", _explode)
+        monkeypatch.setattr("identity.core.rate_limit.settings.RATE_LIMIT_FAIL_CLOSED", True)
+        limiter = RateLimiter()
+
+        with pytest.raises(RateLimitUnavailableError):
+            await limiter.is_allowed(key="login:ip", limit=1, window_seconds=3600)
+
+    async def test_a_second_call_reuses_the_constructed_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The client is built once and cached. Without this, every guarded
+        # request would re-parse the URL and re-open a pool.
+        builds: list[object] = []
+
+        def _record(*args: object, **kwargs: object) -> FakeRedis:
+            builds.append((args, kwargs))
+            return FakeRedis()
+
+        monkeypatch.setattr("identity.core.rate_limit.Redis.from_url", _record)
+        limiter = RateLimiter()
+
+        await limiter.is_allowed(key="a", limit=5, window_seconds=60)
+        await limiter.is_allowed(key="a", limit=5, window_seconds=60)
+
+        assert len(builds) == 1

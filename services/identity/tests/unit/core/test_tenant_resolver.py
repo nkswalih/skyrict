@@ -173,3 +173,72 @@ class TestDeriveTenantSlug:
         monkeypatch.setattr(settings, "ENVIRONMENT", Environment.STAGING)
         monkeypatch.setattr(settings, "BASE_DOMAIN", "skyrict.com")
         assert derive_tenant_slug(_make_request({"Host": "globex.skyrict.com"})) == "globex"
+
+
+class TestSharedApiHostFallback:
+    """Production serves every service from ONE host (api.skyrict.in).
+
+    That host has no tenant label, and "api" is a reserved slug, so the Host
+    yields nothing. The X-Tenant-Slug hint the BFF already sends is what makes
+    the shared host routable. These tests pin that fallback - it is routing
+    only, and the middleware independently derives the tenant from the verified
+    JWT and cross-checks this hint, so a forged value cannot grant access.
+    """
+
+    def test_shared_api_host_falls_back_to_header(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in", "X-Tenant-Slug": "globex"})
+        assert resolver.resolve(request) == "globex"
+
+    def test_shared_api_host_without_header_is_unresolvable(self, monkeypatch: pytest.MonkeyPatch):
+        # None here is correct, not a failure: an authenticated request on a
+        # shared host resolves its tenant from the JWT instead of the Host.
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in"})
+        assert resolver.resolve(request) is None
+
+    def test_aca_default_fqdn_falls_back_to_header(self, monkeypatch: pytest.MonkeyPatch):
+        # The pre-custom-domain host is not a subdomain of BASE_DOMAIN at all.
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request(
+            {
+                "Host": "app-identity-skyrict-beta.eastus.azurecontainerapps.io",
+                "X-Tenant-Slug": "globex",
+            }
+        )
+        assert resolver.resolve(request) == "globex"
+
+    def test_per_tenant_host_still_wins_over_header(self, monkeypatch: pytest.MonkeyPatch):
+        # A valid header must NOT be able to redirect a request that arrived on
+        # a specific tenant's host - that is the anti-spoofing property.
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "globex.skyrict.in", "X-Tenant-Slug": "evil"})
+        assert resolver.resolve(request) == "globex"
+
+    def test_reserved_hint_still_rejected_on_shared_host(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in", "X-Tenant-Slug": "api"})
+        assert resolver.resolve(request) is None
+
+    def test_malformed_hint_still_rejected_on_shared_host(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in", "X-Tenant-Slug": "Bad Slug!"})
+        assert resolver.resolve(request) is None
+
+    def test_staging_shares_the_fallback(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.STAGING)
+        resolver = TenantResolver(base_domain="skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in", "X-Tenant-Slug": "globex"})
+        assert resolver.resolve(request) == "globex"
+
+    def test_derive_tenant_slug_on_shared_host(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.PRODUCTION)
+        monkeypatch.setattr(settings, "BASE_DOMAIN", "skyrict.in")
+        request = _make_request({"Host": "api.skyrict.in", "X-Tenant-Slug": "globex"})
+        assert derive_tenant_slug(request) == "globex"

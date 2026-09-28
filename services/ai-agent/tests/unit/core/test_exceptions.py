@@ -34,6 +34,7 @@ from skyrict_common.exceptions import (
     TenantDisabledError,
     ValidationError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 ALL_SKYRICT_SUBCLASSES = sorted(
     (
@@ -72,7 +73,7 @@ def test_no_skyrict_subclass_falls_through_to_generic_internal_error(exc_cls) ->
     assert problem_type != f"{ai_exceptions._PROBLEM_BASE}/internal-error", (
         f"{exc_cls.__name__} unmapped - resolves to generic internal-error"
     )
-    assert problem_type.startswith("https://api.skyrict.io/problems/")
+    assert problem_type.startswith(f"{PROBLEM_BASE_URL}/")
 
 
 @pytest.mark.parametrize(
@@ -109,7 +110,7 @@ def test_ai_error_contract_is_stable(exc_cls, expected_status: int, expected_typ
     """SKY-57: the AI failure contract must not drift from its documented types."""
     status, problem_type = _status_and_type(exc_cls())
     assert status == expected_status
-    assert problem_type == f"https://api.skyrict.io/problems/{expected_type}"
+    assert problem_type == f"{PROBLEM_BASE_URL}/{expected_type}"
 
 
 @pytest.mark.parametrize(
@@ -142,7 +143,7 @@ async def test_ai_unavailable_surfaces_as_separate_url() -> None:
     response = await ai_exceptions.skyrict_error_handler(request, AiUnavailableError())
     body = json.loads(response.body)
     assert body["status"] == 503
-    assert body["type"] == "https://api.skyrict.io/problems/ai-unavailable"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/ai-unavailable"
     assert body["instance"] == "req-ai-2"
 
 
@@ -158,7 +159,7 @@ async def test_unhandled_error_response_never_leaks_internals() -> None:
     raw = response.body.decode()
 
     assert response.status_code == 500
-    assert body["type"] == "https://api.skyrict.io/problems/internal-error"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/internal-error"
     assert body["detail"] == "An unexpected error occurred. Please try again later."
     assert body["instance"] == "req-ai-3"
     assert "secret internal detail" not in raw

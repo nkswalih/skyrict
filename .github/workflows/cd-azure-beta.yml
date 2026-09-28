@@ -52,7 +52,14 @@ env:
   ENV: beta
   RG: skyrict-beta
   BICEP_FILE: infra/azure/main.bicep
-  PARAMS_FILE: infra/azure/parameters/beta.parameters.json
+  # Committed template -> runtime copy. Values that are operator identity
+  # rather than source code (AZURE_BUDGET_CONTACT_EMAILS is the first) are
+  # injected into the runtime copy by scripts/azure/build-params.sh, so no
+  # git-hostile value is ever committed. Every `az deployment group` call and
+  # the Preflight step read PARAMS_FILE, i.e. the runtime copy, so their checks
+  # reflect what actually deploys.
+  PARAMS_TEMPLATE: infra/azure/parameters/beta.parameters.json
+  PARAMS_FILE: infra/azure/parameters/.runtime/beta.parameters.json
   IMAGE_TAG: ${{ github.sha }}
   # Never expand steps' debug output (protects secrets on every future run).
   ACTIONS_STEP_DEBUG: "false"
@@ -84,6 +91,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Build runtime parameters (inject secrets not kept in git)
+        env:
+          BUDGET_CONTACT_EMAILS: ${{ secrets.AZURE_BUDGET_CONTACT_EMAILS }}
+        run: bash scripts/azure/build-params.sh "$PARAMS_TEMPLATE" "$PARAMS_FILE"
+
       - name: Register resource providers (idempotent)
         run: |
           az provider register --namespace Microsoft.App
@@ -107,6 +119,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
@@ -120,6 +134,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase1.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase1.json > /dev/null
@@ -135,6 +151,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --query "properties.outputs" -o json | tee /tmp/phase1-outputs.json
           echo "login_server=$(jq -r '.acrLoginServer.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
@@ -161,13 +179,52 @@ jobs:
         # The apps reference these secrets by name via Key Vault references
         # resolved with the UAMI; values exist only here and in the GitHub
         # environment, never in the repository or Bicep.
+        #
+        # Each seed is guarded. `az keyvault secret set` with an empty --value
+        # would create an EMPTY secret, and identity/core/ai-agent would then
+        # read a configured-but-blank credential and fail closed at the worst
+        # possible moment (a 3am email failure, a 500 on a Stripe webhook) with
+        # nothing in the IaC to explain why. An absent secret is the honest
+        # state for an unprovisioned feature: the app falls back to its default
+        # and the feature reports itself off.
+        #
+        # A missing secret and an empty one are therefore not interchangeable,
+        # and that is why apps.bicep gates each secretRef behind a
+        # *_configured flag rather than referencing unconditionally.
         run: |
           vault="${{ steps.apply.outputs.kv_name }}"
-          az keyvault secret set --vault-name "$vault" --name jwt-private-key --value "${{ secrets.AZURE_JWT_PRIVATE_KEY }}"
-          az keyvault secret set --vault-name "$vault" --name jwt-public-key --value "${{ secrets.AZURE_JWT_PUBLIC_KEY }}"
-          az keyvault secret set --vault-name "$vault" --name mfa-encryption-key --value "${{ secrets.AZURE_MFA_ENCRYPTION_KEY }}"
-          az keyvault secret set --vault-name "$vault" --name sync-token --value "${{ secrets.AZURE_SYNC_TOKEN }}"
-          az keyvault secret set --vault-name "$vault" --name ingest-token --value "${{ secrets.AZURE_INGEST_TOKEN }}"
+
+          # name -> GitHub secret. Empty GitHub secret means "not provisioned".
+          declare -A SECRETS=(
+            [jwt-private-key]='${{ secrets.AZURE_JWT_PRIVATE_KEY }}'
+            [jwt-public-key]='${{ secrets.AZURE_JWT_PUBLIC_KEY }}'
+            [mfa-encryption-key]='${{ secrets.AZURE_MFA_ENCRYPTION_KEY }}'
+            [sync-token]='${{ secrets.AZURE_SYNC_TOKEN }}'
+            [ingest-token]='${{ secrets.AZURE_INGEST_TOKEN }}'
+            [turnstile-secret-key]='${{ secrets.AZURE_TURNSTILE_SECRET_KEY }}'
+          )
+
+          # The first four are load-bearing: the services refuse to boot without
+          # them, so a silent skip here would just move the failure from the
+          # pipeline to a CrashLoopBackOff. Fail loudly instead.
+          required=(jwt-private-key jwt-public-key mfa-encryption-key sync-token ingest-token)
+
+          for name in "${!SECRETS[@]}"; do
+            value="${SECRETS[$name]}"
+            if [ -z "$value" ]; then
+              if printf '%s\n' "${required[@]}" | grep -qx "$name"; then
+                echo "::error::required Key Vault secret '$name' has no value in the azure-beta environment - the services cannot boot without it"
+                missing_required=1
+              else
+                echo "::notice::skipping optional Key Vault secret '$name' - no value in the azure-beta environment; the feature stays off rather than failing open"
+              fi
+              continue
+            fi
+            az keyvault secret set --vault-name "$vault" --name "$name" --value "$value" --output none
+            echo "seeded $name"
+          done
+
+          [ "${missing_required:-0}" -eq 0 ]
 
   build-push-images:
     name: Build and push service images
@@ -224,14 +281,32 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push gateway image
+        uses: docker/build-push-action@v6
+        with:
+          # Small and dependency-free (nginx:alpine plus two files), but it MUST
+          # be built here: the Bicep rollout references gateway:$IMAGE_TAG as a
+          # literal, so a missing image makes the container app fail to pull and
+          # the whole public origin stays down while the backend images deploy
+          # fine. Built last so the three backend tags are already durable in
+          # ACR if this step is the one that fails.
+          context: .
+          file: infra/docker/gateway/Dockerfile
+          push: true
+          tags: "${{ needs.provision-infra.outputs.login_server }}/gateway:${{ env.IMAGE_TAG }}"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy-workloads:
     name: Deploy Container Apps and jobs (phase 2)
     needs: [provision-infra, build-push-images]
     runs-on: ubuntu-latest
     environment: azure-beta
     outputs:
-      identity_fqdn: ${{ steps.apply.outputs.identity_fqdn }}
-      core_fqdn: ${{ steps.apply.outputs.core_fqdn }}
+      api_fqdn: ${{ steps.apply.outputs.api_fqdn }}
+      gateway_app_name: ${{ steps.apply.outputs.gateway_app_name }}
+      identity_app_name: ${{ steps.apply.outputs.identity_app_name }}
+      core_app_name: ${{ steps.apply.outputs.core_app_name }}
       ai_app_name: ${{ steps.apply.outputs.ai_app_name }}
     steps:
       - uses: actions/checkout@v4
@@ -241,6 +316,107 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build runtime parameters (inject secrets not kept in git)
+        env:
+          BUDGET_CONTACT_EMAILS: ${{ secrets.AZURE_BUDGET_CONTACT_EMAILS }}
+        run: bash scripts/azure/build-params.sh "$PARAMS_TEMPLATE" "$PARAMS_FILE"
+
+      - name: Preflight (required configuration invariants)
+        # Bicep `assert` is still experimental in the pinned CLI, so the
+        # invariants that would otherwise produce a *silently broken*
+        # environment are checked here. Every one of these deploys green and
+        # then fails at runtime, which is the expensive kind of bug: it is found
+        # by a user, not by the pipeline.
+        #
+        # See docs/runbooks/pre-release-audit-2026-09.md findings 6, 7, 8, 23.
+        env:
+          TURNSTILE_SITE_KEY: ${{ secrets.AZURE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.AZURE_TURNSTILE_SECRET_KEY }}
+          REDIS_URL_OVERRIDE: ${{ secrets.AZURE_REDIS_URL_OVERRIDE }}
+        run: |
+          set -euo pipefail
+          params=$(cat "${{ env.PARAMS_FILE }}")
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+
+          # P0 #23 - identity fails CLOSED without a secret key, so 100% of
+          # self-service signups are rejected while the UI shows "Verified".
+          [ -n "${TURNSTILE_SECRET_KEY:-}" ] || fail "AZURE_TURNSTILE_SECRET_KEY is unset - every self-service signup will be rejected with 'Unable to verify you are not a robot' (finding 23)."
+          # The secret alone is not enough: with no public site key the browser
+          # sends no token and identity rejects the request anyway.
+          [ -n "${TURNSTILE_SITE_KEY:-}" ] || fail "AZURE_TURNSTILE_SITE_KEY is unset - the browser cannot produce a Turnstile token without it (finding 23)."
+
+          # P0 #6 - without apiHostname there is no managed certificate and no
+          # api.skyrict.in, so there is no public API origin at all.
+          api_hostname=$(jq -r '.parameters.apiHostname.value // ""' <<<"$params")
+          [ -n "$api_hostname" ] || fail "apiHostname is empty - the gateway would serve only its generated FQDN, leaving no public API host and no TLS certificate (finding 6)."
+
+          # P0 #8 - `iss` is baked into every token at first login and is not
+          # reissued on later config changes, so a wrong value silently
+          # invalidates every existing session.
+          issuer=$(jq -r '.parameters.jwksIssuer.value // ""' <<<"$params")
+          audience=$(jq -r '.parameters.jwksAudience.value // ""' <<<"$params")
+          [ -n "$issuer" ] || fail "jwksIssuer is empty (finding 8)."
+          [ -n "$audience" ] || fail "jwksAudience is empty (finding 8)."
+          if [ "$issuer" != "https://$api_hostname" ]; then
+            fail "jwksIssuer ('$issuer') must equal https://$api_hostname so the iss claim matches the single public origin. auth.skyrict.in and api.skyrict.in are the same service here (finding 8)."
+          fi
+          if [ "$audience" != "$api_hostname" ]; then
+            fail "jwksAudience ('$audience') must equal apiHostname ('$api_hostname') (finding 8)."
+          fi
+
+          # P0 #7 - all three services send credentials, so CORS must be an
+          # explicit allow-list. "*" is never acceptable here.
+          origins=$(jq -r '.parameters.corsOrigins.value | length' <<<"$params")
+          [ "${origins:-0}" -gt 0 ] || fail "corsOrigins is empty - the browser-direct chat SSE will be blocked by CORS (finding 7)."
+          if jq -e '.parameters.corsOrigins.value | any(. == "*")' <<<"$params" >/dev/null; then
+            fail "corsOrigins contains '*'. All three services use allow_credentials, which the browser rejects with a wildcard origin (finding 7)."
+          fi
+
+          # P1 #10 - deployManagedRedis=false is the documented month-2 swap to a
+          # managed (Upstash) Redis. If the override secret is unset at that
+          # point, every container is handed REDIS_URL='' - which redis-py
+          # rejects with "Redis URL must specify one of the following schemes"
+          # at import. The containers crash-loop, and that error names neither
+          # this parameter nor the secret, so the operator has no thread to
+          # pull. The app now rejects an empty REDIS_URL in settings, which
+          # names the variable but still surfaces minutes after a green run.
+          #
+          # `if . == null` rather than `// "true"`: in jq, `false` is falsy, so
+          # `false // "true"` yields "true" and would silently skip this guard
+          # in exactly the case it exists for.
+          deploy_redis=$(jq -r '.parameters.deployManagedRedis.value | if . == null then "true" else tostring end' <<<"$params")
+          if [ "$deploy_redis" = "false" ]; then
+            [ -n "${REDIS_URL_OVERRIDE:-}" ] || fail "deployManagedRedis is false but AZURE_REDIS_URL_OVERRIDE is empty - identity and ai-agent would both be given REDIS_URL='' and crash-loop on startup (finding 10)."
+          fi
+
+          # Declared posture, deliberately NOT a failure. RATE_LIMIT_FAIL_CLOSED
+          # defaults to false in both identity and ai-agent and no value in this
+          # repo or the IaC overrides it, so beta runs rate limiting FAIL-OPEN:
+          # once the client is built, a failing Redis command is swallowed by
+          # `is_allowed`, the request is allowed, and only a `rate_limit_fail_open`
+          # warning reaches the logs. Accepted on purpose - a Redis blip must not
+          # lock every user out of login mid-demo, and registration/CI must not be
+          # held hostage by infra. Emitted on every deploy so it stays an explicit
+          # decision rather than an inherited default (finding 10).
+          echo "::warning::Rate-limit posture: FAIL-OPEN (RATE_LIMIT_FAIL_CLOSED=false in identity + ai-agent, unset anywhere in this repo). A Redis outage disables rate limiting instead of blocking requests - accepted for beta; set RATE_LIMIT_FAIL_CLOSED=true to invert (finding 10)."
+
+          # P1 #11 - the budget resource is skipped when there are no
+          # recipients, so an empty list can no longer fail the deployment
+          # (see the guard in observability.bicep). But it also means nothing
+          # will warn before the free-trial allotment is exhausted, and a
+          # budget that cannot notify anyone is not a safeguard. Deliberately
+          # a warning rather than a failure: the deploy is safe either way, and
+          # blocking it here would trade a fixable gap in alerting for a
+          # blocked launch.
+          contacts=$(jq -r '.parameters.budgetContactEmails.value | length' <<<"$params")
+          if [ "${contacts:-0}" -eq 0 ]; then
+            echo "::warning::budgetContactEmails is empty - no cost-budget alerts will be deployed (finding 11). Set AZURE_BUDGET_CONTACT_EMAILS so spend cannot exhaust the free-trial allotment undetected."
+          fi
+
+          [ "$failed" -eq 0 ] || { echo "::error::Preflight failed - refusing to deploy a configuration that is known to break at runtime."; exit 1; }
+          echo "Preflight passed."
 
       - name: Validate (phase 2)
         run: |
@@ -253,6 +429,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
@@ -267,6 +445,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase2.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2.json > /dev/null
@@ -283,10 +463,14 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --query "properties.outputs" -o json | tee /tmp/phase2-outputs.json
-          echo "identity_fqdn=$(jq -r '.identityFqdn.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "core_fqdn=$(jq -r '.coreFqdn.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "api_fqdn=$(jq -r '.apiFqdn.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "identity_app_name=$(jq -r '.identityAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "core_app_name=$(jq -r '.coreAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "ai_app_name=$(jq -r '.aiAgentAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
 
       - name: Apply again and assert no-op (idempotency gate)
@@ -300,6 +484,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv | grep -q Succeeded
           az deployment group what-if \
@@ -311,6 +497,8 @@ jobs:
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-noop.json
           real_changes=$(jq '[.changes[] | select(.changeType != "NoChange" and .changeType != "Ignore")] | length' /tmp/whatif-noop.json)
@@ -393,19 +581,70 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Smoke test identity health (external FQDN)
+      # The public API origin is the gateway, and identity/core/ai-agent are all
+      # internal now. So these smoke tests probe the gateway's own generated
+      # FQDN rather than each backend's - a per-backend curl against an
+      # internal FQDN cannot resolve from a GitHub runner at all.
+      #
+      # Deliberately NOT https://<apiHostname>. That name does not answer until
+      # the GoDaddy CNAME exists and ACA has issued the managed certificate, so
+      # testing it here would make the FIRST deploy fail for a reason that is not
+      # a deploy failure. The generated FQDN gets its own ACA-managed certificate
+      # immediately, so this tests the gateway and both backends on the very first
+      # run; the custom domain is proven separately in the runbook.
+      - name: Smoke test gateway routes to identity (public origin)
         run: |
           curl --fail --silent --show-error \
             --retry 10 --retry-delay 10 --retry-all-errors \
-            "https://${{ needs.deploy-workloads.outputs.identity_fqdn }}/api/v1/health" \
+            "https://${{ needs.deploy-workloads.outputs.api_fqdn }}/api/v1/health" \
+            | tee /dev/stderr | grep -q '"service":"identity"'
+
+      - name: Smoke test gateway sees both backends
+        # /readyz proxies a real request to identity and falls through to core, so
+        # a 200 means the gateway can reach the whole API, not just one service.
+        run: |
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 10 --retry-all-errors \
+            "https://${{ needs.deploy-workloads.outputs.api_fqdn }}/readyz" \
             | tee /dev/stderr | grep -q '"status":"healthy"'
 
-      - name: Smoke test core health (external FQDN)
+      - name: Smoke test a core route is reachable through the gateway
+        # /api/v1/crm/* must reach core. Unauthenticated it must answer 401 -
+        # a 404 would mean the path was swallowed or misrouted, and a 502 would
+        # mean core is unreachable. Asserting the exact code is what makes this
+        # a routing test rather than a "something answered" test.
         run: |
-          curl --fail --silent --show-error \
+          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
             --retry 10 --retry-delay 10 --retry-all-errors \
-            "https://${{ needs.deploy-workloads.outputs.core_fqdn }}/api/v1/health" \
-            | tee /dev/stderr | grep -q '"status":"healthy"'
+            "https://${{ needs.deploy-workloads.outputs.api_fqdn }}/api/v1/crm/customers")
+          echo "GET /api/v1/crm/customers -> $code"
+          [ "$code" = "401" ] || { echo "::error::expected 401 from core's auth layer, got $code"; exit 1; }
+
+      - name: Verify internal backends have healthy revisions
+        # identity and core are internal-only, so they have no externally
+        # resolvable FQDN and cannot be HTTP-probed from a runner. Verify
+        # liveness the same way ai-agent already is: revision provisioning state
+        # plus at least one running replica.
+        run: |
+          failed=0
+          for pair in \
+            "identity:${{ needs.deploy-workloads.outputs.identity_app_name }}" \
+            "core:${{ needs.deploy-workloads.outputs.core_app_name }}"; do
+            app="${pair%%:*}"
+            rev=$(az containerapp show --name "$app" --resource-group "${{ env.RG }}" \
+              --query properties.latestRevisionName -o tsv)
+            state=$(az containerapp revision show --resource-group "${{ env.RG }}" \
+              --name "$app" --revision "$rev" --query properties.provisioningState -o tsv)
+            replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
+              --name "$app" --revision "$rev" \
+              --query "[?state=='Running'] | length" -o tsv)
+            echo "$app: revision=$rev state=$state running_replicas=$replicas"
+            if [ "$state" != "Succeeded" ] || [ "${replicas:-0}" -lt 1 ]; then
+              echo "::error::$app is not serving (state=$state running=$replicas)"
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ]
 
       - name: Verify ai-agent revision (internal-only app)
         # ai-agent has ingress internal-only, so it has no externally

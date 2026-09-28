@@ -46,8 +46,8 @@ jobs:
     env:
       AI_DATABASE_URL: postgresql+asyncpg://skyrict:skyrict@localhost:5432/skyrict_identity
       AI_ENVIRONMENT: dev
-      AI_JWKS_ISSUER: https://auth.skyrict.io
-      AI_JWKS_AUDIENCE: api.skyrict.io
+      AI_JWKS_ISSUER: https://api.skyrict.in
+      AI_JWKS_AUDIENCE: api.skyrict.in
       AI_PROVIDER: openai
       AI_MODEL: ${{ vars.AI_FINANCE_EVAL_MODEL || 'gpt-4o-mini' }}
       AI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

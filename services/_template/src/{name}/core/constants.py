@@ -16,20 +16,13 @@ API_V1_PREFIX = "/api/v1"
 SERVICE_NAME = "{name}"
 SERVICE_VERSION = "0.1.0"
 
-# ---------------------------------------------------------------------------
-# Problem type URIs (RFC 7807)
-# ---------------------------------------------------------------------------
-PROBLEM_BASE_URL = "https://api.skyrict.io/problems"
-
-PROBLEM_TOKEN_EXPIRED = f"{PROBLEM_BASE_URL}/token-expired"
-PROBLEM_TOKEN_INVALID = f"{PROBLEM_BASE_URL}/token-invalid"
-PROBLEM_AUTHENTICATION_ERROR = f"{PROBLEM_BASE_URL}/authentication-error"
-PROBLEM_AUTHORIZATION_ERROR = f"{PROBLEM_BASE_URL}/authorization-error"
-PROBLEM_USER_NOT_FOUND = f"{PROBLEM_BASE_URL}/user-not-found"
-PROBLEM_TENANT_NOT_FOUND = f"{PROBLEM_BASE_URL}/tenant-not-found"
-PROBLEM_VALIDATION_ERROR = f"{PROBLEM_BASE_URL}/validation-error"
-PROBLEM_RATE_LIMIT_EXCEEDED = f"{PROBLEM_BASE_URL}/rate-limit-exceeded"
-PROBLEM_INTERNAL_ERROR = f"{PROBLEM_BASE_URL}/internal-error"
+# NOTE: RFC 7807 problem types are NOT defined here. They used to be - a
+# PROBLEM_BASE_URL literal plus 9 derived PROBLEM_* constants, none of which
+# anything ever read, alongside a second, live copy in core/exceptions.py. Two
+# definitions of one published contract is how the base drifted to a retired
+# domain (pre-release audit finding 16). The base now lives in
+# skyrict_common.problems, and core/exceptions.py is the only consumer. New
+# services: add your exception to _STATUS_MAP there, not a constant here.
 
 # ---------------------------------------------------------------------------
 # Default values

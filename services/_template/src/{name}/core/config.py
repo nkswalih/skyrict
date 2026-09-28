@@ -62,10 +62,10 @@ class Settings(BaseSettings):
         ..., description="path to RSA public key PEM for verification - REQUIRED"
     )
     JWKS_ISSUER: str = Field(
-        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
+        ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://api.skyrict.in"
     )
     JWKS_AUDIENCE: str = Field(
-        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.io"
+        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, description="access token TTL")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="refresh token TTL")

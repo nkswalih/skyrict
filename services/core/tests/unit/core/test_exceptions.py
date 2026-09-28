@@ -39,6 +39,7 @@ from skyrict_common.exceptions import (
     TenantNotFoundError,
     ValidationError,
 )
+from skyrict_common.problems import PROBLEM_BASE_URL
 
 
 class TestTenantErrorMapping:
@@ -158,7 +159,7 @@ def test_no_skyrict_subclass_falls_through_to_generic_internal_error(exc_cls) ->
     assert problem_type != f"{core_exceptions._PROBLEM_BASE}/internal-error", (
         f"{exc_cls.__name__} unmapped - resolves to generic internal-error"
     )
-    assert problem_type.startswith("https://api.skyrict.io/problems/")
+    assert problem_type.startswith(f"{PROBLEM_BASE_URL}/")
 
 
 @pytest.mark.parametrize(
@@ -190,7 +191,7 @@ def test_ai_service_fault_is_explicitly_503() -> None:
     """Provider/upstream faults map to 503 ai-unavailable, not a bare 500."""
     status, problem_type = _status_and_type(AiServiceUnavailableError())
     assert status == 503
-    assert problem_type == "https://api.skyrict.io/problems/ai-unavailable"
+    assert problem_type == f"{PROBLEM_BASE_URL}/ai-unavailable"
 
 
 async def test_unhandled_error_response_never_leaks_internals() -> None:
@@ -205,7 +206,7 @@ async def test_unhandled_error_response_never_leaks_internals() -> None:
     raw = response.body.decode()
 
     assert response.status_code == 500
-    assert body["type"] == "https://api.skyrict.io/problems/internal-error"
+    assert body["type"] == f"{PROBLEM_BASE_URL}/internal-error"
     assert body["detail"] == "An unexpected error occurred. Please try again later."
     assert body["instance"] == "req-sweep-1"
     assert "secret internal detail" not in raw
