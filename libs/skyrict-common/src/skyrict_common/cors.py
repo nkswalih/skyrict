@@ -61,9 +61,16 @@ _SLUG_LABEL = r"[a-z0-9-]+"
 #: A plain registrable domain: dot-separated labels of alphanumerics and
 #: hyphens. Deliberately excludes `:`, `/`, `@` and `*` so a base domain can
 #: never smuggle a port, a path, userinfo or a wildcard into the pattern.
-_BASE_DOMAIN_RE = re.compile(
-    r"^[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?)+$"
-)
+#:
+#: The shape is deliberately linear. The naive alternative
+#: ``[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?)+$``
+#: lets the label's character classes overlap, so a full-match that fails at
+#: the end (say, a trailing dot) makes the engine retry every split of every
+#: label - exponential on inputs like ``0.00.00.00...`` (CodeQL ``py/redos``,
+#: high). Here each label is one ``[a-z0-9-]+`` group whose class is disjoint
+#: from the ``\.`` separator, which the engine matches deterministically; the
+#: "no leading/trailing hyphen" rule moves to an explicit check below.
+_BASE_DOMAIN_RE = re.compile(r"^[a-z0-9-]+(?:\.[a-z0-9-]+)+$")
 
 
 def is_valid_base_domain(base_domain: str) -> bool:
@@ -75,7 +82,12 @@ def is_valid_base_domain(base_domain: str) -> bool:
     """
     if not base_domain:
         return False
-    return _BASE_DOMAIN_RE.fullmatch(base_domain.strip().lower()) is not None
+    domain = base_domain.strip().lower()
+    if _BASE_DOMAIN_RE.fullmatch(domain) is None:
+        return False
+    # DNS labels must not start or end with a hyphen; `[a-z0-9-]+` alone would
+    # accept `-skyrict.in` and `skyrict.in-`, which are not registrable domains.
+    return all(not label.startswith("-") and not label.endswith("-") for label in domain.split("."))
 
 
 def tenant_origin_regex(base_domain: str) -> str | None:

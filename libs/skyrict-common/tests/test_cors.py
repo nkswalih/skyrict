@@ -47,6 +47,20 @@ class TestIsValidBaseDomain:
     def test_is_case_insensitive(self) -> None:
         assert is_valid_base_domain("  SKYrict.IN  ") is True
 
+    def test_base_domain_regex_is_linear(self) -> None:
+        """Regression for CodeQL ``py/redos`` (high) on the old nested-quantifier
+        pattern: ``[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?...`` had overlapping character
+        classes inside the repeated label group, so a full-match that failed at
+        the end backtracked exponentially on inputs of repeated ``0.00.00...``
+        labels. The linear form answers these in microseconds; the old form took
+        minutes at 40 labels. Asserting both the accepting and the failing
+        shapes keeps the linearity honest without a wall-clock timer.
+        """
+        pathological = "0." + "00." * 40 + "00"
+        assert is_valid_base_domain(pathological) is True
+        # A trailing dot forces a full-match failure - the blow-up path.
+        assert is_valid_base_domain(pathological + ".") is False
+
 
 class TestTenantOriginRegex:
     def test_matches_a_tenant_subdomain(self) -> None:
