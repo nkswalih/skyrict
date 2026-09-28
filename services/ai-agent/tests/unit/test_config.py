@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from ai_agent.core.config import Environment, Settings
 
@@ -151,3 +152,47 @@ def test_email_alerts_default_to_disabled(monkeypatch, tmp_path) -> None:
     assert s.anomaly_notify_emails == []
     assert s.EMAIL_SMTP_HOST == ""
     assert s.ANOMALY_REVIEW_BASE_URL == ""
+
+
+class TestBlankConnectionUrlsRejected:
+    """A *set-but-empty* connection URL must fail in settings, not in a driver.
+
+    `Field(...)` enforces presence, and an env var set to "" is present. That
+    is not hypothetical: the IaC's `redisUrlOverride` defaults to '', so
+    `deployManagedRedis=false` with the override left alone handed this service
+    `AI_REDIS_URL=''` - which validated, then raised "Redis URL must specify
+    one of the following schemes" at import, minutes after a green pipeline.
+    DATABASE_URL fails the same way against SQLAlchemy.
+
+    See skyrict_common.config_types and audit finding 10.
+    """
+
+    @pytest.mark.parametrize("field", ["AI_DATABASE_URL", "AI_REDIS_URL"])
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_is_rejected_and_names_the_variable(
+        self, monkeypatch, tmp_path, field: str, blank: str
+    ) -> None:
+        key_file = tmp_path / "public.pem"
+        key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+        monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+        for key, value in _base_env().items():
+            if key != field:
+                monkeypatch.setenv(key, value)
+        # Set, but empty - the shape that defeated Field(...).
+        monkeypatch.setenv(field, blank)
+
+        with pytest.raises(ValidationError) as excinfo:
+            Settings(_env_file=None)  # type: ignore[call-arg]
+        assert field.removeprefix("AI_").lower() in str(excinfo.value).lower()
+
+    def test_a_real_url_is_accepted(self, monkeypatch, tmp_path) -> None:
+        # Orthogonal control: the constraint must not reject working values, or
+        # this "fix" would just trade one outage for another.
+        key_file = tmp_path / "public.pem"
+        key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+        monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+        for key, value in _base_env().items():
+            monkeypatch.setenv(key, value)
+
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.REDIS_URL == "redis://localhost:6379/0"

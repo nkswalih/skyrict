@@ -14,6 +14,11 @@ from pathlib import Path  # noqa: TC003  # pydantic resolves annotations at runt
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# NonEmptyStr is a runtime type here: pydantic builds the field validator while
+# creating the class, so moving it into a TYPE_CHECKING block would fail at
+# import. Same reason Path above carries a noqa.
+from skyrict_common.config_types import NonEmptyStr  # noqa: TC001
+
 
 class Environment(enum.StrEnum):
     """Deployment environments - exactly four, no ad-hoc values."""
@@ -48,7 +53,9 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False, description="enable debug mode")
 
     # --- Database (CRITICAL - no default) ---
-    DATABASE_URL: str = Field(..., description="async PostgreSQL connection string - REQUIRED")
+    DATABASE_URL: NonEmptyStr = Field(
+        ..., description="async PostgreSQL connection string - REQUIRED, must not be empty"
+    )
 
     # --- DB connection pool (SKY-99, ADR-007) ---
     # Env-driven so staging/production can size the pool to the actual
@@ -84,7 +91,13 @@ class Settings(BaseSettings):
     )
 
     # --- Redis (CRITICAL - no default) ---
-    REDIS_URL: str = Field(..., description="Redis connection - REQUIRED")
+    # NonEmptyStr, not str: REDIS_URL='' is exactly what a `redisUrlOverride`
+    # left at its empty default produces, and `Redis.from_url("")` raises a
+    # scheme error at import - long after a green pipeline. Rejecting it here
+    # names the variable instead. See skyrict_common.config_types.
+    REDIS_URL: NonEmptyStr = Field(
+        ..., description="Redis connection - REQUIRED, must not be empty"
+    )
 
     # --- JWT RS256 (CRITICAL - all four required) ---
     JWT_PRIVATE_KEY_PATH: Path = Field(
@@ -97,7 +110,7 @@ class Settings(BaseSettings):
         ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
     )
     JWKS_AUDIENCE: str = Field(
-        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.io"
+        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, description="access token TTL")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="refresh token TTL")

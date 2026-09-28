@@ -25,6 +25,11 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# NonEmptyStr is a runtime type here: pydantic builds the field validator while
+# creating the class, so moving it into a TYPE_CHECKING block would fail at
+# import. Same reason Path above carries a noqa.
+from skyrict_common.config_types import NonEmptyStr  # noqa: TC001
+
 
 class Environment(enum.StrEnum):
     """Deployment environments - exactly four, no ad-hoc values."""
@@ -54,12 +59,18 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False, description="enable debug mode")
 
     # --- Database (CRITICAL - no default) ---
-    DATABASE_URL: str = Field(..., description="async PostgreSQL connection string - REQUIRED")
+    DATABASE_URL: NonEmptyStr = Field(
+        ..., description="async PostgreSQL connection string - REQUIRED, must not be empty"
+    )
 
     # --- Redis (CRITICAL - required for distributed rate limiting) ---
-    REDIS_URL: str = Field(
+    # NonEmptyStr, not str: an empty value is what an IaC `redisUrlOverride`
+    # left at its default produces, and `Redis.from_url("")` raises a scheme
+    # error at import - long after a green pipeline. Rejecting it here names the
+    # variable instead. See skyrict_common.config_types.
+    REDIS_URL: NonEmptyStr = Field(
         ...,
-        description="Redis connection URL used by the distributed rate limiter - REQUIRED",
+        description="Redis connection URL used by the distributed rate limiter - REQUIRED, must not be empty",
     )
 
     # --- JWT verification (CRITICAL - all three required) ---
@@ -70,7 +81,7 @@ class Settings(BaseSettings):
         ..., description="JWT issuer claim (iss) - REQUIRED, e.g. https://auth.skyrict.io"
     )
     JWKS_AUDIENCE: str = Field(
-        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.io"
+        ..., description="JWT audience claim (aud) - REQUIRED, e.g. api.skyrict.in"
     )
 
     # --- CORS ---
