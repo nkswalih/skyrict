@@ -46,8 +46,21 @@ COPY libs/skyrict-events/README.md libs/skyrict-events/
 COPY libs/skyrict-testing/pyproject.toml libs/skyrict-testing/
 COPY libs/skyrict-testing/README.md libs/skyrict-testing/
 
+# The source trees MUST be present before `uv sync` runs. `skyrict-common` and
+# `skyrict-events` are declared as workspace dependencies, so uv builds them
+# during the sync; with only their manifests copied, hatchling has no package
+# directory to build, the sync silently produces a venv with no path entry for
+# any of them, and the container then dies on
+# `ModuleNotFoundError: No module named 'identity'`.
+COPY services/identity/src services/identity/src
+COPY libs/skyrict-common/src libs/skyrict-common/src
+COPY libs/skyrict-events/src libs/skyrict-events/src
+
 # Install production deps only
 RUN uv sync --frozen --no-dev --directory services/identity
+
+# Fail the build here rather than at runtime if the venv is not importable.
+RUN /app/.venv/bin/python -c "import identity, skyrict_common, skyrict_events; print('identity image imports ok')"
 
 # ---------------------------------------------------------------------------
 # Stage: production - minimal final image, non-root
@@ -69,13 +82,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=base /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy application source (no tests, no tests/fixtures/)
+# Copy application source (no tests, no tests/fixtures/). The venv already
+# resolves these from the paths installed by the base stage, so this is for
+# alembic's `prepend_sys_path = src` and for source-level debugging.
 COPY services/identity/src services/identity/src
 COPY libs/skyrict-common/src libs/skyrict-common/src
+COPY libs/skyrict-events/src libs/skyrict-events/src
 
 # Copy alembic migrations (needed at runtime for DB migrations)
 COPY services/identity/alembic services/identity/alembic
 COPY services/identity/alembic.ini services/identity/alembic.ini
+
+# Re-verify in the final image: this is the layer that actually ships, so a
+# regression here must break the build rather than a replica in production.
+# find_spec resolves the module without executing it - importing identity.main
+# would build its Settings and demand runtime env vars that do not exist at
+# build time, which would fail the build for the wrong reason.
+RUN /app/.venv/bin/python -c "import importlib.util as u; mods=('identity','identity.main','skyrict_common','skyrict_events'); missing=[m for m in mods if u.find_spec(m) is None]; assert not missing, 'unimportable in final image: %s' % missing; print('final image ok')"
 
 # Set ownership
 RUN chown -R skyrict:skyrict /app
@@ -87,6 +110,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
 
+# 1 worker, not 4. Measured resident memory at a single worker is 129 MiB
+# against a 0.5 GiB container limit; four workers of this app are an OOM kill
+# on every replica. Scale out with more replicas (see maxReplicas in
+# infra/azure/modules/apps.bicep) rather than forking workers inside a
+# 0.5 GiB container.
 CMD ["uvicorn", "identity.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "4", "--no-access-log", "--no-proxy-headers"]
+     "--workers", "1", "--no-access-log", "--no-proxy-headers"]
