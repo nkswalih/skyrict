@@ -113,6 +113,11 @@ service-account*.json
 # Local runtime data (GeoLite2 DB etc. - see scripts/geolite2)
 .local/
 
+# Runtime ARM parameters built by scripts/azure/build-params.sh from the
+# committed template with GitHub Secrets injected. Never commit this file -
+# it is an output, and it must stay an output.
+infra/azure/parameters/.runtime/
+
 # ---------- Docker ----------
 # Root local-only convenience compose (canonical files live in infra/docker/)
 docker-compose.yml
