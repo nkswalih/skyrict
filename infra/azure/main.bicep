@@ -176,6 +176,15 @@ param jwksIssuer string = ''
 @description('JWT audience claim shared by identity/core/ai-agent.')
 param jwksAudience string = ''
 
+@description('The single public API hostname, e.g. "api.skyrict.in". Binds the managed certificate, sets ingress.customDomains and the CORS allow-list. Empty means the generated *.azurecontainerapps.io FQDN only.')
+param apiHostname string = ''
+
+@description('Cloudflare Turnstile site key. Empty in beta, which blocks all self-service signup - see docs/runbooks/pre-release-audit-2026-09.md finding 23.')
+param turnstileSiteKey string = ''
+
+@description('Set true when the CD workflow has written the "turnstile-secret-key" secret into Key Vault. The secret VALUE never enters Bicep: it would land in the readable env config of the container app, where anything holding Reader on the app could read it. The flag only decides whether the Key Vault reference is emitted at all, which is required because a secretRef to a missing secret makes the container fail to start.')
+param turnstileSecretConfigured bool = false
+
 @description('Max replicas per app (scale-to-zero from minReplicas 0).')
 param maxReplicas int = 2
 
@@ -198,8 +207,8 @@ param dbMaxOverflow int = 0
 // Observability (budgets)
 // ---------------------------------------------------------------------------
 
-@description('Monthly budget amount in USD that triggers the percent alerts.')
-param budgetAmount int = 10
+@description('Monthly budget amount in USD that triggers the percent alerts. Defaults to the free-trial allotment so the 50/80/90% thresholds fire at meaningful amounts.')
+param budgetAmount int = 200
 
 @description('Percent thresholds at which to fire budget alerts.')
 param budgetThresholds array = [
@@ -219,6 +228,16 @@ param budgetEndDate string = '2099-12-31'
 
 // ---------------------------------------------------------------------------
 // Modules
+//
+// NOTE ON DEPLOYMENT GUARDS: several parameter combinations produce a
+// *silently broken* environment rather than a failed deployment - most
+// seriously an empty TURNSTILE_SECRET_KEY, which makes identity reject 100% of
+// self-service signups while the web UI has already shown "Verified". Bicep
+// `assert` is still behind an experimental feature flag in the pinned CLI, so
+// these invariants are enforced by the `Preflight` step in
+// .github/workflows/cd-azure-beta.yml instead, which fails the run with a
+// readable message before anything is deployed. See
+// docs/runbooks/pre-release-audit-2026-09.md findings 6, 7, 8 and 23.
 // ---------------------------------------------------------------------------
 
 var trustedProxyCidrs = empty(trustedProxies) ? [vnetAddressPrefix] : trustedProxies
@@ -296,6 +315,7 @@ module apps 'modules/apps.bicep' = {
     tags: tags
     deployWorkloads: deployWorkloads
     caeId: environment.outputs.environmentId
+    environmentName: environment.outputs.environmentName
     acrLoginServer: registry.outputs.loginServer
     uamiId: security.outputs.uamiId
     uamiClientId: security.outputs.uamiClientId
@@ -316,6 +336,9 @@ module apps 'modules/apps.bicep' = {
     baseDomain: baseDomain
     jwksIssuer: jwksIssuer
     jwksAudience: jwksAudience
+    apiHostname: apiHostname
+    turnstileSiteKey: turnstileSiteKey
+    turnstileSecretConfigured: turnstileSecretConfigured
     maxReplicas: maxReplicas
     containerCpu: containerCpu
     containerMemory: containerMemory

@@ -21,9 +21,12 @@
       "value": "skyrict.in"
     },
     "jwksIssuer": {
-      "value": "https://auth.skyrict.in"
+      "value": "https://api.skyrict.in"
     },
     "jwksAudience": {
+      "value": "api.skyrict.in"
+    },
+    "apiHostname": {
       "value": "api.skyrict.in"
     },
     "corsOrigins": {
@@ -62,7 +65,7 @@
       "value": 30
     },
     "budgetAmount": {
-      "value": 10
+      "value": 200
     },
     "budgetThresholds": {
       "value": [
