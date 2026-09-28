@@ -105,6 +105,30 @@ def cross_check_jwt_tenant(token_tenant_id: Any, routed_tenant_id: str) -> None:
         raise TenantMismatchError("Token tenant does not match the routed tenant")
 
 
+def cross_check_routing_hint(token_tenant_slug: str, hint_slug: str) -> None:
+    """Reject when a verified token's tenant differs from the request's routing hint.
+
+    The signed ``tenant_id`` claim is the tenant authority. The routing hint
+    (Host label, else X-Tenant-Slug) only records which tenant the caller
+    believes it is addressing. When both are present they must agree: a
+    disagreement means the caller holds a credential for one tenant while
+    naming another, which is a cross-tenant attempt and is refused before any
+    tenant data is read.
+
+    Callers must skip this when the hint is absent - on a shared API host the
+    Host names no tenant, and the token is then the only signal available.
+
+    Raises:
+        TenantMismatchError: When the token's tenant slug and the hint disagree.
+    """
+    from skyrict_common.exceptions import TenantMismatchError
+
+    if token_tenant_slug != hint_slug:
+        raise TenantMismatchError(
+            "Token tenant does not match the tenant named by the request routing"
+        )
+
+
 def verify_jwt_key_usable() -> None:
     """Verify the configured public key parses as an RSA key of >= 2048 bits.
 

@@ -25,12 +25,13 @@ from core.core.exceptions import (
     SkyrictError,
     TenantContextMissingError,
     TenantDisabledError,
+    TenantMismatchError,
     TenantNotFoundError,
     TokenExpiredError,
     TokenInvalidError,
     skyrict_error_handler,
 )
-from core.core.security import cross_check_jwt_tenant, verify_jwt
+from core.core.security import TokenClaims, cross_check_routing_hint, verify_jwt
 from core.core.tenant_context import TenantContext
 from core.core.tenant_resolver import derive_tenant_slug
 from core.db.session import async_session_factory
@@ -63,17 +64,25 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
-    """Resolve the routed tenant, cross-check the JWT, populate TenantContext.
+    """Resolve the tenant, verify it, and populate TenantContext.
 
     Flow (single source of truth - no other layer re-resolves the tenant):
       1. Skip health/ready/docs (no tenant context needed).
-      2. Derive the tenant slug from the routing layer (Host / X-Tenant-Slug).
-      3. Look up the tenant by slug - unknown -> TenantNotFoundError,
-         disabled -> TenantDisabledError.
-      4. If a Bearer token is present, verify it via verify_jwt() - the ONE AND
-         ONLY decode path - and cross-check its tenant claim against the routed
-         tenant; mismatch -> TenantMismatchError (401) and processing stops.
-      5. Populate TenantContext (tenant_id, user_id) and bind structlog vars.
+      2. Read the routing HINT: the per-tenant Host label, else X-Tenant-Slug.
+         The hint records which tenant the caller is ADDRESSING. It is absent on
+         the shared API host, where the Host names no tenant.
+      3. Verify the bearer token, if one was sent, via verify_jwt() - the ONE
+         AND ONLY decode path.
+      4. Resolve the tenant:
+           - token verified  -> the SIGNED ``tenant_id`` claim is the authority.
+             Unknown -> TenantNotFoundError, disabled -> TenantDisabledError.
+             When a hint is also present it must agree with the token's tenant;
+             disagreement -> TenantMismatchError (401), so a forged hint can
+             never redirect a valid credential at another tenant.
+           - no valid token  -> the hint is required (TenantContextMissingError)
+             and selects the tenant. Nothing is readable on this path: handlers
+             still require a verified token via get_current_user.
+      5. Populate TenantContext (tenant_id, slug, user_id) and bind structlog vars.
       6. After the response, clear the context and structlog vars so no tenant
          leaks into the next request.
     """
@@ -92,47 +101,61 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     async def _resolve_and_call(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        # --- 2. Derive the slug from the routing layer ---
-        slug = derive_tenant_slug(request)
-        if slug is None:
-            raise TenantContextMissingError(
-                "Tenant cannot be resolved from the request. "
-                "Use a tenant subdomain (production) or X-Tenant-Slug (dev)."
-            )
+        # --- 2. Routing hint: the tenant the caller is addressing ---
+        hint = derive_tenant_slug(request)
 
-        # --- 3. Verify the tenant exists and is active ---
-        async with async_session_factory() as session:
-            tenant = await TenantRepository(session).get_by_slug(slug)
-            if tenant is None:
-                raise TenantNotFoundError(f"No tenant found for slug '{slug}'")
-            if not tenant.is_active:
-                raise TenantDisabledError(f"Tenant '{slug}' is disabled")
-            routed_tenant_id = str(tenant.id)
-
-        # --- 4. Verify the JWT (if present) and cross-check its tenant ---
-        user_id: str | None = None
+        # --- 3. Verify the bearer token, if one was sent ---
+        payload: TokenClaims | None = None
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header.removeprefix("Bearer ").strip()
             try:
                 payload = verify_jwt(token)
             except (TokenExpiredError, TokenInvalidError):
-                # Invalid/expired token: let route-level deps (get_current_user)
-                # produce the 401. We never decode without verification.
+                # Never decode without verification. Fall through to the routing
+                # hint; route-level deps (get_current_user) then produce the 401.
                 logger.debug(
                     "jwt_verification_failed",
                     path=request.url.path,
                     request_id=request.state.request_id,
                 )
-            else:
+
+        # --- 4. Resolve the tenant, then verify it exists and is active ---
+        user_id: str | None = None
+        async with async_session_factory() as session:
+            repo = TenantRepository(session)
+            if payload is not None:
+                # Authenticated: the signed claim decides the tenant.
+                jwt_tenant_id = payload.get("tenant_id")
+                if jwt_tenant_id is None:
+                    raise TenantMismatchError("Access token is missing its tenant claim.")
                 user_id = payload.get("sub")
-                cross_check_jwt_tenant(payload.get("tenant_id"), routed_tenant_id)
+                tenant = await repo.get_by_id(jwt_tenant_id)
+                if tenant is None:
+                    raise TenantNotFoundError("Access token references an unknown tenant")
+                if hint is not None:
+                    cross_check_routing_hint(tenant.slug, hint)
+                slug = tenant.slug
+            else:
+                # Unauthenticated: the hint is routing only - it grants no access.
+                if hint is None:
+                    raise TenantContextMissingError(
+                        "Tenant cannot be resolved from the request. Send a tenant "
+                        "subdomain host, or X-Tenant-Slug, together with a bearer token."
+                    )
+                tenant = await repo.get_by_slug(hint)
+                if tenant is None:
+                    raise TenantNotFoundError(f"No tenant found for slug '{hint}'")
+                slug = hint
+            if not tenant.is_active:
+                raise TenantDisabledError(f"Tenant '{slug}' is disabled")
+            tenant_id = str(tenant.id)
 
         # --- 5. Populate the request-scoped context ---
-        TenantContext.set(routed_tenant_id)
+        TenantContext.set(tenant_id)
         TenantContext.set_tenant_slug(slug)
         TenantContext.set_user_id(user_id)
-        structlog.contextvars.bind_contextvars(tenant_id=routed_tenant_id, user_id=user_id)
+        structlog.contextvars.bind_contextvars(tenant_id=tenant_id, user_id=user_id)
 
         try:
             response = await call_next(request)
