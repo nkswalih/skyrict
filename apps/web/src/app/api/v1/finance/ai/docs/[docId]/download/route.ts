@@ -1,7 +1,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { callBackendStream, resolveTenantSlug } from "@/lib/server/auth";
+import { resolveBffAuth } from "@/lib/server/bff-auth";
+import {
+    applySessionCookie,
+    callBackendStream,
+    resolveTenantSlug,
+} from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +18,11 @@ export const dynamic = "force-dynamic";
  * (the same corruption the reports CSV export route fixes), so the upstream
  * ``application/pdf`` body is passed to the browser as-is. Only the
  * download-relevant headers survive, mirroring the stream/attach relays.
+ *
+ * The access token comes from the shared ``resolveBffAuth``, so a cookie-only
+ * caller authenticates here exactly as it does on every other BFF route. This
+ * handler previously read only the Authorization header and forwarded
+ * ``token: null``; see pre-release audit finding 26.
  */
 export async function GET(
     request: NextRequest,
@@ -20,10 +30,9 @@ export async function GET(
 ) {
     const { docId } = await params;
     const slug = resolveTenantSlug(request.headers.get("host"));
-    const authorization = request.headers.get("authorization");
-    const token = authorization?.toLowerCase().startsWith("bearer ")
-        ? authorization.slice("Bearer ".length)
-        : null;
+    const auth = await resolveBffAuth(request);
+    if (!auth.ok) return auth.response;
+    const { token, rotatedRefreshToken } = auth;
 
     const upstream = await callBackendStream(
         `/finance/ai/docs/${encodeURIComponent(docId)}/download`,
@@ -42,5 +51,10 @@ export async function GET(
         const value = upstream.headers.get(name);
         if (value) headers.set(name, value);
     }
-    return new Response(upstream.body, { status: upstream.status, headers });
+    const response = new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers,
+    });
+    if (rotatedRefreshToken) applySessionCookie(response, rotatedRefreshToken);
+    return response;
 }

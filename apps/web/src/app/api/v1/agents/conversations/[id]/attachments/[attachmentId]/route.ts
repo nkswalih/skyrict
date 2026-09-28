@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { resolveBffAuth } from "@/lib/server/bff-auth";
 import {
+    applySessionCookie,
     assertSameOrigin,
     callBackendStream,
     resolveTenantSlug,
@@ -12,12 +14,16 @@ export const dynamic = "force-dynamic";
 /**
  * BFF relay for conversation attachment blobs (SKY-60 attachment durability).
  *
- * The GET fetch is made with an in-memory Bearer token (never a cookie), so a
- * direct `<img src>` to the BFF cannot authenticate - the frontend fetches the
- * blob via `apiFetchRaw` and previews it through an object URL, exactly like
- * document detail previews. This route shadows the `/api/v1/[...path]`
- * catch-all so the binary body passes through untouched instead of being
- * round-tripped as JSON.
+ * The frontend fetches the blob via `apiFetchRaw` and previews it through an
+ * object URL, exactly like document detail previews. This route shadows the
+ * `/api/v1/[...path]` catch-all so the binary body passes through untouched
+ * instead of being round-tripped as JSON.
+ *
+ * The access token comes from the shared `resolveBffAuth`. This handler used to
+ * read only the Authorization header and forward `token: null` when it was
+ * absent, so a cookie-only caller got a relayed 401; the documented contract is
+ * that the httpOnly session cookie authenticates every same-origin BFF route.
+ * See pre-release audit finding 26.
  */
 export async function GET(
     request: NextRequest,
@@ -34,10 +40,9 @@ export async function GET(
 
     const { id, attachmentId } = await params;
     const slug = resolveTenantSlug(request.headers.get("host"));
-    const authorization = request.headers.get("authorization");
-    const token = authorization?.toLowerCase().startsWith("bearer ")
-        ? authorization.slice("Bearer ".length)
-        : null;
+    const auth = await resolveBffAuth(request);
+    if (!auth.ok) return auth.response;
+    const { token, rotatedRefreshToken } = auth;
 
     const upstream = await callBackendStream(
         `/ai/agents/conversations/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,
@@ -59,8 +64,10 @@ export async function GET(
     if (!headers.has("Content-Type")) {
         headers.set("Content-Type", "application/octet-stream");
     }
-    return new Response(upstream.body, {
+    const response = new NextResponse(upstream.body, {
         status: upstream.status,
         headers,
     });
+    if (rotatedRefreshToken) applySessionCookie(response, rotatedRefreshToken);
+    return response;
 }

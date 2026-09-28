@@ -484,3 +484,9 @@ export async function sessionAccessToken(
   const rotated = await rotateRefreshToken(refreshToken, slug);
   return rotated.access;
 }
+
+// The BFF request-authentication policy lives in ./bff-auth, not here. It has
+// to be its own module so `resolveBffAuth` can call `sessionAccessToken`
+// through a module boundary: a same-module call is invisible to `vi.mock`, so
+// the policy would be untestable in isolation and route tests would have to
+// re-implement it as a mirror. See ./bff-auth.ts.
