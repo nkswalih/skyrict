@@ -22,6 +22,7 @@ from identity.core.exceptions import (
     skyrict_error_handler,
     unhandled_error_handler,
 )
+from skyrict_common.cors import tenant_origin_regex
 
 
 def create_app() -> FastAPI:
@@ -59,6 +60,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        # The exact-match list is the apex only. Tenant pages are served from
+        # per-tenant subdomains, which are dynamic, so they need the anchored
+        # regex derived from BASE_DOMAIN. Without it the browser-direct agent
+        # chat SSE fails preflight and nothing logs - the request never reaches
+        # application code. See skyrict_common.cors for the anchoring argument.
+        allow_origin_regex=tenant_origin_regex(settings.BASE_DOMAIN),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

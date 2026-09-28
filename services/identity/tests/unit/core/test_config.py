@@ -4,7 +4,8 @@ Covers all four staging/production fail-fast checks:
   1. JWT key paths pointing at committed test fixtures
   2. DEBUG=true
   3. CORS_ORIGINS contains '*'
-  4. BASE_DOMAIN missing (tenant subdomain resolution)
+  4. BASE_DOMAIN missing or not a plain domain (tenant subdomain resolution,
+     and the CORS origin regex derived from it)
 """
 
 from __future__ import annotations
@@ -213,6 +214,45 @@ class TestProductionSafety:
             )
         )
         assert s.BASE_DOMAIN == "skyrict.com"
+
+    @pytest.mark.parametrize(
+        "bad_domain",
+        [
+            "https://skyrict.in",  # scheme
+            "skyrict.in:443",  # port
+            "localhost:3000",  # host and port
+            "*.skyrict.in",  # wildcard
+            "skyrict.in/tenant",  # path
+        ],
+    )
+    def test_raises_production_unusable_base_domain(self, tmp_path: Path, bad_domain: str):
+        """A BASE_DOMAIN that is set but not a plain domain must refuse to boot.
+
+        Worse than empty: an empty one is caught by the check above, whereas a
+        malformed one resolves no tenant from a Host header *and* degrades the
+        derived CORS regex to None, so tenant origins stop being allowed with
+        no error logged anywhere.
+        """
+        with pytest.raises(RuntimeError, match="plain domain name"):
+            Settings(
+                **_make_valid_settings(
+                    tmp_path,
+                    ENVIRONMENT=Environment.PRODUCTION,
+                    BASE_DOMAIN=bad_domain,
+                )
+            )
+
+    def test_dev_allows_unusable_base_domain(self, tmp_path: Path):
+        """The validity rule is production-only. Local development runs with an
+        empty or host:port BASE_DOMAIN and must not fail to import."""
+        s = Settings(
+            **_make_valid_settings(
+                tmp_path,
+                ENVIRONMENT=Environment.DEV,
+                BASE_DOMAIN="localhost:3000",
+            )
+        )
+        assert s.BASE_DOMAIN == "localhost:3000"
 
 
 class TestMissingRequiredVars:

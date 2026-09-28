@@ -56,7 +56,7 @@ because `api` is in `RESERVED_SLUGS`.
 | 4 | Billing dead (503) | **Open** — needs Stripe keys |
 | 5 | No AI provider | **Open** — needs provider key + model |
 | 6 | No API host exists | **Fixed** — nginx gateway is the single public origin, ACA managed cert bound to `api.skyrict.in` |
-| 7 | CORS blocks chat SSE | **Open — see below** |
+| 7 | CORS blocks chat SSE | **Fixed** — anchored tenant-subdomain `allow_origin_regex` derived from `BASE_DOMAIN`; the gateway was the wrong layer, see the correction below |
 | 8 | `jwksIssuer` wrong host | **Fixed** — issuer and audience both `api.skyrict.in`; Preflight enforces |
 | 9 | Readiness probe shallow | **Fixed** — `/api/v1/ready` for readiness, `/api/v1/health` kept for liveness |
 | 10 | Redis override trap | **Fixed** — empty `REDIS_URL` rejected at startup; Preflight guards the swap |
@@ -77,21 +77,56 @@ because `api` is in `RESERVED_SLUGS`.
 | 25 | L3 no-data 404 shown as outage | **Fixed** |
 | 26 | BFF cookie-only gap on chat | **Fixed** — cookie session resolved on the BFF route |
 
-### #7 is the one that blocks a demo
+### #7 — the one that broke the flagship demo — and a correction
 
-`apps/web/src/lib/chat/sse-client.ts` calls
-`https://api.skyrict.in/ai/agents/chat/stream` **directly from the browser**,
-so it is cross-origin from `https://skyrict.in`. The three services do have CORS
-middleware, but the request no longer reaches them directly — it goes through
-the nginx gateway, and `infra/nginx/gateway.conf.template` currently contains
-**no** `Access-Control-*` header and no `OPTIONS` handling at all. `corsOrigins`
-is correctly set to `["https://skyrict.in"]` in the beta parameters, so the
-allow-list exists; nothing is emitting the headers for it.
+**Correction — my first diagnosis named the wrong layer.** I initially wrote that
+the nginx gateway was at fault, because `infra/nginx/gateway.conf.template` does
+contain no `Access-Control-*` header and no `OPTIONS` handling. That observation
+is true and irrelevant. The gateway proxies to the backends without altering the
+request or the response, so the backends' own `CORSMiddleware` is reached, and it
+is what must answer the preflight. Adding CORS to the gateway would have
+duplicated a policy the services already enforce, in a second place, with the two
+free to disagree.
 
-This is not cosmetic: the agent chat is the flagship demo surface, and a
-preflight failure there fails the whole showcase. It is called out separately
-rather than folded into the table because the fix changes the gateway's
-request-handling contract, not just a config value.
+**The real cause, as the finding's own body already stated:** the app is served
+from per-tenant subdomains (`https://acme.skyrict.in`) while `corsOrigins` is
+the apex only, `["https://skyrict.in"]`. `allow_origins` is an exact-match list
+and cannot enumerate a subdomain set that is dynamic. Every service sets
+`allow_credentials=True`, which forbids `*`, so the apex-only list was the entire
+policy. The browser's preflight was therefore rejected, the request was never
+issued, and — because a failed preflight never reaches application code — nothing
+logged and nothing alerted.
+
+**Resolution — fixed, in the layer that already owned it.** The policy now lives
+once in `skyrict_common.cors.tenant_origin_regex`, which returns an anchored
+pattern derived from `BASE_DOMAIN` — a value the IaC already injects into all
+three services:
+
+    ^https://[a-z0-9-]+\.skyrict\.in$
+
+It is passed as `allow_origin_regex` alongside the existing exact-match list.
+Deriving it from `BASE_DOMAIN` instead of adding a second configured domain is
+deliberate: a duplicate copy of the same string is the exact drift that left the
+published domain wrong three times (finding 16). The slug class `[a-z0-9-]+` is
+the one `identity.core.tenant_resolver` already compiles, so the two cannot
+disagree about what a tenant host looks like.
+
+The anchoring is the entire safety argument, so each part is pinned by a test
+rather than left to inspection: `^` and `$` reject
+`https://acme.skyrict.in.attacker.example`; a single label rejects
+`https://a.b.skyrict.in`; the pinned scheme rejects `http://`.
+
+The complement is the production guard. A `BASE_DOMAIN` that is set but unusable
+— a scheme, a port, a wildcard — is worse than an empty one, because the empty
+one is caught by the existing check while the malformed one resolves no tenant
+*and* degrades the regex to `None`, silently disabling the whole policy. All
+three services now refuse to boot in staging or production unless it is a plain
+domain name. Local development is exempt and degrades to the exact-match list,
+so an empty `BASE_DOMAIN` still imports cleanly.
+
+Verified: 32 policy tests in `skyrict-common`, 55 in identity (including the
+full allow/deny matrix driven through a real request), 5 in core, 2 in
+ai-agent.
 
 ---
 
@@ -203,6 +238,11 @@ served from `https://{tenant}.skyrict.in` calling
 be blocked. `allow_credentials=True` rules out `*`, but an anchored regex
 (`^https://[a-z0-9-]+\.skyrict\.in$`) is safe and required, since tenant
 subdomains are dynamic.
+
+**Resolution — fixed.** Implemented as described, with the pattern derived from
+`BASE_DOMAIN` rather than configured separately. See "Fix status" above for the
+correction to where the fault was first located, and for the production guard
+that keeps a malformed `BASE_DOMAIN` from silently disabling the policy.
 
 ### 8. `jwksIssuer` points at the wrong host
 `beta.parameters.json` sets `jwksIssuer: "https://auth.skyrict.in"`, but the
@@ -724,7 +764,9 @@ the scheme check, but `Bearer<U+00A0>` survives that stripping and is removed by
 
 ## What is left, in order
 
-1. **P0 #7** - CORS on the gateway. Blocks the agent chat demo end to end.
+1. **P0 #7 is closed.** The gateway is a pure proxy and never needed CORS; the
+   defect was an apex-only exact-match origin list in the services, and it is
+   fixed there.
 2. **P0 #23** - real Turnstile site + secret keys. Structurally wired, but the
    Preflight hard-fails without them, so this gates the first deploy.
 3. **P0 #3, #4, #5, #17** - inject the missing env vars. Needs real SMTP,
@@ -736,9 +778,9 @@ the scheme check, but `Bearer<U+00A0>` survives that stripping and is removed by
 5. **P1 #13, #14, #15** - pool math, node cap, backend scale rule.
 6. **P2 #21** - the remaining stale runbooks and ADRs.
 
-Findings #1, #2, #6, #8, #9, #10, #11, #12, #16, #22, #25 and #26 are closed and
-covered by the fix series; #23 is closed in structure and waiting only on
-credentials.
+All closed findings — #1, #2, #6, #8, #9, #10, #11, #12, #16, #22, #25, #26 and
+now #7 — are covered by the fix series; #23 is closed in structure and waiting
+only on credentials.
 
 ## Blocked on you
 

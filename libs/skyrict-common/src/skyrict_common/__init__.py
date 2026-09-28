@@ -1,6 +1,7 @@
 """Skyrict common utilities - shared across all services."""
 
 from skyrict_common.config_types import NonEmptyStr
+from skyrict_common.cors import is_valid_base_domain, tenant_origin_regex
 from skyrict_common.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -67,6 +68,8 @@ __all__ = [
     "ValidationError",
     "configure_logging",
     "get_logger",
+    "is_valid_base_domain",
+    "tenant_origin_regex",
 ]
 
 __version__ = "0.1.0"
