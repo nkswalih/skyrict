@@ -229,8 +229,28 @@ if ($creds.Count -eq 0) {
     if ($LASTEXITCODE -ne 0) { throw "federated-credential create failed" }
     Write-Host "Created federated credential with subject '$subject'."
 }
+elseif ((@($creds)[0].subject) -ne $subject) {
+    # Reuse BY NAME is what let a stale subject survive. The script reported
+    # "already exists" and exited zero while leaving a credential that cannot
+    # authenticate anything, so re-running the bootstrap - the documented
+    # remedy for a broken deployment identity - could never repair it. The name
+    # is a lookup key, not evidence that the credential is correct.
+    $existing = @($creds)[0]
+    $updateBody = @{
+        issuer = 'https://token.actions.githubusercontent.com'
+        subject = $subject
+        description = "GitHub Actions OIDC for $GitHubRepo environment $EnvironmentName"
+        audiences = @('api://AzureADTokenExchange')
+    } | ConvertTo-Json -Depth 5
+    # `name` is immutable on this resource, so it is not sent here.
+    az ad app federated-credential update --id $appId --federated-credential-id $existing.id --parameters $updateBody | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "federated-credential update failed" }
+    Write-Host "  REPAIRED subject on existing credential '$credName'."
+    Write-Host "    was: $($existing.subject)"
+    Write-Host "    now: $subject"
+}
 else {
-    Write-Host "Federated credential '$credName' already exists (reusing)."
+    Write-Host "Federated credential '$credName' already exists with the expected subject."
 }
 
 # ---------------------------------------------------------------------------
