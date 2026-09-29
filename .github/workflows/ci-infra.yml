@@ -123,3 +123,69 @@ jobs:
         run: |
           jq -e '.parameters.postgresPassword.value == ""' infra/azure/parameters/beta.parameters.json > /dev/null
           jq -e '.parameters.deployWorkloads.value == false' infra/azure/parameters/beta.parameters.json > /dev/null
+
+      - name: Guard CD deployment outputs against main.bicep
+        # cd-azure-beta.yml reads deployment outputs as `jq -r '.X.value'`
+        # against the JSON that the top-level `az deployment group create`
+        # prints. Bicep does not forward module outputs, so main.bicep has to
+        # re-export every one of them by hand.
+        #
+        # Forgetting one is not a compile error and not a runtime error at
+        # the call site either: jq prints the string "null" for an absent key
+        # and exits 0, so the value is written to GITHUB_OUTPUT and consumed
+        # verbatim. The symptom is `curl https://null/api/v1/health` and
+        # `az containerapp show --name null` in the final job, after
+        # provision-infra, build-push-images, deploy-workloads and migrate
+        # have all reported success - a complete rollout that cannot verify
+        # itself, discovered by reading logs rather than by a red build.
+        #
+        # The Preflight step also greps `.value`, but off the *parameters*
+        # file rather than a deployment output, so `.parameters.` reads are
+        # excluded by shape instead of by an exemption list. A hardcoded
+        # allowlist is this same failure mode with an extra maintenance
+        # burden, and it would silently rot the first time a parameter was
+        # added to the Preflight step. Note the dotted path is matched in
+        # full - `grep -o` anchors on the last dot, so a pattern of
+        # `\.[A-Za-z_]*\.value` extracts `.apiHostname.value` out of
+        # `.parameters.apiHostname.value` and the filter misses it.
+        run: |
+          set -euo pipefail
+          workflow=".github/workflows/cd-azure-beta.yml"
+
+          mapfile -t consumed < <(
+            grep -oE '\.[A-Za-z_][A-Za-z0-9_.]*\.value' "$workflow" \
+              | grep -v '\.parameters\.' \
+              | sed -E 's/^\.//; s/\.value$//' \
+              | sort -u
+          )
+          mapfile -t declared < <(
+            grep -oE '^output [A-Za-z_][A-Za-z0-9_]*' infra/azure/main.bicep \
+              | awk '{print $2}' \
+              | sort -u
+          )
+
+          # Fail closed on an empty read set. Zero extracted outputs means the
+          # pattern stopped matching the workflow - a renamed key, a different
+          # jq invocation - not that the CD reads nothing it must declare.
+          # Without this the step reports OK having checked nothing, which is
+          # the one failure mode a guard must never have: it reads as evidence
+          # that the contract holds. Note the pipeline is inside a process
+          # substitution, so a no-match grep exits non-zero without tripping
+          # `set -e` in the parent, and that silence is exactly what this
+          # check exists to catch.
+          if [ "${#consumed[@]}" -eq 0 ]; then
+            echo "::error::extracted zero deployment-output reads from $workflow - the guard is not matching. Fix the pattern before trusting any pass from it."
+            exit 1
+          fi
+
+          missing=()
+          for key in "${consumed[@]}"; do
+            printf '%s\n' "${declared[@]}" | grep -qx "$key" || missing+=("$key")
+          done
+
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::cd-azure-beta.yml consumes deployment outputs main.bicep does not declare: ${missing[*]}"
+            echo "Bicep does not forward module outputs. Add each as \`output <name> string = apps.outputs.<name>\` in main.bicep, or stop reading it in the workflow."
+            exit 1
+          fi
+          echo "CD output contract OK - ${#consumed[@]} deployment output(s) consumed, all declared by main.bicep."

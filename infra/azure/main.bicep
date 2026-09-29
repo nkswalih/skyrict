@@ -386,6 +386,25 @@ output identityFqdn string = apps.outputs.identityFqdn
 output coreFqdn string = apps.outputs.coreFqdn
 output aiAgentFqdn string = apps.outputs.aiAgentFqdn
 
+// The gateway is the only externally-reachable app, so the CD's smoke tests
+// probe apiFqdn - the gateway's generated FQDN, which gets an ACA-managed
+// certificate immediately, unlike apiHostname, which stays pending until the
+// CNAME exists. The identity and core app NAMES are read for the same reason
+// one hop later: both have internal ingress and cannot be HTTP-probed from a
+// runner at all, so the workflow asserts revision state and running replica
+// count instead.
+//
+// These four have to be re-exported here explicitly, because Bicep does not
+// forward module outputs. The failure mode is quiet and total: `jq -r` against
+// a deployment whose top-level outputs lack a key does not error, it prints
+// the string "null", and that then becomes a literal hostname in
+// `curl https://null/...` and `az containerapp show --name null`. Every
+// earlier job passes and the run dies in verify. ci-infra.yml now fails a PR
+// that reintroduces a consumed-but-unexported output.
+output apiFqdn string = apps.outputs.apiFqdn
+output identityAppName string = apps.outputs.identityAppName
+output coreAppName string = apps.outputs.coreAppName
+output gatewayAppName string = apps.outputs.gatewayAppName
 output aiAgentAppName string = apps.outputs.aiAgentAppName
 
 output dbInitJobName string = apps.outputs.dbInitJobName
