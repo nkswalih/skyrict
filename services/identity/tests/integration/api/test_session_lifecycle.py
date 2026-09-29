@@ -181,6 +181,88 @@ class TestSessionLifecycle:
         finally:
             await _delete_tenant_by_slug(slug)
 
+    async def test_repeated_within_grace_replays_do_not_escalate_to_reuse(
+        self, client: AsyncClient
+    ) -> None:
+        """A K-way benign race must not walk the replayed token out of the window.
+
+        The reuse grace window remembers exactly one previous refresh token.
+        Rotating *inside* the window and storing the token that was just
+        consumed used to overwrite that memory, so each concurrent replay of
+        the same cookie pushed the original token one generation further from
+        the session record. The third replay was then classified as theft and
+        revoked the whole family - taking down a browser and a test client
+        that shared one cookie jar, for a race that is not an attack.
+
+        The fix carries the protected token forward and extends its deadline
+        instead, so any number of replays stay inside a single rotation.
+        """
+        slug, email = await _provision(client)
+        user_id, access, refresh = await _login(client, slug=slug, email=email)
+        try:
+            first = await _refresh(client, slug=slug, refresh_token=refresh)
+            assert first.status_code == 200
+
+            # Replay the same (already rotated-out) token repeatedly. Each is a
+            # benign race: a second tab, a dropped response, the page hydrating
+            # while the test client hydrates the same cookie.
+            for attempt in range(4):
+                tolerated = await _refresh(client, slug=slug, refresh_token=refresh)
+                assert tolerated.status_code == 200, f"replay {attempt} was rejected"
+                assert tolerated.json()["data"]["refresh_token"] != refresh
+
+            sessions = await _list_sessions(client, slug=slug, access_token=access)
+            assert len(sessions) == 1
+            assert sessions[0]["status"] == "active"
+
+            # The chain-kill is specifically what must NOT have happened.
+            async with async_session_factory() as session:
+                reuse_audit = await session.scalar(
+                    select(AuditLogModel).where(
+                        AuditLogModel.action == "auth.refresh.reuse_detected",
+                        AuditLogModel.actor_user_id == uuid.UUID(user_id),
+                    )
+                )
+                assert reuse_audit is None
+        finally:
+            await _delete_tenant_by_slug(slug)
+
+    async def test_reuse_after_grace_window_still_kills_the_chain(
+        self, client: AsyncClient
+    ) -> None:
+        """The widened window must not disarm theft detection.
+
+        The sticky grace token survives any number of replays, so a token
+        replayed long after the window has to be rejected on the deadline -
+        otherwise "carry the token forward" would quietly turn into
+        "accept this token forever".
+        """
+        slug, email = await _provision(client)
+        user_id, access, refresh = await _login(client, slug=slug, email=email)
+        try:
+            first = await _refresh(client, slug=slug, refresh_token=refresh)
+            assert first.status_code == 200
+
+            # One benign replay first, so the window is genuinely sticky and
+            # the only thing that can reject the next attempt is the deadline.
+            tolerated = await _refresh(client, slug=slug, refresh_token=refresh)
+            assert tolerated.status_code == 200
+
+            async with async_session_factory() as session:
+                await session.execute(
+                    update(SessionModel)
+                    .where(SessionModel.user_id == uuid.UUID(user_id))
+                    .values(previous_token_valid_until=datetime.now(UTC) - timedelta(seconds=1))
+                )
+                await session.commit()
+
+            reuse = await _refresh(client, slug=slug, refresh_token=refresh)
+            assert reuse.status_code == 401
+            assert reuse.json()["type"].endswith("/token-reuse-detected")
+            assert await _list_sessions(client, slug=slug, access_token=access) == []
+        finally:
+            await _delete_tenant_by_slug(slug)
+
     async def test_logout_revokes_only_the_matching_session(self, client: AsyncClient) -> None:
         slug, email = await _provision(client)
         _, access_a, refresh_a = await _login(client, slug=slug, email=email)
