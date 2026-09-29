@@ -173,8 +173,10 @@ jobs manually per section 7.
   to `log-skyrict-beta`. Job logs are fetched with
   `az containerapp job execution logs show`.
 - **Scale**: apps run `minReplicas: 0`, scale out at 100 concurrent requests
-  to `maxReplicas: 2`; the Consumption profile caps nodes at
-  `environmentMaxNodes: 2`.
+  to `maxReplicas: 2`. That per-app cap is the only node cap: the Consumption
+  workload profile accepts neither `minimumCount` nor `maximumCount`, so
+  `Microsoft.App/managedEnvironments` rejects the deployment with
+  `WorkloadProfilePropertyNotSupported` if either is set.
 - **Budgets**: subscription budgets alert at 50/80/90% of `$10` (CD passes
   the first-of-month as `budgetStartDate` so re-applies stay idempotent).
 - **Cost**: see `azure-cost-estimate.md`.
