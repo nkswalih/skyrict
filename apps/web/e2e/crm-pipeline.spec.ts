@@ -110,16 +110,19 @@ test("crm deal pipeline: validate API errors and walk prospecting → won throug
     const forwardMoves = [
         {
             next: "Qualified",
+            stage: "qualified",
             title: "Move to Qualified?",
             confirm: "Move forward",
         },
         {
             next: "Proposal",
+            stage: "proposal",
             title: "Move to Proposal?",
             confirm: "Move forward",
         },
         {
             next: "Negotiation",
+            stage: "negotiation",
             title: "Move to Negotiation?",
             confirm: "Move forward",
         },
@@ -137,7 +140,7 @@ test("crm deal pipeline: validate API errors and walk prospecting → won throug
         ).toBeVisible();
     });
 
-    for (const { next, title, confirm } of forwardMoves) {
+    for (const { next, stage, title, confirm } of forwardMoves) {
         await test.step(`move to ${next}`, async () => {
             const card = page.locator("article").filter({ hasText: mainName });
             // The quick-move footer button is labelled by the target stage name.
@@ -155,6 +158,12 @@ test("crm deal pipeline: validate API errors and walk prospecting → won throug
                     .locator("article")
                     .filter({ hasText: mainName }),
             ).toBeVisible();
+
+            // The column assertion above only proves the board RENDERED the
+            // move. A board that re-read the row before the write committed
+            // would pass it while persisting nothing, so confirm the move
+            // actually stuck server-side.
+            expect((await getOpportunity(api, mainOpp.id)).stage).toBe(stage);
         });
     }
 
@@ -188,6 +197,8 @@ test("crm deal pipeline: validate API errors and walk prospecting → won throug
                 .filter({ hasText: mainName })
                 .locator("footer button"),
         ).toHaveCount(0);
+
+        expect((await getOpportunity(api, mainOpp.id)).stage).toBe("won");
     });
 
     // ------------------------------------------------------------------
@@ -242,6 +253,7 @@ test("crm deal pipeline: validate API errors and walk prospecting → won throug
 
         // The lost reason entered in the dialog must have been persisted.
         const saved = await getOpportunity(api, lostOpp.id);
+        expect(saved.stage).toBe("lost");
         expect(saved.lostReason).toBe("Went with a competitor");
     });
 });
