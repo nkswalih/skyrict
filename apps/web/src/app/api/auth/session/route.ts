@@ -34,11 +34,33 @@ export async function GET(request: NextRequest) {
 
     const { token, refreshToken: rotatedToken, expiresIn } = rotated.access;
 
-    const profile = await callBackend("/users/me", {
+    // The rotation above is already spent by the time the profile probe runs,
+    // so a blip here is expensive: the response carries no access token, the
+    // client has nothing to cache, and its next request hydrates AGAIN - a
+    // second rotation, with a second chance to collide. On a cold stack (CI
+    // boots the cluster and starts driving it within ~2 minutes) the first
+    // /users/me after a rotation is exactly the call that has to pay for pool
+    // growth and lazy imports. One short retry turns that blip into a normal
+    // response instead of the seed of a rotation storm.
+    let profile = await callBackend("/users/me", {
         method: "GET",
         token,
         tenantSlug: slug,
     });
+    if (!profile.ok && profile.status !== 401 && profile.status !== 404) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        profile = await callBackend("/users/me", {
+            method: "GET",
+            token,
+            tenantSlug: slug,
+        });
+    }
+    if (!profile.ok) {
+        console.warn("[auth] session profile probe failed", {
+            slug,
+            status: profile.status,
+        });
+    }
 
     const response = NextResponse.json({
         authenticated: profile.ok,
