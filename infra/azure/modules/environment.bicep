@@ -41,11 +41,6 @@ param peSubnetPrefix string = '10.16.3.0/24'
 @maxValue(90)
 param logRetentionDays int = 30
 
-@description('Maximum node count for the Consumption workload profile - caps concurrent replicas across the environment.')
-@minValue(1)
-@maxValue(10)
-param environmentMaxNodes int = 2
-
 var allTags = union(
   {
     environment: envName
@@ -136,8 +131,8 @@ resource cae 'Microsoft.App/managedEnvironments@2026-01-01' = {
       {
         name: 'Consumption'
         workloadProfileType: 'Consumption'
-        minimumCount: 0
-        maximumCount: environmentMaxNodes
+        // For Consumption workload profile, neither minimumCount nor maximumCount
+        // are supported. Scaling is serverless (per-request).
       }
     ]
     zoneRedundant: false

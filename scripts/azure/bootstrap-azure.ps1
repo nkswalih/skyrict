@@ -192,9 +192,32 @@ $spObjectId = $sp.id
 
 Write-Host "Ensuring OIDC federated credential for environment '$EnvironmentName'..."
 $credName = "cd-${EnvironmentName}"
+
+# GitHub's `sub` claim is NOT "owner/repo:ref". Both segments carry a
+# numeric id:
+#
+#   repo:nkswalih@235286854/skyrict@1307605788:environment:azure-beta
+#
+# That shape landed in 2023, when GitHub added the ids to stop one
+# repository presenting another repository's token to a federation. The
+# "owner/repo" form matches no token GitHub issues, and the failure
+# surfaces as AADSTS700213 at the `az login` step - after the workflow has
+# already started and printed a plausible-looking federated token, so
+# nothing in the log points at the credential.
+#
+# Both ids are resolved at run time rather than written down: they are
+# properties of this repository, and a literal would be silently wrong
+# after a transfer - the same class of bug as the value it replaces.
+$owner, $repo = $GitHubRepo.Split('/')
+$ownerId = gh api "users/${owner}" --jq '.id'
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ownerId)) { throw "could not resolve the owner id for ${owner}" }
+$repoId = gh api "repos/${GitHubRepo}" --jq '.id'
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoId)) { throw "could not resolve the repository id for ${GitHubRepo}" }
+$subject = "repo:${owner}@${ownerId}/${repo}@${repoId}:environment:${EnvironmentName}"
+Write-Host "  OIDC subject: $subject"
+
 $creds = az ad app federated-credential list --id $appId --query "[?name=='$credName']" -o json | ConvertFrom-Json
 if ($creds.Count -eq 0) {
-    $subject = "repo:${GitHubRepo}:environment:${EnvironmentName}"
     $body = @{
         name = $credName
         issuer = 'https://token.actions.githubusercontent.com'
@@ -206,8 +229,28 @@ if ($creds.Count -eq 0) {
     if ($LASTEXITCODE -ne 0) { throw "federated-credential create failed" }
     Write-Host "Created federated credential with subject '$subject'."
 }
+elseif ((@($creds)[0].subject) -ne $subject) {
+    # Reuse BY NAME is what let a stale subject survive. The script reported
+    # "already exists" and exited zero while leaving a credential that cannot
+    # authenticate anything, so re-running the bootstrap - the documented
+    # remedy for a broken deployment identity - could never repair it. The name
+    # is a lookup key, not evidence that the credential is correct.
+    $existing = @($creds)[0]
+    $updateBody = @{
+        issuer = 'https://token.actions.githubusercontent.com'
+        subject = $subject
+        description = "GitHub Actions OIDC for $GitHubRepo environment $EnvironmentName"
+        audiences = @('api://AzureADTokenExchange')
+    } | ConvertTo-Json -Depth 5
+    # `name` is immutable on this resource, so it is not sent here.
+    az ad app federated-credential update --id $appId --federated-credential-id $existing.id --parameters $updateBody | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "federated-credential update failed" }
+    Write-Host "  REPAIRED subject on existing credential '$credName'."
+    Write-Host "    was: $($existing.subject)"
+    Write-Host "    now: $subject"
+}
 else {
-    Write-Host "Federated credential '$credName' already exists (reusing)."
+    Write-Host "Federated credential '$credName' already exists with the expected subject."
 }
 
 # ---------------------------------------------------------------------------

@@ -63,7 +63,7 @@ because `api` is in `RESERVED_SLUGS`.
 | 11 | Budget alerts notify nobody | **Fixed** — budget skipped when no contacts, `$200` amount, loud warning |
 | 12 | `minReplicas: 0` | **Fixed** — backends warm at 1 via `keepBackendsWarm` |
 | 13 | DB ceiling exceeds SKU | **Open** — `dbMaxOverflow` still 0 vs B1ms `max_connections` 50 |
-| 14 | `environmentMaxNodes: 2` | **Open** — unchanged |
+| 14 | `environmentMaxNodes: 2` | **Fixed** — parameter removed; Consumption accepts no node count. `maxReplicas` is the only cap |
 | 15 | `concurrentRequests: 100` | **Partial** — gateway has its own 500; backends unchanged |
 | 16 | Problem URIs wrong domain | **Fixed** — one shared `PROBLEM_BASE_URL`, 58 dead constants deleted |
 | 17 | 20 config vars never injected | **Open** — needs SMTP, Stripe, AI, Sentry, S3 credentials |
@@ -326,8 +326,13 @@ scale-to-zero there may be no replica to validate against.
 counts: identity 24 + core 24 + ai-agent 12 = **60** at full scale, against
 B1ms `max_connections` = 50. Fix #2 (1 worker) drops this to 30.
 
-### 14. `environmentMaxNodes: 2` caps everything
-The ceiling covers 3 service apps, the new gateway, and 4 job apps.
+### 14. ~~`environmentMaxNodes: 2` caps everything~~ — parameter removed
+The Consumption workload profile accepts neither `minimumCount` nor
+`maximumCount`; setting either makes the deployment fail preflight with
+`WorkloadProfilePropertyNotSupported`. There is no environment-level node cap
+to configure. Per-app `maxReplicas: 2` is now the only ceiling, so the
+total-replica concern this raised is real and is governed entirely by
+`maxReplicas` × number of apps.
 
 ### 15. `concurrentRequests: 100` on 0.25 vCPU
 Far too high — requests queue and time out instead of triggering scale-out.
