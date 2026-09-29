@@ -132,3 +132,26 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
             await session.commit()
         finally:
             await session.close()
+
+
+async def commit_writes(db: AsyncSession) -> None:
+    """Make a route handler's writes durable BEFORE it returns its response.
+
+    ``get_db`` commits in the dependency teardown, which for a ``yield``
+    dependency runs at the very tail of the request - after the handler built
+    its response. A client that trusts the 2xx and immediately re-reads the
+    row is therefore racing the commit, and when it loses the read returns the
+    PREVIOUS state. That is not a cosmetic race: a board that moves a deal and
+    re-reads the pipeline can render the card back in its old column and settle
+    there, looking like the move silently failed.
+
+    Routes whose response a client will read back from should take
+    ``db: AsyncSession = Depends(get_db)`` and call this as their last
+    statement. The teardown's ``commit()`` then has nothing left to do, so
+    this is purely about ordering, not about double-committing. The event
+    buffer still drains on the real COMMIT, so after-commit publishes keep
+    their "never before durable" guarantee.
+
+    Read-only routes do not need it - they have nothing to make durable.
+    """
+    await db.commit()
