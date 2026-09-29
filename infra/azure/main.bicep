@@ -63,10 +63,9 @@ param peSubnetPrefix string = '10.16.3.0/24'
 @maxValue(90)
 param logRetentionDays int = 30
 
-@description('Maximum node count for the Consumption workload profile - caps concurrent replicas across the environment.')
-@minValue(1)
-@maxValue(10)
-param environmentMaxNodes int = 2
+// The Consumption workload profile accepts neither minimumCount nor maximumCount,
+// so there is no environment-level node cap. Per-app maxReplicas (below) is the
+// cap that actually applies.
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -254,7 +253,6 @@ module environment 'modules/environment.bicep' = {
     postgresSubnetPrefix: postgresSubnetPrefix
     peSubnetPrefix: peSubnetPrefix
     logRetentionDays: logRetentionDays
-    environmentMaxNodes: environmentMaxNodes
   }
 }
 
