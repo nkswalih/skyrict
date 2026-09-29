@@ -89,8 +89,11 @@ This is idempotent for identity/RBAC and:
    deployments require `deployments/write` at subscription scope).
 4. Generates operational secrets and writes them as **`azure-beta`**
    environment secrets (see table below). Values are never printed.
-5. Sets `CD_AZURE_BETA_ENABLED=true` on the environment so pushes to `dev`
-   trigger the rollout, and seeds Key Vault directly if it already exists.
+5. Sets `CD_AZURE_BETA_ENABLED=true` as a **repository** variable so pushes to
+   `dev` trigger the rollout, and seeds Key Vault directly if it already
+   exists. Repository scope, not the environment: the gate is a job-level
+   `if`, evaluated before the job enters its environment, so it can only see
+   repository and organisation variables. See §5.1 and §8.
 
 > **Re-running the script rotates all secrets.** Running services keep the
 > old KV values until the next phase-2 apply, so rotate during a change
@@ -135,8 +138,16 @@ git push origin dev
 
 The workflow runs `provision-infra` → `build-push-images` →
 `deploy-workloads` → `migrate` → `verify` and is gated by
-`CD_AZURE_BETA_ENABLED`. Watch the run; the final `verify` job curls
-identity/core health and checks the ai-agent revision.
+`CD_AZURE_BETA_ENABLED` (repository variable, see §3 step 5). Watch the run;
+the final `verify` job curls the gateway's generated FQDN for health and
+`/readyz`, asserts a 401 from a core route to prove the gateway routes to
+it, and checks the identity/core/ai-agent revision states.
+
+> **A run that reports `completed / skipped` in ~2s is not "nothing to
+> deploy" — it is the gate evaluating false.** That is the signature of
+> `CD_AZURE_BETA_ENABLED` being unset at repository scope, which is the only
+> scope the job-level `if` can read. Check with `gh variable list` (no
+> `--env`) before assuming there is nothing to do.
 
 ### 5.2 Manual/debug deploy (no migrations, apps only)
 
@@ -204,8 +215,16 @@ For an **infrastructure** rollback:
    pattern (`alembic downgrade -1`); do **not** hand-edit schema.
 
 If a release is actively breaking: set `CD_AZURE_BETA_ENABLED=false` on the
-`azure-beta` environment (blocks new deploys), investigate from logs, then
-re-enable.
+**repository** — `gh variable set CD_AZURE_BETA_ENABLED --body false`, with
+no `--env`. That blocks new push-deploys. Setting it on the `azure-beta`
+environment instead does nothing at all: the gate is a job-level `if` and
+cannot read environment variables. Investigate from logs, then re-enable with
+the same command and `--body true`.
+
+Note that a `workflow_dispatch` run is **not** gated by this flag — the
+condition is `github.event_name == 'workflow_dispatch' || <flag>`, so a
+manual dispatch always proceeds regardless. It is a switch against
+*accidental* deploys, not a kill switch.
 
 ## 9. Destroy
 
@@ -250,9 +269,15 @@ within the Azure free account's 12-month + always-free allotments:
 ## 11. Beta limitations (documented)
 
 - `ai-agent` is internal-only: no public FQDN; verified via revision state.
-- No custom domains/TLS certs yet — ACA-managed FQDNs only. `BASE_DOMAIN`,
-  `JWKS_ISSUER`, and `JWKS_AUDIENCE` are configured but a public domain +
-  tenant-routing DNS is a follow-up.
+- The custom domain is **configured but pending**, not absent. `apiHostname`
+  is set to `api.skyrict.in`, so the gateway gets an ACA-managed certificate
+  and an `SniEnabled` custom-domain binding. Both stay *pending* until the
+  CNAME exists at the registrar, and until then only the gateway's generated
+  `*.azurecontainerapps.io` FQDN answers. That is deliberate: the CD's
+  `verify` job probes the generated FQDN precisely so the first deploy does
+  not fail on a DNS record that is an operator task, not a deploy task.
+  `BASE_DOMAIN`, `JWKS_ISSUER` and `JWKS_AUDIENCE` are all configured for
+  `api.skyrict.in` and will match as soon as the name resolves.
 - The observability module requires subscription-level deploy permissions.
 - Jobs and apps share the KV secret store; rotation requires a redeploy.
 - Free-trial scale knobs are conservative (max 2 replicas, pooled DB
