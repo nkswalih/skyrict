@@ -105,23 +105,59 @@ export function OpportunitiesBoard() {
         return map;
     }, [status]);
 
+    /**
+     * Move a deal and trust the response.
+     *
+     * The stage-change endpoint returns the persisted opportunity, so the
+     * board applies that row instead of re-reading the pipeline. The re-read
+     * used to race the write's commit and could settle the board on the
+     * PREVIOUS stage - the card visibly snapping back to its old column and
+     * staying there, which reads as a move that silently failed - and it
+     * flashed the entire board through a loading state on every drag.
+     */
     async function runMove(
         opportunity: Opportunity,
         stage: OpportunityStage,
         lostReason?: string,
     ) {
         setPending({ id: opportunity.id, stage });
+        // Where this card sat before the move, so a failure can put it back.
+        const previousStage = opportunity.stage;
         try {
-            await changeOpportunityStage(opportunity.id, stage, lostReason);
-            await load();
+            const { opportunity: moved } = await changeOpportunityStage(
+                opportunity.id,
+                stage,
+                lostReason,
+            );
+            setStatus((current) =>
+                current.state === "ready"
+                    ? {
+                          ...current,
+                          opportunities: current.opportunities.map((item) =>
+                              item.id === moved.id ? moved : item,
+                          ),
+                      }
+                    : current,
+            );
         } catch (error) {
             const message =
                 error instanceof ApiError
                     ? error.message
                     : "Could not move the opportunity.";
+            // The drag path flipped the card optimistically, so a failure has
+            // to undo it - leaving a card in a column the server never
+            // accepted is a lie the user has to notice and undo by hand.
             setStatus((current) =>
                 current.state === "ready"
-                    ? { ...current, notice: message }
+                    ? {
+                          ...current,
+                          notice: message,
+                          opportunities: current.opportunities.map((item) =>
+                              item.id === opportunity.id
+                                  ? { ...item, stage: previousStage }
+                                  : item,
+                          ),
+                      }
                     : current,
             );
         } finally {
