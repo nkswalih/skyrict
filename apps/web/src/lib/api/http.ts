@@ -151,9 +151,18 @@ let sessionPromise: Promise<HydratedSession | null> | null = null;
  * Restore the in-memory access token from the httpOnly session cookie via
  * /api/auth/session, single-flight. Every consumer (SessionProvider and the
  * authenticated /api/v1 client) shares one request so that exactly one
- * server-side refresh-token rotation happens per page load - concurrent
- * rotations from the same token would be flagged as reuse and revoke the
- * whole token family.
+ * server-side refresh-token rotation happens per page load.
+ *
+ * Concurrent rotations used to be fatal - identity flags the second one as
+ * refresh-token reuse and revokes the whole family - so this single-flights
+ * strictly. That is no longer the only defence: identity's grace window now
+ * tolerates an arbitrary number of overlapping rotations of the same cookie
+ * (see the sticky previous-token handling in TokenService.refresh_tokens), and
+ * the BFF retries a cold-stack profile probe once. So a missed hydration here
+ * costs a round trip, not the session, and there is deliberately no failure
+ * cooldown: "the server answered 200 with authenticated:false" is a
+ * definitive answer for a signed-out visitor, and cooling it down would skip
+ * a real hydration after a sign-in.
  */
 export function ensureSession(): Promise<HydratedSession | null> {
   if (getAccessToken()) {
