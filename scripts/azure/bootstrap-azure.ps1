@@ -192,9 +192,32 @@ $spObjectId = $sp.id
 
 Write-Host "Ensuring OIDC federated credential for environment '$EnvironmentName'..."
 $credName = "cd-${EnvironmentName}"
+
+# GitHub's `sub` claim is NOT "owner/repo:ref". Both segments carry a
+# numeric id:
+#
+#   repo:nkswalih@235286854/skyrict@1307605788:environment:azure-beta
+#
+# That shape landed in 2023, when GitHub added the ids to stop one
+# repository presenting another repository's token to a federation. The
+# "owner/repo" form matches no token GitHub issues, and the failure
+# surfaces as AADSTS700213 at the `az login` step - after the workflow has
+# already started and printed a plausible-looking federated token, so
+# nothing in the log points at the credential.
+#
+# Both ids are resolved at run time rather than written down: they are
+# properties of this repository, and a literal would be silently wrong
+# after a transfer - the same class of bug as the value it replaces.
+$owner, $repo = $GitHubRepo.Split('/')
+$ownerId = gh api "users/${owner}" --jq '.id'
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ownerId)) { throw "could not resolve the owner id for ${owner}" }
+$repoId = gh api "repos/${GitHubRepo}" --jq '.id'
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoId)) { throw "could not resolve the repository id for ${GitHubRepo}" }
+$subject = "repo:${owner}@${ownerId}/${repo}@${repoId}:environment:${EnvironmentName}"
+Write-Host "  OIDC subject: $subject"
+
 $creds = az ad app federated-credential list --id $appId --query "[?name=='$credName']" -o json | ConvertFrom-Json
 if ($creds.Count -eq 0) {
-    $subject = "repo:${GitHubRepo}:environment:${EnvironmentName}"
     $body = @{
         name = $credName
         issuer = 'https://token.actions.githubusercontent.com'
