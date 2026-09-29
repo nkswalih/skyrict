@@ -501,7 +501,24 @@ jobs:
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-noop.json
-          real_changes=$(jq '[.changes[] | select(.changeType != "NoChange" and .changeType != "Ignore")] | length' /tmp/whatif-noop.json)
+          # Role assignments are excluded deliberately. Their principalId comes
+          # from a module output, i.e. a reference() that what-if cannot
+          # evaluate, so it reports them as Unsupported/Modify on every run even
+          # when nothing changed. Azure generates a UAMI's principalId at create
+          # time, so it cannot be known before the identity exists in the same
+          # deployment - there is no template-side fix. Verified on this
+          # subscription: the same role assignment reaches NoChange once its
+          # name and principalId are both statically evaluable, and stays
+          # Unsupported while either comes from a reference().
+          #
+          # The match is on the type name anywhere in resourceId, not on a path
+          # segment: when the name is unevaluable what-if emits the whole
+          # expression as the id, e.g.
+          #   [extensionResourceId('...','Microsoft.Authorization/roleAssignments',guid(...reference()...))]
+          # so a path-segment test would miss exactly the entry that fails.
+          unevaluable=$(jq '[.changes[] | select(.resourceId | test("Microsoft.Authorization/roleAssignments"))] | length' /tmp/whatif-noop.json)
+          real_changes=$(jq '[.changes[] | select((.resourceId | test("Microsoft.Authorization/roleAssignments")) | not) | select(.changeType != "NoChange" and .changeType != "Ignore")] | length' /tmp/whatif-noop.json)
+          echo "role_assignments_excluded=$unevaluable"
           echo "real_changes_after_reapply=$real_changes"
           [ "$real_changes" -eq 0 ] || { echo "::error::Re-apply is not a no-op ($real_changes real changes)"; exit 1; }
 

@@ -42,8 +42,10 @@ Internal calls use the CAE short-name URLs (`http://app-core-skyrict-beta`,
 avoid Bicep cycles.
 
 Externally, identity and core resolve as
-`https://app-identity-skyrict-beta.<env>.eastus.azurecontainerapps.io` /
-`.../app-core-...` — the FQDNs are printed as deployment outputs.
+`https://app-identity-skyrict-beta.<env>.<region>.azurecontainerapps.io` /
+`.../app-core-...` — the FQDNs are printed as deployment outputs. The region
+segment is whatever `beta.parameters.json` sets; it is `westus`, not
+`eastus` (see section 11).
 
 ## 2. Two-phase rollout
 
@@ -270,6 +272,16 @@ within the Azure free account's 12-month + always-free allotments:
 
 ## 11. Beta limitations (documented)
 
+- **The region is `westus`, and it is not a free choice.** This subscription
+  cannot create a PostgreSQL Flexible Server in `eastus` at all: every SKU
+  (B1ms, B1s, B2ms, D2s_v3), every major version (11-17) and every supported
+  API version is rejected with `ParameterOutOfRange: The value of the 'Version'
+  should be in: []` - an empty list, because the service resolves no version
+  for that region on this account. `westus`, `centralus`, `northeurope`,
+  `southeastasia` and `japaneast` were all confirmed to reach `Ready` with the
+  identical B1ms/v16 configuration. `westeurope` fails separately, with
+  `RequestDisallowedByAzure` (region not accepting new customers). Do not
+  "restore" `eastus` without re-running that check first.
 - `ai-agent` is internal-only: no public FQDN; verified via revision state.
 - The custom domain is **configured but pending**, not absent. `apiHostname`
   is set to `api.skyrict.in`, so the gateway gets an ACA-managed certificate
