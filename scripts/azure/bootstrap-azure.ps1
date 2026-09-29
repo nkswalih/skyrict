@@ -292,9 +292,26 @@ foreach ($entry in $secrets.GetEnumerator()) {
 }
 
 # CD gate: pushing to dev only deploys when the variable is true.
-gh variable set CD_AZURE_BETA_ENABLED --env $EnvironmentName --body "true"
+#
+# REPOSITORY scope, deliberately not --env $EnvironmentName. The gate is a
+# JOB-level `if` in cd-azure-beta.yml:
+#
+#   if: github.event_name == 'workflow_dispatch' || vars.CD_AZURE_BETA_ENABLED == 'true'
+#
+# A job-level `if` is evaluated before the job enters its environment, so
+# the `vars` context there carries repository and organisation variables
+# only - environment variables are not in scope yet. Writing this one with
+# --env compiles into a gate that can never be true on a push: the run
+# starts, provision-infra is skipped, and the rollout reports as
+# completed/skipped within a couple of seconds. That is not a loud failure,
+# so it reads as "nothing to deploy" rather than "the flag is in the wrong
+# scope" - which is exactly how it was missed.
+#
+# The value is a boolean, not a credential, so repository scope costs
+# nothing in exposure. The secrets above stay on the environment.
+gh variable set CD_AZURE_BETA_ENABLED --body "true"
 if ($LASTEXITCODE -ne 0) { throw "could not set CD_AZURE_BETA_ENABLED variable" }
-Write-Host "  set CD_AZURE_BETA_ENABLED=true on environment $EnvironmentName"
+Write-Host "  set CD_AZURE_BETA_ENABLED=true on the repository (the CD gate reads repo scope)"
 
 # ---------------------------------------------------------------------------
 # Seed Key Vault if the vault already exists (manual/local deploys)
