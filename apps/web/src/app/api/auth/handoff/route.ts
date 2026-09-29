@@ -107,6 +107,16 @@ export async function POST(request: NextRequest) {
         tenantSlug: slug,
     });
     if (!redeem.ok) {
+        // The redeem is the single-use gate: an unknown/expired/already-used
+        // token, a 5xx, and a transport dead-end all land here and all used to
+        // return the same opaque 303, so a broken handoff was undiagnosable
+        // from the Next.js log (and identity logs none of these at INFO).
+        // Name the status so a bounced sign-in points at the real cause.
+        console.error("[auth] handoff redeem failed", {
+            slug,
+            status: redeem.status,
+            detail: redeem.payload?.detail,
+        });
         return NextResponse.redirect(
             signinUrl(request, slug, "Could not complete sign-in. Try again."),
             303,
@@ -139,6 +149,11 @@ export async function POST(request: NextRequest) {
         tenantSlug: slug,
     });
     if (!refreshed.ok) {
+        console.error("[auth] handoff refresh failed", {
+            slug,
+            status: refreshed.status,
+            detail: refreshed.payload?.detail,
+        });
         return NextResponse.redirect(
             signinUrl(request, slug, "Could not complete sign-in. Try again."),
             303,
