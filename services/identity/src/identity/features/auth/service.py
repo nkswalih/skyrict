@@ -701,26 +701,32 @@ class TokenService:
 
         # What the session remembers as its grace token after this rotation.
         #
-        # A grace replay must NOT overwrite it. The presented token is the one
-        # the window exists to protect; storing the token that was just
-        # consumed instead narrows the window on every concurrent replay, so a
-        # K-way race (two tabs, a dropped response, the page hydrating while
-        # the test client hydrates the same cookie) walks the presented value
-        # two generations behind the record and the last replay is classified
-        # as theft - which revokes the whole family with no recovery. Keeping
-        # the original token and pushing the deadline out instead makes the
-        # window sticky: any number of overlapping replays of the same cookie
-        # stay inside one rotation, and a token genuinely outside the window
-        # still trips the chain-kill.
-        grace_deadline = now + timedelta(seconds=settings.REFRESH_REUSE_GRACE_SECONDS)
+        # A grace replay must NOT overwrite the remembered token. The presented
+        # token is the one the window exists to protect; storing the token that
+        # was just consumed instead narrows the window on every concurrent
+        # replay, so a K-way race (two tabs, a dropped response, the page
+        # hydrating while the test client hydrates the same cookie) walks the
+        # presented value two generations behind the record and the last replay
+        # is classified as theft - which revokes the whole family with no
+        # recovery. Keeping the remembered token instead makes the window
+        # sticky: any number of overlapping replays of the same cookie stay
+        # inside one rotation.
+        #
+        # The deadline is carried forward UNCHANGED. It is anchored to when the
+        # protected token was retired, so a caller cannot extend its own
+        # tolerance by replaying - otherwise a captured refresh token would
+        # stay replayable for as long as its holder kept presenting it, which is
+        # exactly the persistence this window exists to bound. Replays still
+        # collapse into the window because the concurrent ones are the race
+        # itself: they arrive together, well inside the original deadline.
         if within_grace:
-            # `within_grace` matched on a non-null previous hash, so this is
-            # the token the window is protecting - carry it forward.
+            # `within_grace` matched on a non-null previous hash and a non-null
+            # deadline, so both values below are the ones the window guards.
             carried_hash = session.previous_refresh_token_hash
-            previous_valid_until = max(session.previous_token_valid_until or now, grace_deadline)
+            previous_valid_until = session.previous_token_valid_until
         else:
             carried_hash = session.refresh_token_hash
-            previous_valid_until = grace_deadline
+            previous_valid_until = now + timedelta(seconds=settings.REFRESH_REUSE_GRACE_SECONDS)
 
         tokens = await self.create_token_pair(
             user_id=user_id,

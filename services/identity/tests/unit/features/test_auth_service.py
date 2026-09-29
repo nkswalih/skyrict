@@ -656,16 +656,22 @@ class TestRefreshTokenRotation:
 
         first = await tokens.refresh_tokens(refresh)
         assert session.previous_refresh_token_hash == protected_hash
+        assert session.previous_token_valid_until is not None
+        # The deadline is set once, when the protected token was retired.
+        deadline = session.previous_token_valid_until
 
         for attempt in range(4):
             tolerated = await tokens.refresh_tokens(refresh)
             assert tolerated.refresh_token != first.refresh_token, attempt
-            # The protected token is still the one the window is guarding, and
-            # the deadline keeps moving forward rather than shrinking.
+            # The protected token is still the one the window is guarding...
             assert session.previous_refresh_token_hash == protected_hash
-            assert session.previous_token_valid_until is not None
-            assert session.previous_token_valid_until > datetime.now(UTC)
             assert session.status is SessionStatus.ACTIVE
+            # ...and tolerating a replay must NOT push the deadline out. A
+            # window a caller can extend by replaying is not a window: a
+            # captured token would stay replayable for as long as its holder
+            # kept presenting it, which is the persistence this control exists
+            # to bound.
+            assert session.previous_token_valid_until == deadline, attempt
 
         # The chain-kill is specifically what must not have happened.
         assert not [
