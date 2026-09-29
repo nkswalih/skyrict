@@ -39,8 +39,12 @@ export async function fillOtp(
     // resolves; a blind sequential fill then waits on digit 1 while the rest of
     // the form is mid-render. Wait for the FULL digit form (exact count) to be
     // attached BEFORE filling so every fill targets a settled, complete form.
+    // A zero-count failure here almost always means the form is GONE (the
+    // handoff bounced, or the flow moved to another step) rather than slow to
+    // render, so name the URL we were actually on.
     await expect(
         page.locator(`input[aria-label^="${label} digit "]`),
+        `"${label}" digits not found; current URL: ${page.url()}`,
     ).toHaveCount(code.length);
     for (let i = 0; i < code.length; i += 1) {
         await page
@@ -109,33 +113,68 @@ export async function whichMfaPath(
     });
 }
 
+/** A `/signin?error=...` URL means the handoff to the workspace host bounced. */
+function isHandoffBounce(url: URL): boolean {
+    return url.pathname === "/signin" && url.searchParams.has("error");
+}
+
+function handoffBounceError(url: string): Error {
+    const message = new URL(url).searchParams.get("error") ?? "(no detail)";
+    return new Error(
+        `Sign-in handoff bounced back to ${url} - the MFA code was ACCEPTED but ` +
+            `the workspace session could not be established. BFF said: "${message}". ` +
+            `Check the identity audit log for the matching handoff.issued row with no ` +
+            `handoff.redeemed row beside it, and the Next.js log for the redeem status.`,
+    );
+}
+
+type RoundOutcome = "landed" | "rejected" | "bounced" | "stalled";
+
 /**
  * One full TOTP challenge round: try the current, previous, and next 30s
  * windows. Returns true when the handoff landed on the workspace host - or
  * when the form visibly rejected the code (the caller treats both as "attempt
  * consumed"; a rejection is detected so the next round can start from a clean
  * form instead of waiting out the handoff that will never happen).
+ *
+ * A bounced handoff (`/signin?error=...`) is a THIRD, terminal outcome. It
+ * used to be indistinguishable from a rejected code: both arms resolved
+ * `false` on timeout, so the helper walked every TOTP offset and finally
+ * called fillOtp against the credentials form, reporting "expected 6 inputs,
+ * found 0" for what was actually a failed session handoff. Throwing here keeps
+ * the real error next to the failure.
  */
 async function playChallengeRound(
     page: Page,
     secret: string,
 ): Promise<boolean> {
     for (const offset of [0, -1, 1]) {
+        if (isHandoffBounce(new URL(page.url()))) {
+            throw handoffBounceError(page.url());
+        }
         await fillOtp(page, "Two-factor code", totp(secret, offset));
-        const landed = page
+        // Every arm resolves (never rejects) so the losers of the race cannot
+        // surface as unhandled rejections once the winner returns. `as const`
+        // keeps each literal narrow enough to satisfy RoundOutcome.
+        const landed: Promise<RoundOutcome> = page
             .waitForURL((url) => !url.hostname.includes(".signin."), {
                 timeout: 10_000,
             })
-            .then(() => true)
-            .catch(() => false);
-        const rejected = page
+            .then(() => "landed" as const)
+            .catch(() => "stalled" as const);
+        const rejected: Promise<RoundOutcome> = page
             .getByText("That code didn't match")
             .waitFor({ timeout: 10_000 })
-            .then(() => false)
-            .catch(() => false);
-        if (await Promise.race([landed, rejected])) {
-            return true;
-        }
+            .then(() => "rejected" as const)
+            .catch(() => "stalled" as const);
+        const bounced: Promise<RoundOutcome> = page
+            .waitForURL(isHandoffBounce, { timeout: 10_000 })
+            .then(() => "bounced" as const)
+            .catch(() => "stalled" as const);
+
+        const outcome = await Promise.race([landed, rejected, bounced]);
+        if (outcome === "landed") return true;
+        if (outcome === "bounced") throw handoffBounceError(page.url());
     }
     return false;
 }

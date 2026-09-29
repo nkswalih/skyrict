@@ -178,6 +178,39 @@ class TestOpportunityPipeline:
             assert response.status_code == 200, response.text
             assert response.json()["data"]["opportunity"]["stage"] == stage
 
+    async def test_stage_move_is_visible_to_an_immediate_reread(
+        self, client: AsyncClient, tenant_headers: Callable[..., dict[str, str]]
+    ) -> None:
+        """A 2xx stage move must be durable before the response is returned.
+
+        The pipeline board re-reads the whole board immediately after a move.
+        The write used to be committed in the ``get_db`` teardown, which runs
+        at the tail of the request, so that re-read raced the commit - and when
+        it lost, the board rendered the card back in its previous column and
+        settled there, looking exactly like a move that silently failed.
+
+        Asserting the list endpoint right after the move is the shape of that
+        race, so it is the right regression guard: the write has to be visible
+        to the very next request.
+        """
+        headers = tenant_headers()
+        lead = await _create_lead(client, headers)
+        opportunity = await _qualify_lead(client, headers, lead["id"])
+
+        for stage in ("qualified", "proposal", "negotiation"):
+            response = await client.post(
+                f"{_OPPS_URL}/{opportunity['id']}/stage",
+                json={"stage": stage},
+                headers=headers,
+            )
+            assert response.status_code == 200, response.text
+
+            # No sleep, no retry: immediately re-read what the board re-reads.
+            listed = await client.get(f"{_OPPS_URL}?limit=100", headers=headers)
+            assert listed.status_code == 200, listed.text
+            stages = {item["id"]: item["stage"] for item in listed.json()["data"]}
+            assert stages[opportunity["id"]] == stage
+
     async def test_skipping_a_stage_is_rejected(
         self, client: AsyncClient, tenant_headers: Callable[..., dict[str, str]]
     ) -> None:

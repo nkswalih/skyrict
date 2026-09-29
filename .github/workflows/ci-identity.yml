@@ -71,7 +71,7 @@ jobs:
         run: uv run pytest services/identity/tests/unit/ -v --tb=short
 
   test-integration:
-    name: Integration Tests (Postgres)
+    name: Integration Tests (Postgres + Redis)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -84,6 +84,19 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U skyrict -d skyrict_identity"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      # The app's startup verification requires Redis and raises StartupError
+      # without it, so any test that boots the real lifespan (the auth and
+      # session tests among them) skips. IDENTITY_REDIS_URL was already
+      # pointed here; nothing was listening.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -132,7 +145,7 @@ jobs:
           )
           PY
 
-      - name: Run seed RBAC integration tests
+      - name: Run identity API integration tests
         env:
           IDENTITY_JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/.dev/keys/private.pem
           IDENTITY_JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/.dev/keys/public.pem
@@ -140,9 +153,18 @@ jobs:
           export IDENTITY_MFA_ENCRYPTION_KEY="$(
             uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
           )"
+          # This list is a real coverage gap, not a convention. The only CI job
+          # with a database for identity is this one, and it named two files, so
+          # every other file under integration/api/ has never run here - and
+          # `ci.yml`'s DB-less `Tests (services/identity)` job skips them all
+          # with "database unavailable", so they look covered from the outside.
+          # Prefer the whole directory and fix whatever it surfaces; until
+          # then, add files here deliberately rather than trusting a new test
+          # to have run.
           uv run pytest \
             services/identity/tests/integration/api/test_seed_rbac.py \
             services/identity/tests/integration/api/test_seed_vastraline_rbac.py \
+            services/identity/tests/integration/api/test_session_lifecycle.py \
             -v --tb=short
 
   build:

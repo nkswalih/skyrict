@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.deps import (
     get_crm_service,
@@ -22,6 +23,7 @@ from core.api.deps import (
     require_permission,
 )
 from core.core.permissions import ERP_CRM_READ, ERP_CRM_WRITE
+from core.db.session import commit_writes, get_db
 from core.domain import entities as ent
 from core.domain.value_objects import (
     DataScope,
@@ -151,6 +153,7 @@ async def create_lead(
     body: LeadCreateRequest,
     current_user: dict[str, Any] = Depends(_require_crm_write),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[LeadResponse]:
     lead = await svc.create_lead(
         tenant_id=_tenant_id(current_user),
@@ -163,6 +166,7 @@ async def create_lead(
         owner_id=body.owner_id,
         team_id=body.team_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_lead_out(lead), message="Lead created")
 
 
@@ -191,6 +195,7 @@ async def update_lead(
     current_user: dict[str, Any] = Depends(_require_crm_write),
     scope_team: tuple[DataScope, uuid.UUID | None] = Depends(get_current_scope),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[LeadResponse]:
     scope, team_id = scope_team
     changes = body.model_dump(exclude_unset=True)
@@ -202,6 +207,7 @@ async def update_lead(
         team_id=team_id,
         changes=changes,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_lead_out(lead), message="Lead updated")
 
 
@@ -216,6 +222,7 @@ async def qualify_lead(
     current_user: dict[str, Any] = Depends(_require_crm_write),
     scope_team: tuple[DataScope, uuid.UUID | None] = Depends(get_current_scope),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[OpportunityResponse]:
     scope, team_id = scope_team
     amount = None
@@ -231,6 +238,7 @@ async def qualify_lead(
         probability=body.probability if body is not None else None,
         expected_close_date=body.expected_close_date if body is not None else None,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_opportunity_out(opportunity), message="Lead qualified")
 
 
@@ -240,6 +248,7 @@ async def disqualify_lead(
     current_user: dict[str, Any] = Depends(_require_crm_write),
     scope_team: tuple[DataScope, uuid.UUID | None] = Depends(get_current_scope),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[LeadResponse]:
     scope, team_id = scope_team
     lead = await svc.disqualify_lead(
@@ -249,6 +258,7 @@ async def disqualify_lead(
         user_id=_user_id(current_user),
         team_id=team_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_lead_out(lead), message="Lead disqualified")
 
 
@@ -302,6 +312,7 @@ async def create_opportunity(
     body: OpportunityCreateRequest,
     current_user: dict[str, Any] = Depends(_require_crm_write),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[OpportunityResponse]:
     opportunity = await svc.create_opportunity(
         tenant_id=_tenant_id(current_user),
@@ -313,6 +324,7 @@ async def create_opportunity(
         owner_id=body.owner_id,
         team_id=body.team_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_opportunity_out(opportunity), message="Opportunity created")
 
 
@@ -343,6 +355,7 @@ async def update_opportunity(
     current_user: dict[str, Any] = Depends(_require_crm_write),
     scope_team: tuple[DataScope, uuid.UUID | None] = Depends(get_current_scope),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[OpportunityResponse]:
     scope, team_id = scope_team
     changes = body.model_dump(exclude_unset=True)
@@ -354,6 +367,7 @@ async def update_opportunity(
         team_id=team_id,
         changes=changes,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_opportunity_out(opportunity), message="Opportunity updated")
 
 
@@ -367,6 +381,7 @@ async def change_stage(
     current_user: dict[str, Any] = Depends(_require_crm_write),
     scope_team: tuple[DataScope, uuid.UUID | None] = Depends(get_current_scope),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[OpportunityStageResponse]:
     scope, team_id = scope_team
     opportunity, customer = await svc.change_stage(
@@ -378,6 +393,9 @@ async def change_stage(
         stage=body.stage,
         lost_reason=body.lost_reason,
     )
+    # The pipeline board re-reads the deal right after this 2xx, so the move
+    # must be durable before the response goes out - see commit_writes.
+    await commit_writes(db)
     return ResponseEnvelope(
         data=OpportunityStageResponse(
             opportunity=_opportunity_out(opportunity),
@@ -421,6 +439,7 @@ async def create_customer(
     body: CustomerCreateRequest,
     current_user: dict[str, Any] = Depends(_require_crm_write),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[CustomerResponse]:
     customer = await svc.create_customer(
         tenant_id=_tenant_id(current_user),
@@ -433,6 +452,7 @@ async def create_customer(
             else None
         ),
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_customer_out(customer), message="Customer created")
 
 
@@ -452,11 +472,13 @@ async def update_customer(
     body: CustomerUpdateRequest,
     current_user: dict[str, Any] = Depends(_require_crm_write),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[CustomerResponse]:
     changes = body.model_dump(exclude_unset=True)
     customer = await svc.update_customer(
         customer_id, tenant_id=_tenant_id(current_user), changes=changes
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=_customer_out(customer), message="Customer updated")
 
 
@@ -465,8 +487,10 @@ async def deactivate_customer(
     customer_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(_require_crm_write),
     svc: CrmService = Depends(get_crm_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[CustomerResponse]:
     customer = await svc.deactivate_customer(customer_id, tenant_id=_tenant_id(current_user))
+    await commit_writes(db)
     return ResponseEnvelope(data=_customer_out(customer), message="Customer deactivated")
 
 

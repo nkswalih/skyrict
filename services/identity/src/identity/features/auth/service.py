@@ -699,6 +699,35 @@ class TokenService:
             await self.session_service.expire_session(session.id, tenant_id=tenant_id)
             raise TokenExpiredError()
 
+        # What the session remembers as its grace token after this rotation.
+        #
+        # A grace replay must NOT overwrite the remembered token. The presented
+        # token is the one the window exists to protect; storing the token that
+        # was just consumed instead narrows the window on every concurrent
+        # replay, so a K-way race (two tabs, a dropped response, the page
+        # hydrating while the test client hydrates the same cookie) walks the
+        # presented value two generations behind the record and the last replay
+        # is classified as theft - which revokes the whole family with no
+        # recovery. Keeping the remembered token instead makes the window
+        # sticky: any number of overlapping replays of the same cookie stay
+        # inside one rotation.
+        #
+        # The deadline is carried forward UNCHANGED. It is anchored to when the
+        # protected token was retired, so a caller cannot extend its own
+        # tolerance by replaying - otherwise a captured refresh token would
+        # stay replayable for as long as its holder kept presenting it, which is
+        # exactly the persistence this window exists to bound. Replays still
+        # collapse into the window because the concurrent ones are the race
+        # itself: they arrive together, well inside the original deadline.
+        if within_grace:
+            # `within_grace` matched on a non-null previous hash and a non-null
+            # deadline, so both values below are the ones the window guards.
+            carried_hash = session.previous_refresh_token_hash
+            previous_valid_until = session.previous_token_valid_until
+        else:
+            carried_hash = session.refresh_token_hash
+            previous_valid_until = now + timedelta(seconds=settings.REFRESH_REUSE_GRACE_SECONDS)
+
         tokens = await self.create_token_pair(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -709,9 +738,8 @@ class TokenService:
             refresh_token_hash=hash_refresh_token(tokens.refresh_token),
             expires_at=now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
             tenant_id=tenant_id,
-            previous_refresh_token_hash=session.refresh_token_hash,
-            previous_token_valid_until=now
-            + timedelta(seconds=settings.REFRESH_REUSE_GRACE_SECONDS),
+            previous_refresh_token_hash=carried_hash,
+            previous_token_valid_until=previous_valid_until,
         )
         assert rotated is not None and rotated.id is not None
         await self.audit_service.log(
