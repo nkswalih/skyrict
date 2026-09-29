@@ -75,6 +75,15 @@ export class BffApi {
 
     private async accessToken(): Promise<string | null> {
         if (this.fixedToken) return this.fixedToken;
+        // Reuse the cached token. `readSession()` is a GET /api/auth/session,
+        // and the BFF rotates the refresh token on every one of those - so
+        // hydrating per API call made the harness a rotation machine (~70 of
+        // the 73 session calls in one run). Because the browser and this
+        // context share one cookie jar, those rotations also collided with the
+        // page's own hydration: two overlapping rotations present the same
+        // token, identity flags reuse, and the whole family is revoked with no
+        // recovery. One rotation per BffApi, cleared on a 401 (see `raw`).
+        if (this.token) return this.token;
         if (!this.tokenPromise) {
             this.tokenPromise = this.fetchAccessToken().finally(() => {
                 this.tokenPromise = null;
@@ -182,6 +191,12 @@ export class BffApi {
         const payload = (await response
             .json()
             .catch(() => ({}))) as Envelope<unknown>;
+
+        // The cached access token is only valid for its TTL. A 401 means it
+        // expired (or the family was revoked), so drop it and let the next
+        // call re-hydrate once - keeping the cache without this turns an
+        // expiry into a permanent failure for the rest of the worker run.
+        if (response.status() === 401) this.token = null;
 
         return {
             ok: response.ok(),
