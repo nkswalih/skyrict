@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -15,20 +15,33 @@ from identity.core.constants import (
     RESERVED_SLUGS,
     SYSTEM_ROLE_DEFINITIONS,
 )
-from identity.core.security import hash_password
+from identity.core.security import (
+    create_refresh_token,
+    hash_password,
+    hash_refresh_token,
+)
 from identity.core.tenant_context import TenantContext
-from identity.domain.entities import Membership, MembershipStatus, Role, Session, Tenant, User
+from identity.domain.entities import (
+    Membership,
+    MembershipStatus,
+    Role,
+    Session,
+    SessionStatus,
+    Tenant,
+    User,
+)
 from identity.domain.value_objects import TokenPair
 from identity.features.auth.schemas import (
     BillingAddress,
     CreateOrganizationRequest,
     LoginRequest,
 )
-from identity.features.auth.service import AuthenticationService
+from identity.features.auth.service import AuthenticationService, TokenService
 from skyrict_common.exceptions import (
     AuthenticationError,
     ConflictError,
     TokenInvalidError,
+    TokenReuseDetectedError,
     UserAlreadyExistsError,
     UserNotFoundError,
     ValidationError,
@@ -292,6 +305,94 @@ class FakeSessionService:
         self.created.append(session)
         return session
 
+    # -- refresh-rotation surface (mirrors SessionService) --------------------
+    # `create_session` above only covers the login path; the refresh path also
+    # needs lookup, in-place rotation, and the revoke/expire side effects that
+    # reuse detection triggers.
+
+    def store(self, session: Session) -> Session:
+        self.created.append(session)
+        return session
+
+    async def get_session(
+        self,
+        session_id: str | uuid.UUID,
+        *,
+        tenant_id: str | uuid.UUID | None = None,
+    ) -> Session | None:
+        for session in self.created:
+            if session.id != uuid.UUID(str(session_id)):
+                continue
+            if tenant_id is not None and session.tenant_id != uuid.UUID(str(tenant_id)):
+                return None
+            return session
+        return None
+
+    async def rotate_session(
+        self,
+        session_id: str | uuid.UUID,
+        *,
+        refresh_token_hash: str,
+        expires_at: datetime,
+        tenant_id: str | uuid.UUID | None = None,
+        previous_refresh_token_hash: str | None = None,
+        previous_token_valid_until: datetime | None = None,
+    ) -> Session | None:
+        session = await self.get_session(session_id, tenant_id=tenant_id)
+        if session is None:
+            return None
+        if session.status is not SessionStatus.ACTIVE:
+            return None
+        session.refresh_token_hash = refresh_token_hash
+        session.previous_refresh_token_hash = previous_refresh_token_hash
+        session.previous_token_valid_until = previous_token_valid_until
+        session.expires_at = expires_at
+        return session
+
+    async def expire_session(
+        self,
+        session_id: str | uuid.UUID,
+        *,
+        tenant_id: str | uuid.UUID | None = None,
+    ) -> Session | None:
+        session = await self.get_session(session_id, tenant_id=tenant_id)
+        if session is None:
+            return None
+        if session.status is SessionStatus.ACTIVE:
+            session.status = SessionStatus.EXPIRED
+            session.expired_at = datetime.now(UTC)
+        return session
+
+    async def revoke_family(
+        self,
+        family_id: str | uuid.UUID,
+        *,
+        tenant_id: str | uuid.UUID | None = None,
+    ) -> None:
+        for session in self.created:
+            if session.token_family_id != uuid.UUID(str(family_id)):
+                continue
+            if tenant_id is not None and session.tenant_id != uuid.UUID(str(tenant_id)):
+                continue
+            if session.status is SessionStatus.ACTIVE:
+                session.status = SessionStatus.REVOKED
+                session.revoked_at = datetime.now(UTC)
+
+    async def revoke_all_sessions(
+        self, user_id: str | uuid.UUID, tenant_id: str | uuid.UUID | None = None
+    ) -> None:
+        for session in self.created:
+            if session.user_id != uuid.UUID(str(user_id)):
+                continue
+            if tenant_id is not None and session.tenant_id != uuid.UUID(str(tenant_id)):
+                continue
+            if session.status is SessionStatus.ACTIVE:
+                session.status = SessionStatus.REVOKED
+                session.revoked_at = datetime.now(UTC)
+
+    async def commit(self) -> None:
+        """No-op: the double mutates entities in place, there is no unit of work."""
+
 
 class FakeMembershipService:
     def __init__(self) -> None:
@@ -505,6 +606,117 @@ def _make_user(
         mfa_enabled=mfa_enabled,
         id=uuid.uuid4(),
     )
+
+
+class TestRefreshTokenRotation:
+    """Refresh-token rotation and the reuse grace window.
+
+    The grace window exists so a benign race (two tabs, a dropped response, a
+    page hydrating while a test client hydrates the same cookie) does not get
+    answered by a token-family chain-kill. These are unit-level tests because
+    the behaviour under test is pure service logic over the session record -
+    they run in the no-database lane, so a regression is caught without a
+    provisioned Postgres.
+    """
+
+    def _seed(self, tenant_ctx: str) -> tuple[TokenService, FakeSessionService, Session, str]:
+        user = _make_user()
+        harness = _Harness(users=[user])
+        session = harness.session_svc.store(
+            Session(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                tenant_id=uuid.UUID(tenant_ctx),
+                refresh_token_hash="",
+                token_family_id=uuid.uuid4(),
+                expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+        refresh = create_refresh_token(
+            str(user.id), tenant_id=tenant_ctx, session_id=str(session.id)
+        )
+        session.refresh_token_hash = hash_refresh_token(refresh)
+        tokens = TokenService(harness.session_svc, harness.audit_svc)
+        return tokens, harness, session, refresh
+
+    async def test_repeated_within_grace_replays_do_not_escalate_to_reuse(
+        self, tenant_ctx: str
+    ) -> None:
+        """A K-way race must not walk the replayed token out of the window.
+
+        The window remembers exactly one previous refresh token. Rotating
+        *inside* the window and storing the token that was just consumed
+        overwrote that memory, so every concurrent replay of the same cookie
+        pushed the original token one generation further from the record. The
+        third replay was then classified as theft and revoked the family - for
+        a race that is not an attack.
+        """
+        tokens, harness, session, refresh = self._seed(tenant_ctx)
+        protected_hash = hash_refresh_token(refresh)
+
+        first = await tokens.refresh_tokens(refresh)
+        assert session.previous_refresh_token_hash == protected_hash
+
+        for attempt in range(4):
+            tolerated = await tokens.refresh_tokens(refresh)
+            assert tolerated.refresh_token != first.refresh_token, attempt
+            # The protected token is still the one the window is guarding, and
+            # the deadline keeps moving forward rather than shrinking.
+            assert session.previous_refresh_token_hash == protected_hash
+            assert session.previous_token_valid_until is not None
+            assert session.previous_token_valid_until > datetime.now(UTC)
+            assert session.status is SessionStatus.ACTIVE
+
+        # The chain-kill is specifically what must not have happened.
+        assert not [
+            event
+            for event in harness.audit_svc.events
+            if event["action"] == "auth.refresh.reuse_detected"
+        ]
+
+    async def test_reuse_past_the_grace_window_still_kills_the_family(
+        self, tenant_ctx: str
+    ) -> None:
+        """Carrying the token forward must not become accepting it forever.
+
+        The sticky token survives any number of replays, so a token replayed
+        after the deadline has to be rejected on the deadline - otherwise the
+        theft detection this window is built around would be silently off.
+        """
+        tokens, _harness, session, refresh = self._seed(tenant_ctx)
+
+        await tokens.refresh_tokens(refresh)
+        await tokens.refresh_tokens(refresh)
+        assert session.status is SessionStatus.ACTIVE
+
+        # Age the window past its deadline, as the wall clock would.
+        assert session.previous_token_valid_until is not None
+        session.previous_token_valid_until = datetime.now(UTC) - timedelta(seconds=1)
+
+        with pytest.raises(TokenReuseDetectedError):
+            await tokens.refresh_tokens(refresh)
+
+        assert session.status is SessionStatus.REVOKED
+
+    async def test_a_token_two_generations_old_is_reuse(self, tenant_ctx: str) -> None:
+        """The grace window protects one token, not a whole lineage.
+
+        Rotating twice with the *current* token retires the original for good:
+        a replay of it is then outside the remembered token, not merely late.
+        """
+        tokens, _harness, session, refresh = self._seed(tenant_ctx)
+
+        original = refresh
+        first = await tokens.refresh_tokens(original)
+        await tokens.refresh_tokens(first.refresh_token)
+
+        # The window now guards `first`'s token, not the original.
+        assert session.previous_refresh_token_hash == hash_refresh_token(first.refresh_token)
+
+        with pytest.raises(TokenReuseDetectedError):
+            await tokens.refresh_tokens(original)
+
+        assert session.status is SessionStatus.REVOKED
 
 
 class TestLogin:
