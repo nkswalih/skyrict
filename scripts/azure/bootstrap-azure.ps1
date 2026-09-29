@@ -78,8 +78,12 @@ function New-UrlSafeToken {
     param([int]$Bytes = 32)
     # URL-safe base64 (RFC 4648) with no '=' padding - safe in connection
     # strings and env vars, and in az CLI --parameters key=value syntax.
-    $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)
-    $b64 = [Convert]::ToBase64String($bytes)
+    # NOTE: the local is named $raw, not $bytes - PowerShell variable names
+    # are case-insensitive, so '$bytes' would alias the [int]-typed parameter
+    # $Bytes and the Byte[] assignment would throw a conversion error.
+    $raw = New-Object byte[] $Bytes
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($raw)
+    $b64 = [Convert]::ToBase64String($raw)
     return ($b64 -replace '\+', '-' -replace '/', '_' -replace '=', '')
 }
 
@@ -143,13 +147,24 @@ Write-Host "Tenant:       $tenantId"
 # ---------------------------------------------------------------------------
 # Resource group
 # ---------------------------------------------------------------------------
-if (az group exists --name $ResourceGroupName) {
+# NOTE: use `az group show` (exit code), not `az group exists`: the latter
+# prints the literal strings "true"/"false", and every non-empty string is
+# truthy in PowerShell - a missing group would still report "already exists".
+az group show --name $ResourceGroupName --subscription $subscriptionId --output none 2>$null
+if ($LASTEXITCODE -eq 0) {
     Write-Host "Resource group '$ResourceGroupName' already exists (reusing)."
 }
 else {
     Write-Host "Creating resource group '$ResourceGroupName' in $Location..."
-    az group create --name $ResourceGroupName --location $Location --tags environment=beta managedBy=bicep
-    if ($LASTEXITCODE -ne 0) { throw "az group create failed" }
+    az group create --name $ResourceGroupName --location $Location --tags environment=beta managedBy=bicep --subscription $subscriptionId
+    if ($LASTEXITCODE -ne 0) {
+        throw "az group create failed for '$ResourceGroupName' in subscription $subscriptionId - cannot continue."
+    }
+    az group show --name $ResourceGroupName --subscription $subscriptionId --output none
+    if ($LASTEXITCODE -ne 0) {
+        throw "Resource group '$ResourceGroupName' was not found after creation - cannot continue."
+    }
+    Write-Host "  Created resource group '$ResourceGroupName'."
 }
 
 # ---------------------------------------------------------------------------
@@ -200,24 +215,34 @@ else {
 # ---------------------------------------------------------------------------
 Write-Host "Assigning RBAC (idempotent)..."
 $rgId = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroupName"
+$subId = "/subscriptions/$subscriptionId"
 
-$rgContributor = az role assignment list --assignee $spObjectId --scope $rgId --role Contributor --query "[?principalId=='$spObjectId']" -o json | ConvertFrom-Json
-if ($rgContributor.Count -eq 0) {
-    az role assignment create --assignee-object-id $spObjectId --role Contributor --scope $rgId | Out-Null
-    Write-Host "  Contributor on $ResourceGroupName assigned."
+function Test-RoleAssignment {
+    param([string]$PrincipalId, [string]$Scope, [string]$Role)
+    $assignments = az role assignment list --assignee $PrincipalId --scope $Scope --role $Role --query "[?principalId=='$PrincipalId']" -o json 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "az role assignment list failed for role '$Role' at scope '$Scope'."
+    }
+    $parsed = $assignments | ConvertFrom-Json
+    return ($null -ne $parsed -and $parsed.Count -gt 0)
 }
 
-$kvAdmin = az role assignment list --assignee $spObjectId --scope $rgId --role "Key Vault Administrator" --query "[?principalId=='$spObjectId']" -o json | ConvertFrom-Json
-if ($kvAdmin.Count -eq 0) {
-    az role assignment create --assignee-object-id $spObjectId --role "Key Vault Administrator" --scope $rgId | Out-Null
-    Write-Host "  Key Vault Administrator on $ResourceGroupName assigned."
+function Grant-Role {
+    param([string]$PrincipalId, [string]$Role, [string]$Scope, [string]$Label)
+    if (Test-RoleAssignment -PrincipalId $PrincipalId -Scope $Scope -Role $Role) {
+        Write-Host "  $Label already assigned."
+        return
+    }
+    az role assignment create --assignee-object-id $PrincipalId --assignee-principal-type ServicePrincipal --role $Role --scope $Scope
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to assign role '$Role' at scope '$Scope'. Your account needs Microsoft.Authorization/roleAssignments/write at or above that scope."
+    }
+    Write-Host "  $Label assigned."
 }
 
-$subContributor = az role assignment list --assignee $spObjectId --scope "/subscriptions/$subscriptionId" --role Contributor --query "[?principalId=='$spObjectId' && scope=='/subscriptions/$subscriptionId']" -o json | ConvertFrom-Json
-if ($subContributor.Count -eq 0) {
-    az role assignment create --assignee-object-id $spObjectId --role Contributor --scope "/subscriptions/$subscriptionId" | Out-Null
-    Write-Host "  Contributor on the subscription assigned (required for subscription-scoped budgets)."
-}
+Grant-Role -PrincipalId $spObjectId -Role 'Contributor' -Scope $rgId -Label "Contributor on $ResourceGroupName"
+Grant-Role -PrincipalId $spObjectId -Role 'Key Vault Administrator' -Scope $rgId -Label "Key Vault Administrator on $ResourceGroupName"
+Grant-Role -PrincipalId $spObjectId -Role 'Contributor' -Scope $subId -Label "Contributor on the subscription (required for subscription-scoped budgets)"
 
 # ---------------------------------------------------------------------------
 # Secrets
