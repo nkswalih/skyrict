@@ -522,6 +522,44 @@ jobs:
           echo "ai_app_name=$(jq -r '.aiAgentAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
 
       - name: Apply again and assert no-op (idempotency gate)
+        env:
+          # Resource types for which what-if reports Modify on every single run,
+          # forever, because the resource's GET representation cannot round-trip
+          # what the template declares. Proven by applying twice and diffing two
+          # what-ifs: both applies reported Succeeded and both what-ifs returned
+          # the identical set below, so this is ARM's diff, not drift.
+          #
+          # Each entry is a MODIFY-only exemption. Create and Delete still fail
+          # the gate for these types, so a resource that vanished out of band is
+          # still reported.
+          #
+          #   PostgreSQL/flexibleServers  properties.administratorLoginPassword
+          #     is not returned by GET at all (verified: the field is absent from
+          #     the response), so ARM has nothing to compare and always reports
+          #     Modify. Unfixable from the template - the password must be sent.
+          #   Network/virtualNetworks     subnet delegations are normalised: the
+          #     template declares {name, properties:{serviceName}} and the service
+          #     stores and returns the delegation inline with server-generated
+          #     actions, id, etag, type, provisioningState and resourceGroup.
+          #   App/managedEnvironments,
+          #   ContainerRegistry/registries,
+          #   KeyVault/vaults             same class - server-defaulted and
+          #     normalised properties that the template omits or shapes
+          #     differently. The exact field has not been isolated for these
+          #     three; that is recorded here rather than guessed at, and the
+          #     persisted-across-two-applies evidence is the basis for the entry.
+          #
+          # If a future run reports Modify on a type NOT in this list, treat it as
+          # a real finding: either fix the template or add the type with evidence.
+          #
+          # MUST stay a single line. A YAML folded scalar (>- or >) joins lines
+          # with a space, which bakes " |" into the pattern and turns
+          # "flexibleServers |App" into an alternation whose first branch demands
+          # a literal trailing space - so it matches nothing while still
+          # reporting zero real changes, and the gate passes for the wrong
+          # reason. Verified against the live what-if: the folded form matched 1
+          # of the 5 expected resources.
+          NON_CONVERGENT_MODIFY: "Microsoft\\.(DBforPostgreSQL/flexibleServers|App/managedEnvironments|ContainerRegistry/registries|KeyVault/vaults|Network/virtualNetworks)"
         run: |
           az deployment group create \
             --resource-group "${{ env.RG }}" \
@@ -564,9 +602,29 @@ jobs:
           # expression as the id, e.g.
           #   [extensionResourceId('...','Microsoft.Authorization/roleAssignments',guid(...reference()...))]
           # so a path-segment test would miss exactly the entry that fails.
+          #
+          # MODIFY is additionally tolerated on the five types listed in
+          # NON_CONVERGENT_MODIFY below. Create and Delete are still failures for
+          # every type, including these: a resource that has appeared or
+          # disappeared out of band is exactly the drift this gate exists to
+          # catch, and a self-healing re-apply hides it rather than reporting it.
           role_assignments=$(jq '[.changes[] | select(.resourceId | test("Microsoft.Authorization/roleAssignments"))] | length' /tmp/whatif-noop.json)
-          real_changes=$(jq '[.changes[] | select((.resourceId | test("Microsoft.Authorization/roleAssignments")) | not) | select(.changeType != "NoChange" and .changeType != "Ignore")] | length' /tmp/whatif-noop.json)
+          real_changes=$(jq --arg tolerated "$NON_CONVERGENT_MODIFY" '[
+              .changes[]
+              | select(.resourceId | test("Microsoft.Authorization/roleAssignments") | not)
+              | select(
+                  (.changeType == "Modify" and (.resourceId | test($tolerated)))
+                  | not
+                )
+              | select(.changeType != "NoChange" and .changeType != "Ignore")
+            ] | length' /tmp/whatif-noop.json)
+          tolerated_modifies=$(jq --arg tolerated "$NON_CONVERGENT_MODIFY" '[
+              .changes[]
+              | select(.changeType == "Modify")
+              | select(.resourceId | test($tolerated))
+            ] | length' /tmp/whatif-noop.json)
           echo "role_assignments_excluded=$role_assignments"
+          echo "non_convergent_modifies_tolerated=$tolerated_modifies"
           echo "real_changes_after_reapply=$real_changes"
           [ "$real_changes" -eq 0 ] || { echo "::error::Re-apply is not a no-op ($real_changes real changes)"; exit 1; }
 
