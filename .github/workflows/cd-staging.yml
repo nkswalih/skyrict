@@ -74,6 +74,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # REQUIRED by the cache-from/cache-to type=gha on the build step below.
+      # Without it buildx uses its default `docker` driver, which cannot export
+      # cache, and the build dies with:
+      #   Cache export is not supported for the docker driver.
+      # setup-buildx boots a builder on the `docker-container` driver, which
+      # exists precisely to export cache, and publishes BUILDX_BUILDER for the
+      # build step to pick up.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
