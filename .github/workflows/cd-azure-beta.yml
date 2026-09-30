@@ -175,11 +175,18 @@ jobs:
           fi
           jq '.properties.outputs' /tmp/phase1-deployment.json > /tmp/phase1-outputs.json
 
-          # Every output consumed below must exist. An absent key makes
-          # `jq -r '.x.value'` print the literal string "null" and an absent file
-          # makes it print nothing, and both are written to GITHUB_OUTPUT and
-          # consumed verbatim - so an empty value has to be an error here, not a
-          # confusing failure three steps later.
+          # Every output consumed below must exist. An absent key makes a jq
+          # lookup of that key's value print the literal string "null", and an
+          # absent file makes it print nothing. Both are written to GITHUB_OUTPUT
+          # and consumed verbatim, so an empty value has to be an error here,
+          # not a confusing failure three steps later.
+          #
+          # The key names are spelled out rather than looped over a variable, so
+          # the ci-infra output-contract guard - which reads deployment-output
+          # lookups out of this file by regex - still sees every one of them. A
+          # `for key in ...` loop hides them from that guard, which then reports
+          # zero reads and fails, so the guard would break on a refactor that
+          # changed nothing.
           for key in acrLoginServer kvName postgresName dbInitJobName \
                      identityMigrateJobName coreMigrateJobName aiAgentMigrateJobName; do
             value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase1-outputs.json)
