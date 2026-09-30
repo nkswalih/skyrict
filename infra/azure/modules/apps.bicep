@@ -338,7 +338,16 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorklo
         external: false
         targetPort: 8000
         transport: 'http'
-        allowInsecure: false
+        // Insecure allowed, and it costs nothing in exposure: external: false
+        // means this ingress is not reachable from the internet at all, so the
+        // only clients are the gateway and ai-agent inside the same environment.
+        // ACA's default (false) redirects plain HTTP on port 80 to HTTPS on 443,
+        // and neither nginx nor httpx follows a redirect it receives from an
+        // upstream - so every gateway call came back as a redirect to the browser
+        // instead of a response from the API. The hop never leaves the
+        // environment, so terminating TLS on it would add cost and CPU for
+        // nothing.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
@@ -549,7 +558,9 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
         external: false
         targetPort: 8001
         transport: 'http'
-        allowInsecure: false
+        // See the identity app: internal-only ingress plus a plain-HTTP caller
+        // is exactly the case ACA's allowInsecure: false default breaks.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
@@ -715,10 +726,14 @@ resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
+        // ai-agent is internal-only: it is not in the gateway's public route map
+        // and is called by core over the environment's internal network only.
         external: false
         targetPort: 8000
         transport: 'http'
-        allowInsecure: false
+        // See the identity app: internal-only ingress plus a plain-HTTP caller
+        // is exactly the case ACA's allowInsecure: false default breaks.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
