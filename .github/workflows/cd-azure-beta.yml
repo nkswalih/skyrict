@@ -516,9 +516,9 @@ jobs:
           # expression as the id, e.g.
           #   [extensionResourceId('...','Microsoft.Authorization/roleAssignments',guid(...reference()...))]
           # so a path-segment test would miss exactly the entry that fails.
-          unevaluable=$(jq '[.changes[] | select(.resourceId | test("Microsoft.Authorization/roleAssignments"))] | length' /tmp/whatif-noop.json)
+          role_assignments=$(jq '[.changes[] | select(.resourceId | test("Microsoft.Authorization/roleAssignments"))] | length' /tmp/whatif-noop.json)
           real_changes=$(jq '[.changes[] | select((.resourceId | test("Microsoft.Authorization/roleAssignments")) | not) | select(.changeType != "NoChange" and .changeType != "Ignore")] | length' /tmp/whatif-noop.json)
-          echo "role_assignments_excluded=$unevaluable"
+          echo "role_assignments_excluded=$role_assignments"
           echo "real_changes_after_reapply=$real_changes"
           [ "$real_changes" -eq 0 ] || { echo "::error::Re-apply is not a no-op ($real_changes real changes)"; exit 1; }
 
