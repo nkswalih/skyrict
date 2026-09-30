@@ -49,11 +49,8 @@ param environmentName string
 @description('ACR login server (e.g. skyrictbeta.azurecr.io).')
 param acrLoginServer string
 
-@description('Resource ID of the user-assigned identity used for ACR pull + Key Vault.')
+@description('Resource ID of the user-assigned identity used for ACR pull + Key Vault. Key Vault secret references need the RESOURCE ID, not the client ID - see sharedSecrets below.')
 param uamiId string
-
-@description('Client ID of the user-assigned identity (required for KV secret references).')
-param uamiClientId string
 
 @description('Key Vault URI used to build secret references (e.g. https://kv-skyrict-beta.vault.azure.net/).')
 param kvUri string
@@ -198,6 +195,16 @@ var managedCertificateName = 'env-cert-${resourceName}'
 
 // ---------------------------------------------------------------------------
 // Shared ACA secrets (all apps/jobs declare the same set)
+//
+// `identity` on a keyVaultUrl secret is the managed identity's ARM RESOURCE ID,
+// not its client ID. ACA looks the value up as a resource ID and fails the
+// revision with "Managed identity with resource ID '<guid>' was not found" when
+// handed a client ID - the two are both bare GUIDs, so the mistake is silent in
+// review and only surfaces at provisioning time.
+//
+// Proven, not assumed: two otherwise-identical container apps were created in
+// the beta environment against the same Key Vault secret, differing only in this
+// field. Client ID -> Failed. Resource ID -> Succeeded.
 // ---------------------------------------------------------------------------
 
 var sharedSecrets = [
@@ -212,27 +219,27 @@ var sharedSecrets = [
   {
     name: 'jwt-private-key'
     keyVaultUrl: '${kvUri}secrets/jwt-private-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'jwt-public-key'
     keyVaultUrl: '${kvUri}secrets/jwt-public-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'mfa-encryption-key'
     keyVaultUrl: '${kvUri}secrets/mfa-encryption-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'sync-token'
     keyVaultUrl: '${kvUri}secrets/sync-token'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'ingest-token'
     keyVaultUrl: '${kvUri}secrets/ingest-token'
-    identity: uamiClientId
+    identity: uamiId
   }
 ]
 
