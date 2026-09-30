@@ -135,9 +135,9 @@ jobs:
         # and exits 0, so the value is written to GITHUB_OUTPUT and consumed
         # verbatim. The symptom is `curl https://null/api/v1/health` and
         # `az containerapp show --name null` in the final job, after
-        # provision-infra, build-push-images, deploy-workloads and migrate
-        # have all reported success - a complete rollout that cannot verify
-        # itself, discovered by reading logs rather than by a red build.
+        # provision-infra, build-push-images and deploy-workloads have all
+        # reported success - a complete rollout that cannot verify itself,
+        # discovered by reading logs rather than by a red build.
         #
         # The Preflight step also greps `.value`, but off the *parameters*
         # file rather than a deployment output, so `.parameters.` reads are
