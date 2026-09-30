@@ -1156,6 +1156,13 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
 
 // ---------------------------------------------------------------------------
 // db-init job - creates the shared database + extensions (idempotent)
+//
+// vector, pg_trgm and pgcrypto. pgcrypto is here because two of the three
+// migrations create it (identity 0001, core 0010) to back the tamper-evident
+// audit hash chain, so creating it here fails the job whose name says
+// 'db-init' rather than failing midway through a service's first migration.
+// ON_ERROR_STOP=1 is what makes that difference: without it psql reports
+// success for a statement that failed.
 // ---------------------------------------------------------------------------
 
 var dbInitScript = '''
@@ -1165,6 +1172,7 @@ if ! psql -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname = '$S
 fi
 psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector"
 psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
 '''
 
 resource dbInitJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {

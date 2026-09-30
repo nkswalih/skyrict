@@ -7,7 +7,8 @@
 #
 #   1. provision-infra (phase 1, deployWorkloads=false): validate + what-if
 #      + apply environment/security/registry/data + budgets, then set
-#      postgres azure.extensions=vector,pg_trgm and seed the Key Vault
+#      postgres azure.extensions=vector,pg_trgm,pgcrypto and seed the Key
+#      Vault
 #      secrets (JWT keypair, MFA key, sync/ingest tokens) that the apps'
 #      Key Vault secret references need before their revisions are created.
 #   2. build-push-images: docker-login with the OIDC token (AcrPush was
@@ -215,15 +216,23 @@ jobs:
           echo "core_job=$(jq -r '.coreMigrateJobName.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "ai_job=$(jq -r '.aiAgentMigrateJobName.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Enable Postgres extensions (vector + pg_trgm)
+      - name: Enable Postgres extensions (vector + pg_trgm + pgcrypto)
         # Must precede db-init (CREATE EXTENSION) and only requires control
         # plane changes, so it is done after phase 1 and before phase 2.
+        #
+        # Setting this overrides Azure's default allow-list rather than adding
+        # to it, so anything a migration needs has to be named here explicitly.
+        # pgcrypto is not optional: it backs the tamper-evident audit hash chain
+        # in identity 0001 and core 0010, both of which run
+        # CREATE EXTENSION IF NOT EXISTS pgcrypto. Leaving it off made alembic
+        # fail with FeatureNotSupportedError once db-init had finally created the
+        # database and the migrations got far enough to reach it.
         run: |
           az postgres flexible-server parameter set \
             --resource-group "${{ env.RG }}" \
             --server-name "${{ steps.apply.outputs.postgres_name }}" \
             --name azure.extensions \
-            --value "vector,pg_trgm"
+            --value "vector,pg_trgm,pgcrypto"
 
       - name: Seed Key Vault secrets (idempotent)
         # The apps reference these secrets by name via Key Vault references
