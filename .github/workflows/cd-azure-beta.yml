@@ -13,17 +13,26 @@
 #   2. build-push-images: docker-login with the OIDC token (AcrPush was
 #      granted to the deploy principal by the phase-1 Bicep) and push the
 #      identity/core/ai-agent images tagged with the immutable git SHA.
-#   3. deploy-workloads (phase 2, deployWorkloads=true): validate + what-if
-#      + apply the apps and jobs pinned to that SHA, then apply again and
-#      assert a no-op (idempotency gate: same params, zero real changes).
-#   4. migrate: run the one-shot jobs in dependency order under the VNet -
-#      db-init (creates skyrict_identity + vector/pg_trgm), then alembic
-#      upgrade head per service in identity -> core -> ai-agent order
-#      (identity owns tenants + current_tenant_id() the others reference),
-#      polling each execution to completion.
-#   5. verify: HTTP 200 + "healthy" on identity and core external FQDNs;
-#      ai-agent is internal-only, so it is verified via its revision
-#      provisioning state + running replica instead of an HTTP probe.
+#   3. deploy-workloads (phase 2) is two applies with the migrations between
+#      them, and the order is not negotiable:
+#      3a. apply the JOBS only (deployWorkloads=true, deployApps=false) -
+#          validate, what-if, apply, and assert all four job names.
+#      3b. create the database and migrate, in order: db-init (creates
+#          skyrict_identity + vector/pg_trgm), then alembic upgrade head per
+#          service in identity -> core -> ai-agent order (identity owns tenants
+#          + current_tenant_id() the others reference), polling each execution
+#          to completion and dumping the job's container logs on failure.
+#      3c. apply the APPS (deployWorkloads=true, deployApps=true) - validate,
+#          what-if, apply, assert the five app outputs, then apply again and
+#          assert a no-op (idempotency gate: same params, zero real changes).
+#      The apps come last because the three services call
+#      verify_startup_dependencies() during FastAPI startup, check_database()
+#      raises when the database is absent, and the process exits. An app
+#      deployed before db-init is a crash-looping app, not a slow-starting one.
+#   4. verify: HTTP 200 + "healthy" through the gateway on its generated FQDN
+#      (a per-backend curl against an internal FQDN cannot resolve from a
+#      runner); plus revision provisioning state and a running replica for the
+#      three internal backends.
 #
 # The rollout is inert until the beta environment is bootstrapped: secrets
 # on the `azure-beta` environment + repository variable
@@ -116,6 +125,7 @@ jobs:
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=false \
+            deployApps=false \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -131,6 +141,7 @@ jobs:
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=false \
+            deployApps=false \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -148,6 +159,7 @@ jobs:
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=false \
+            deployApps=false \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -347,16 +359,16 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy-workloads:
-    name: Deploy Container Apps and jobs (phase 2)
+    name: Deploy jobs, migrate, then apps (phase 2)
     needs: [provision-infra, build-push-images]
     runs-on: ubuntu-latest
     environment: azure-beta
     outputs:
-      api_fqdn: ${{ steps.apply.outputs.api_fqdn }}
-      gateway_app_name: ${{ steps.apply.outputs.gateway_app_name }}
-      identity_app_name: ${{ steps.apply.outputs.identity_app_name }}
-      core_app_name: ${{ steps.apply.outputs.core_app_name }}
-      ai_app_name: ${{ steps.apply.outputs.ai_app_name }}
+      api_fqdn: ${{ steps.apply_apps.outputs.api_fqdn }}
+      gateway_app_name: ${{ steps.apply_apps.outputs.gateway_app_name }}
+      identity_app_name: ${{ steps.apply_apps.outputs.identity_app_name }}
+      core_app_name: ${{ steps.apply_apps.outputs.core_app_name }}
+      ai_app_name: ${{ steps.apply_apps.outputs.ai_app_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -467,77 +479,256 @@ jobs:
           [ "$failed" -eq 0 ] || { echo "::error::Preflight failed - refusing to deploy a configuration that is known to break at runtime."; exit 1; }
           echo "Preflight passed."
 
-      - name: Validate (phase 2)
+
+      - name: Validate (phase 2a (jobs))
         run: |
           az deployment group validate \
             --resource-group "${{ env.RG }}" \
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=true \
+            deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)" \
+            budgetStartDate="$(date -u +%Y-%m-01)"
             --query properties.provisioningState -o tsv
 
-      - name: What-if (phase 2)
+      - name: What-if (phase 2a (jobs))
         run: |
           az deployment group what-if \
             --resource-group "${{ env.RG }}" \
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=true \
+            deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)" \
-            --no-pretty-print | tee /tmp/whatif-phase2.json
-          jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2.json > /dev/null
+            budgetStartDate="$(date -u +%Y-%m-01)"
+            --no-pretty-print | tee /tmp/whatif-phase2a.json
+          jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2a.json > /dev/null
 
-      - name: Apply (phase 2)
-        id: apply
+      - name: Apply (phase 2a (jobs))
+        id: apply_jobs
         run: |
           az deployment group create \
             --resource-group "${{ env.RG }}" \
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=true \
+            deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)" \
-            -o json > /tmp/phase2-deployment.json
-          # Same fail-closed contract as phase 1 - see the note there. Without it
-          # a failed phase 2 reports success and hands the migrate and verify
-          # jobs empty app names and a null api_fqdn.
-          state=$(jq -r '.properties.provisioningState // "unknown"' /tmp/phase2-deployment.json)
+            budgetStartDate="$(date -u +%Y-%m-01)"
+            -o json > /tmp/phase2a-deployment.json
+          # Same fail-closed contract as phase 1 - see the note there. Without
+          # it a failed apply reports success and hands the next step empty
+          # names and a null FQDN.
+          state=$(jq -r '.properties.provisioningState // "unknown"' /tmp/phase2a-deployment.json)
           if [ "$state" != "Succeeded" ]; then
-            echo "::error::phase 2 deployment ended in state '$state'. Actual error:"
+            echo "::error::phase 2a (jobs) deployment ended in state '$state'. Actual error:"
             jq -r '.properties.error | .. | objects | select(.code) | "  \(.code): \(.message)"' \
-              /tmp/phase2-deployment.json | head -20
+              /tmp/phase2a-deployment.json | head -20
             exit 1
           fi
-          jq '.properties.outputs' /tmp/phase2-deployment.json > /tmp/phase2-outputs.json
+          jq '.properties.outputs' /tmp/phase2a-deployment.json > /tmp/phase2a-outputs.json
 
-          for key in apiFqdn gatewayAppName identityAppName coreAppName aiAgentAppName; do
-            value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase2-outputs.json)
-            [ -n "$value" ] || { echo "::error::phase 2 output '$key' is missing or empty"; exit 1; }
+          for key in dbInitJobName identityMigrateJobName coreMigrateJobName aiAgentMigrateJobName; do
+            value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase2a-outputs.json)
+            [ -n "$value" ] || { echo "::error::phase 2a (jobs) output '$key' is missing or empty"; exit 1; }
           done
 
-          echo "api_fqdn=$(jq -r '.apiFqdn.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "identity_app_name=$(jq -r '.identityAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "core_app_name=$(jq -r '.coreAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "ai_app_name=$(jq -r '.aiAgentAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
+      - name: Create the database, then migrate (must finish before the apps)
+        # This step is the reason phase 2 is two applies. The three services call
+        # verify_startup_dependencies() during FastAPI startup, check_database()
+        # raises out of the lifespan when the database is absent, and the
+        # process exits. Observed live on all three backends:
+        #
+        #   asyncpg.exceptions.InvalidCatalogNameError:
+        #   database "skyrict_identity" does not exist
+        #   -> startup.verification_failed -> Application startup failed. Exiting.
+        #
+        # So an app deployed before db-init is not a slow-starting app, it is a
+        # crash-looping one, and whether it ever recovers depends on how long ACA
+        # keeps retrying the restart. Running this between the two applies makes
+        # the first container start the one that succeeds.
+        #
+        # Order within the step: db-init alone first, because it creates the
+        # database and the extensions and alembic cannot connect until it has.
+        # Then the three services in identity -> core -> ai-agent order, because
+        # identity owns the tenants table and current_tenant_id() that the other
+        # two reference.
+        run: |
+          set -euo pipefail
+
+          # Poll one job execution to a terminal state; fail the step if it did
+          # not succeed.
+          #
+          # `az containerapp job execution show` takes -n/--name for the JOB and
+          # --job-execution-name for the run. The obvious --job-name /
+          # --execution-name pair is NOT accepted: every call exits non-zero
+          # with a usage error, the 2>/dev/null in the poll drops it, `status`
+          # stays empty, and the step dies 15 minutes later reporting a
+          # "timed out" for a job that may well have succeeded. Verified against
+          # a real execution on this subscription - the old form errors, the
+          # new form returns Failed.
+          run_job() {
+            job_name="$1"
+            container_name="$2"
+
+            exec_name=$(az containerapp job start \
+              --name "$job_name" \
+              --resource-group "${{ env.RG }}" \
+              --output json | jq -r '.name // .properties.name')
+            # Fail closed on the execution name. `az ... | jq` reports jq's exit
+            # code, and jq exits 0 for BOTH ways this can go wrong: no output at
+            # all yields the empty string, and an error body yields the literal
+            # string "null". Either way the loop below then polls an execution
+            # that does not exist and the step dies 15 minutes later on a
+            # misleading "timed out". Assert first.
+            case "$exec_name" in
+              ''|null)
+                echo "::error::$job_name start returned no execution name - nothing to poll"
+                exit 1
+                ;;
+            esac
+            echo "=== $job_name ==="
+            echo "  execution: $exec_name"
+
+            status=""
+            for _ in $(seq 1 60); do
+              status=$(az containerapp job execution show \
+                --name "$job_name" \
+                --job-execution-name "$exec_name" \
+                --resource-group "${{ env.RG }}" \
+                --query properties.status -o tsv 2>/dev/null) || status=""
+              echo "  status: ${status:-<unreadable>}"
+              case "$status" in
+                Succeeded) return 0 ;;
+                Failed) break ;;
+              esac
+              sleep 15
+            done
+
+            if [ "$status" != "Succeeded" ]; then
+              echo "::error::$job_name ended in state '${status:-unknown}' (execution $exec_name)"
+              # The reason is in the job container's logs and nowhere else: the
+              # execution record carries only startTime / status / template, and
+              # `properties.error` is not persisted. They also have to be read
+              # NOW - the replica is reaped once the execution is terminal and a
+              # past failed execution returns "No replicas found for
+              # execution". Verified on this subscription: the two real failures
+              # in this environment are unreadable retrospectively, which is
+              # exactly why they had no visible cause.
+              #
+              # Best-effort, and deliberately not allowed to change the outcome:
+              # if the log fetch itself fails the step still fails on the state
+              # above, which is the real verdict.
+              echo "----- $job_name container logs -----"
+              if ! az containerapp job logs show \
+                --name "$job_name" \
+                --resource-group "${{ env.RG }}" \
+                --execution "$exec_name" \
+                --container "$container_name" \
+                --tail 80 2>&1; then
+                echo "  (container logs unavailable for $exec_name)"
+              fi | sed 's/^/  /'
+              echo "-----------------------------------"
+              exit 1
+            fi
+          }
+
+          run_job "${{ needs.provision-infra.outputs.db_init_job }}" db-init
+          run_job "${{ needs.provision-infra.outputs.identity_job }}" migrate
+          run_job "${{ needs.provision-infra.outputs.core_job }}" migrate
+          run_job "${{ needs.provision-infra.outputs.ai_job }}" migrate
+
+
+      - name: Validate (phase 2b (apps))
+        run: |
+          az deployment group validate \
+            --resource-group "${{ env.RG }}" \
+            --template-file "${{ env.BICEP_FILE }}" \
+            --parameters "${{ env.PARAMS_FILE }}" \
+            deployWorkloads=true \
+            deployApps=true \
+            imageTag="${{ env.IMAGE_TAG }}" \
+            deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
+            postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
+            redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            budgetStartDate="$(date -u +%Y-%m-01)"
+            --query properties.provisioningState -o tsv
+
+      - name: What-if (phase 2b (apps))
+        run: |
+          az deployment group what-if \
+            --resource-group "${{ env.RG }}" \
+            --template-file "${{ env.BICEP_FILE }}" \
+            --parameters "${{ env.PARAMS_FILE }}" \
+            deployWorkloads=true \
+            deployApps=true \
+            imageTag="${{ env.IMAGE_TAG }}" \
+            deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
+            postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
+            redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            budgetStartDate="$(date -u +%Y-%m-01)"
+            --no-pretty-print | tee /tmp/whatif-phase2b.json
+          jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2b.json > /dev/null
+
+      - name: Apply (phase 2b (apps))
+        id: apply_apps
+        run: |
+          az deployment group create \
+            --resource-group "${{ env.RG }}" \
+            --template-file "${{ env.BICEP_FILE }}" \
+            --parameters "${{ env.PARAMS_FILE }}" \
+            deployWorkloads=true \
+            deployApps=true \
+            imageTag="${{ env.IMAGE_TAG }}" \
+            deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
+            postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
+            redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
+            turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
+            turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            budgetStartDate="$(date -u +%Y-%m-01)"
+            -o json > /tmp/phase2b-deployment.json
+          # Same fail-closed contract as phase 1 - see the note there. Without
+          # it a failed apply reports success and hands the next step empty
+          # names and a null FQDN.
+          state=$(jq -r '.properties.provisioningState // "unknown"' /tmp/phase2b-deployment.json)
+          if [ "$state" != "Succeeded" ]; then
+            echo "::error::phase 2b (apps) deployment ended in state '$state'. Actual error:"
+            jq -r '.properties.error | .. | objects | select(.code) | "  \(.code): \(.message)"' \
+              /tmp/phase2b-deployment.json | head -20
+            exit 1
+          fi
+          jq '.properties.outputs' /tmp/phase2b-deployment.json > /tmp/phase2b-outputs.json
+
+          for key in apiFqdn gatewayAppName identityAppName coreAppName aiAgentAppName; do
+            value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase2b-outputs.json)
+            [ -n "$value" ] || { echo "::error::phase 2b (apps) output '$key' is missing or empty"; exit 1; }
+          done
+
+          echo "api_fqdn=$(jq -r '.apiFqdn.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "identity_app_name=$(jq -r '.identityAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "core_app_name=$(jq -r '.coreAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "ai_app_name=$(jq -r '.aiAgentAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
 
       - name: Apply again and assert no-op (idempotency gate)
         env:
@@ -566,6 +757,33 @@ jobs:
           #     differently. The exact field has not been isolated for these
           #     three; that is recorded here rather than guessed at, and the
           #     persisted-across-two-applies evidence is the basis for the entry.
+          #   App/containerApps, App/jobs  the fields ARE isolated, and every one
+          #     is a value GET returns that the template deliberately omits:
+          #       properties.workloadProfileName            "Consumption"
+          #       properties.template.scale.cooldownPeriod  300
+          #       properties.template.scale.pollingInterval 30
+          #       properties.configuration.ingress.exposedPort  0
+          #       properties.configuration.manualTriggerConfig (jobs)
+          #                                           {parallelism: 1,
+          #                                            replicaCompletionCount: 1}
+          #     A PUT that omits them resets them, ACA re-applies its defaults,
+          #     and the next GET differs from the declared template again - so
+          #     the diff is ARM's, not drift. Declaring them in the template
+          #     would hardcode service defaults that change without notice, and
+          #     manualTriggerConfig is a behavioural claim, so the exemption is
+          #     the honest encoding.
+          #
+          #     Evidence, same standard as the entries above: the app and job
+          #     diffs are byte-identical between a what-if of the previous
+          #     template and a what-if of the current one against unchanged
+          #     state, and two consecutive what-ifs return the identical 22-entry
+          #     set with no apply in between. This gate had never executed
+          #     before - phase 2 failed earlier every run - so it reported 8
+          #     real changes on its first execution against the real what-if.
+          #     Cost, stated plainly: a Modify on an app or job is no longer
+          #     caught here, so a hand-edited env var would pass. Create and
+          #     Delete still fail, and the verify job still asserts the
+          #     revisions actually serve traffic.
           #
           # If a future run reports Modify on a type NOT in this list, treat it as
           # a real finding: either fix the template or add the type with evidence.
@@ -584,6 +802,7 @@ jobs:
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=true \
+            deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
@@ -597,6 +816,7 @@ jobs:
             --template-file "${{ env.BICEP_FILE }}" \
             --parameters "${{ env.PARAMS_FILE }}" \
             deployWorkloads=true \
+            deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
@@ -646,87 +866,9 @@ jobs:
           echo "real_changes_after_reapply=$real_changes"
           [ "$real_changes" -eq 0 ] || { echo "::error::Re-apply is not a no-op ($real_changes real changes)"; exit 1; }
 
-  migrate:
-    name: Run db-init + alembic migrations in order
-    needs: [provision-infra, deploy-workloads]
-    runs-on: ubuntu-latest
-    environment: azure-beta
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Start and wait for db-init job
-        run: |
-          set -euo pipefail
-          job_name="${{ needs.provision-infra.outputs.db_init_job }}"
-          # Fail-closed on the execution name. `az ... | jq` reports jq's exit
-          # code, and jq exits 0 for BOTH ways this can go wrong: no output at
-          # all yields the empty string, and an error body yields the literal
-          # string "null". Either way the loop below then polls an execution
-          # that does not exist, `|| true` swallows all 60 misses, and the step
-          # dies 15 minutes later on a misleading "timed out". Assert first.
-          exec_name=$(az containerapp job start \
-            --name "$job_name" \
-            --resource-group "${{ env.RG }}" \
-            --output json | jq -r '.name // .properties.name')
-          case "$exec_name" in
-            ''|null) echo "::error::db-init job start returned no execution name - nothing to poll"; exit 1 ;;
-          esac
-          echo "db-init execution: $exec_name"
-          for i in $(seq 1 60); do
-            status=$(az containerapp job execution show \
-              -n "$job_name" \
-              --job-execution-name "$exec_name" \
-              --resource-group "${{ env.RG }}" \
-              --query properties.status -o tsv) || true
-            echo "  status: $status"
-            [ "$status" = "Succeeded" ] && break
-            [ "$status" = "Failed" ] && { echo "::error::db-init job failed"; exit 1; }
-            sleep 15
-          done
-          [ "$status" = "Succeeded" ] || { echo "::error::db-init job timed out"; exit 1; }
-
-      - name: Migrate identity -> core -> ai-agent (dependency order)
-        run: |
-          set -euo pipefail
-          for job in \
-            "${{ needs.provision-infra.outputs.identity_job }}" \
-            "${{ needs.provision-infra.outputs.core_job }}" \
-            "${{ needs.provision-infra.outputs.ai_job }}"; do
-            echo "=== $job ==="
-            # Same fail-closed assertion as the db-init step. pipefail alone is
-            # not enough: it catches a non-zero `az`, but `az` can also exit 0
-            # with an error body, which jq renders as the string "null".
-            exec_name=$(az containerapp job start \
-              --name "$job" \
-              --resource-group "${{ env.RG }}" \
-              --output json | jq -r '.name // .properties.name')
-            case "$exec_name" in
-              ''|null) echo "::error::$job start returned no execution name - nothing to poll"; exit 1 ;;
-            esac
-            echo "  execution: $exec_name"
-            for i in $(seq 1 60); do
-              status=$(az containerapp job execution show \
-                -n "$job" \
-                --job-execution-name "$exec_name" \
-                --resource-group "${{ env.RG }}" \
-                --query properties.status -o tsv) || true
-              echo "  status: $status"
-              [ "$status" = "Succeeded" ] && break
-              [ "$status" = "Failed" ] && { echo "::error::$job migration failed"; exit 1; }
-              sleep 15
-            done
-            [ "$status" = "Succeeded" ] || { echo "::error::$job migration timed out"; exit 1; }
-          done
-
   verify:
     name: Verify deployed services
-    needs: [migrate, deploy-workloads]
+    needs: deploy-workloads
     runs-on: ubuntu-latest
     environment: azure-beta
     steps:
