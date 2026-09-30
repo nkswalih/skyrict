@@ -303,15 +303,57 @@ within the Azure free account's 12-month + always-free allotments:
   `RequestDisallowedByAzure` (region not accepting new customers). Do not
   "restore" `eastus` without re-running that check first.
 - `ai-agent` is internal-only: no public FQDN; verified via revision state.
-- The custom domain is **configured but pending**, not absent. `apiHostname`
-  is set to `api.skyrict.in`, so the gateway gets an ACA-managed certificate
-  and an `SniEnabled` custom-domain binding. Both stay *pending* until the
-  CNAME exists at the registrar, and until then only the gateway's generated
-  `*.azurecontainerapps.io` FQDN answers. That is deliberate: the CD's
-  `verify` job probes the generated FQDN precisely so the first deploy does
-  not fail on a DNS record that is an operator task, not a deploy task.
-  `BASE_DOMAIN`, `JWKS_ISSUER` and `JWKS_AUDIENCE` are all configured for
-  `api.skyrict.in` and will match as soon as the name resolves.
+- **The idempotency gate tolerates `Modify` on five resource types, and it has
+  to.** Applying phase 1 twice and diffing the what-ifs shows the same five
+  reporting `Modify` both times with both applies `Succeeded`, because ARM's GET
+  cannot round-trip what the template declares:
+  `DBforPostgreSQL/flexibleServers` never returns
+  `administratorLoginPassword`, `Network/virtualNetworks` returns subnet
+  delegations with server-generated `actions`/`id`/`etag`/`type`/
+  `provisioningState`/`resourceGroup`, and the other three normalise
+  server-defaulted properties. The list lives in `NON_CONVERGENT_MODIFY` in
+  `cd-azure-beta.yml`. `Create` and `Delete` are still failures for every type,
+  so a resource vanishing out of band is still caught. A `Modify` on a type not
+  in that list is a real finding - fix the template or add the type with
+  evidence.
+- **A failed deployment used to be reported as a success.** Both Apply steps
+  ended in `az deployment group create ... | tee`, and the step shell is
+  `bash -e` with no `pipefail`, so a failure returned `tee`'s exit code, every
+  output was consumed as an empty string, and the real error surfaced a step or
+  two later as something unrelated. They now redirect, assert
+  `provisioningState`, print the nested error, and verify each output they
+  consume is non-empty. `pipefail` was deliberately not added instead: the
+  `verify` job's `curl | tee /dev/stderr | grep -q` assertions would fail on
+  SIGPIPE even when the assertion matched.
+- **The custom domain is off until DNS exists, and turning it on takes two
+  deploys.** `apiHostname` is set to `api.skyrict.in`, but `bindCustomDomain`
+  is `false`, so the gateway serves only its generated
+  `*.azurecontainerapps.io` FQDN and no certificate is requested. This is not
+  a precaution - the certificate cannot be created in one pass:
+
+  - ACA refuses a managed certificate for a hostname that is not already
+    registered on a container app (`RequireCustomHostnameInEnvironment`),
+    while the `customDomains` entry references that same certificate. So the
+    hostname must be bound first, with no `certificateId`.
+  - `api.skyrict.in` has no DNS record at all, so validation cannot succeed
+    regardless.
+
+  To activate it, in order, with a deploy between each step:
+
+  1. Add the registrar CNAME `api.skyrict.in` pointing **directly** at
+     `app-gateway-skyrict-beta.cae-skyrict-beta.westus.azurecontainerapps.io`
+     (an intermediate CNAME permanently blocks certificate issuance), TTL 600.
+  2. Set `bindCustomDomain: true` and deploy. This registers the hostname on
+     the gateway with no certificate yet, which is what step 3 requires.
+  3. Set the `validationMethod: 'CNAME'` record ACA asks for, at
+     `_acme-challenge.api.skyrict.in`, and deploy again. The certificate is
+     created and the binding picks it up.
+
+  Until step 3 completes, only the generated FQDN answers. The CD's `verify`
+  job probes that FQDN on purpose, so the first deploy never depends on a DNS
+  record that is an operator task rather than a deploy task. `BASE_DOMAIN`,
+  `JWKS_ISSUER` and `JWKS_AUDIENCE` are already configured for
+  `api.skyrict.in` and match as soon as the name resolves.
 - The observability module requires subscription-level deploy permissions.
 - Jobs and apps share the KV secret store; rotation requires a redeploy.
 - Free-trial scale knobs are conservative (max 2 replicas, pooled DB

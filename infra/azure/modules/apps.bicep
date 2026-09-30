@@ -114,8 +114,11 @@ param jwksIssuer string
 @description('JWT audience claim shared by identity/core/ai-agent.')
 param jwksAudience string
 
-@description('The single public API hostname (e.g. api.skyrict.in). When set, the gateway binds a managed certificate and serves this host. Empty serves only the generated FQDN.')
+@description('The single public API hostname (e.g. api.skyrict.in). When set AND bindCustomDomain is true, the gateway binds a managed certificate and serves this host. Empty serves only the generated FQDN.')
 param apiHostname string = ''
+
+@description('Bind apiHostname as an SNI custom domain with an ACA managed certificate. Off by default, and it cannot simply be switched on in one pass. ACA refuses to create a managed certificate for a hostname that is not already registered on a container app (RequireCustomHostnameInEnvironment), while the certificate is what the customDomains entry references - so the two have to be applied in two deployments. It also cannot be created at all before the domain resolves, so a first rollout must run with this off. See docs/runbooks/azure-iac.md section 11.')
+param bindCustomDomain bool = false
 
 @description('Cloudflare Turnstile site key. Public by design - it is rendered into the sign-up page, so it stays a plain app-config value and is not a secret.')
 param turnstileSiteKey string = ''
@@ -190,7 +193,7 @@ var gatewayAppName = 'app-gateway-${resourceName}'
 var identityInternalFqdn = '${identityAppName}.${environmentName}.azurecontainerapps.io'
 var coreInternalFqdn = '${coreAppName}.${environmentName}.azurecontainerapps.io'
 
-var enableManagedCertificate = !empty(apiHostname)
+var enableManagedCertificate = bindCustomDomain && !empty(apiHostname)
 var managedCertificateName = 'env-cert-${resourceName}'
 
 // ---------------------------------------------------------------------------
@@ -852,10 +855,22 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2026-01-01' existing = 
 // gateway depends on it: binding a customDomain whose certificateId does not
 // exist yet is rejected outright.
 //
-// The resource carries no location on purpose. It is a child of the environment,
-// not a regional resource - ACA rejects a location on it - and the linter's
-// "missing required property: location" warning is a false positive for this one
-// resource type.
+// The resource DOES carry a location. It is a child of the environment, but
+// unlike an ordinary child resource it does not inherit one: deploying without
+// it fails the whole nested `apps` deployment with
+//   LocationRequired: The location property is required for this definition.
+// The BCP035 linter warning that used to be suppressed here was a TRUE
+// positive, and the comment claiming ACA rejects a location on this resource
+// was simply wrong - it cost a full CD cycle to disprove, so do not reinstate
+// it.
+//
+// Guarded by bindCustomDomain as well as apiHostname, and the second condition
+// is not optional. ACA requires the hostname to be registered on a container app
+// before a certificate can exist for it:
+//   RequireCustomHostnameInEnvironment: Creating managed certificate requires
+//   hostname 'api.skyrict.in' added as a custom hostname to a container app...
+// In phase 1 the gateway does not exist yet, so an unguarded certificate fails
+// the deployment there and nothing downstream can run.
 //
 // No subjectAlternativeNames either: ManagedCertificateProperties in this API
 // version does not accept it, and a single-name certificate does not need one.
@@ -863,12 +878,21 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2026-01-01' existing = 
 // is fine, but a.b.skyrict.in would need a SAN, and a *.skyrict.in wildcard
 // would not cover a second level, which is also why digicert's validation check
 // fails against the intermediate CNAMEs a multi-level name requires.
-#disable-next-line BCP035
 resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026-01-01' = if (enableManagedCertificate) {
   parent: containerEnv
   name: managedCertificateName
+  location: location
   properties: {
     subjectName: apiHostname
+    // Must be stated explicitly. Left unset, ACA does not default to one of
+    // its own methods and the deployment is rejected with
+    //   InvalidValidationMethod: Invalid validation method for domain
+    //   'api.skyrict.in'. Supported: CNAME, HTTP, TXT.
+    // CNAME matches what the runbook tells the operator to add: a CNAME at
+    // _acme-challenge.api.skyrict.in. Until that record exists the certificate
+    // stays in a pending state, which does NOT fail the deployment - the app
+    // is reachable on its generated FQDN meanwhile.
+    validationMethod: 'CNAME'
   }
 }
 
