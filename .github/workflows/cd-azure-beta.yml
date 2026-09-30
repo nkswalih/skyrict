@@ -503,7 +503,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2a (jobs))
@@ -520,7 +520,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase2a.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2a.json > /dev/null
 
@@ -539,7 +539,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             -o json > /tmp/phase2a-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
@@ -685,7 +685,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2b (apps))
@@ -702,7 +702,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase2b.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2b.json > /dev/null
 
@@ -721,7 +721,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             -o json > /tmp/phase2b-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
@@ -940,6 +940,21 @@ jobs:
         # resolvable FQDN and cannot be HTTP-probed from a runner. Verify
         # liveness the same way ai-agent already is: revision provisioning state
         # plus at least one running replica.
+        #
+        # Two field names here are NOT the deployment-state idiom, and both were
+        # wrong on the first run. Read live from the ACA API on 2026-09-30:
+        #
+        #   revision provisioningState is "Provisioned", never "Succeeded".
+        #   "Succeeded" is the value for an ARM *deployment* - the phase 2b apply
+        #   asserts that - so it is easy to carry over by mistake. All 4 live
+        #   revisions report "Provisioned"; 0 report "Succeeded". Asserting the
+        #   deployment value made this step fail on a perfectly healthy app.
+        #
+        #   a replica's liveness field is properties.runningState. A replica has
+        #   NO top-level "state" key at all (its top level is id, name,
+        #   properties, resourceGroup, type), so [?state=='Running'] matches
+        #   nothing and returns 0 even for a serving app - a silent false
+        #   failure, because JMESPath does not error on an absent field.
         run: |
           failed=0
           for pair in \
@@ -952,9 +967,9 @@ jobs:
               --name "$app" --revision "$rev" --query properties.provisioningState -o tsv)
             replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
               --name "$app" --revision "$rev" \
-              --query "[?state=='Running'] | length" -o tsv)
+              --query "[?properties.runningState=='Running'] | length" -o tsv)
             echo "$app: revision=$rev state=$state running_replicas=$replicas"
-            if [ "$state" != "Succeeded" ] || [ "${replicas:-0}" -lt 1 ]; then
+            if [ "$state" != "Provisioned" ] || [ "${replicas:-0}" -lt 1 ]; then
               echo "::error::$app is not serving (state=$state running=$replicas)"
               failed=1
             fi
@@ -965,6 +980,8 @@ jobs:
         # ai-agent has ingress internal-only, so it has no externally
         # resolvable FQDN; verify liveness via revision provisioning state
         # and at least one running replica instead of an HTTP probe.
+        # "Provisioned" and properties.runningState are the ACA revision/replica
+        # values - see the note on the previous step for the live evidence.
         run: |
           app_name="${{ needs.deploy-workloads.outputs.ai_app_name }}"
           rev=$(az containerapp show \
@@ -977,7 +994,7 @@ jobs:
             --name "$app_name" \
             --revision "$rev" \
             --query properties.provisioningState -o tsv)
-          [ "$state" = "Succeeded" ] || { echo "::error::ai-agent revision not ready ($state)"; exit 1; }
+          [ "$state" = "Provisioned" ] || { echo "::error::ai-agent revision not ready ($state)"; exit 1; }
           replicas=$(az containerapp replica list \
             --resource-group "${{ env.RG }}" \
             --name "$app_name" \
