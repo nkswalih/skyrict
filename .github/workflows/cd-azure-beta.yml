@@ -503,7 +503,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2a (jobs))
@@ -520,7 +520,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase2a.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2a.json > /dev/null
 
@@ -539,7 +539,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             -o json > /tmp/phase2a-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
@@ -685,7 +685,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2b (apps))
@@ -702,7 +702,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             --no-pretty-print | tee /tmp/whatif-phase2b.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2b.json > /dev/null
 
@@ -721,7 +721,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
-            budgetStartDate="$(date -u +%Y-%m-01)"
+            budgetStartDate="$(date -u +%Y-%m-01)" \
             -o json > /tmp/phase2b-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
