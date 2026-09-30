@@ -607,6 +607,7 @@ jobs:
             echo "  execution: $exec_name"
 
             status=""
+            log_tail=""
             for _ in $(seq 1 60); do
               status=$(az containerapp job execution show \
                 --name "$job_name" \
@@ -614,6 +615,27 @@ jobs:
                 --resource-group "${{ env.RG }}" \
                 --query properties.status -o tsv 2>/dev/null) || status=""
               echo "  status: ${status:-<unreadable>}"
+
+              # ACA reaps the replica the moment the execution goes terminal and
+              # retains nothing, so the logs have to be read while it is still
+              # alive. Measured on this subscription: a completed execution and a
+              # failed execution both return "No replicas found for execution",
+              # while the same execution read while Running returns the real
+              # output. `--follow` is not an alternative - it returned on its own
+              # after 17s with exit 0 while the execution was still Running.
+              #
+              # Best-effort, and it cannot change the verdict: a failed fetch
+              # only means this particular poll caught nothing, and the state
+              # above is what decides the outcome.
+              if ! log_tail=$(az containerapp job logs show \
+                --name "$job_name" \
+                --resource-group "${{ env.RG }}" \
+                --execution "$exec_name" \
+                --container "$container_name" \
+                --tail 25 2>/dev/null); then
+                log_tail=""
+              fi
+
               case "$status" in
                 Succeeded) return 0 ;;
                 Failed) break ;;
@@ -623,28 +645,13 @@ jobs:
 
             if [ "$status" != "Succeeded" ]; then
               echo "::error::$job_name ended in state '${status:-unknown}' (execution $exec_name)"
-              # The reason is in the job container's logs and nowhere else: the
-              # execution record carries only startTime / status / template, and
-              # `properties.error` is not persisted. They also have to be read
-              # NOW - the replica is reaped once the execution is terminal and a
-              # past failed execution returns "No replicas found for
-              # execution". Verified on this subscription: the two real failures
-              # in this environment are unreadable retrospectively, which is
-              # exactly why they had no visible cause.
-              #
-              # Best-effort, and deliberately not allowed to change the outcome:
-              # if the log fetch itself fails the step still fails on the state
-              # above, which is the real verdict.
-              echo "----- $job_name container logs -----"
-              if ! az containerapp job logs show \
-                --name "$job_name" \
-                --resource-group "${{ env.RG }}" \
-                --execution "$exec_name" \
-                --container "$container_name" \
-                --tail 80 2>&1; then
-                echo "  (container logs unavailable for $exec_name)"
-              fi | sed 's/^/  /'
-              echo "-----------------------------------"
+              echo "----- $job_name output, as of the last poll that caught it running -----"
+              if [ -n "$log_tail" ]; then
+                printf '%s\n' "$log_tail" | sed 's/^/  /'
+              else
+                echo "  (no poll caught the replica alive, so nothing was readable)"
+              fi
+              echo "--------------------------------------------------------------------------"
               exit 1
             fi
           }
