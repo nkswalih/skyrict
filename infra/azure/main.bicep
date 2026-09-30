@@ -39,6 +39,13 @@ param envName string
 @description('Azure region for all resources.')
 param location string
 
+@description('Key Vault name. Defaults to kv-<prefix>-<env>. Override when the conventional name is held by a soft-deleted vault with purge protection, which can never be reused or purged.')
+param keyVaultName string = ''
+
+// An empty override means "use the conventional name". Resolved here because a
+// module parameter default would be overridden by an empty string passed down.
+var resolvedKeyVaultName = empty(keyVaultName) ? 'kv-${prefix}-${envName}' : keyVaultName
+
 @description('Tags merged onto every resource.')
 param tags object = {}
 
@@ -262,6 +269,7 @@ module security 'modules/security.bicep' = {
     prefix: prefix
     envName: envName
     location: location
+    keyVaultName: resolvedKeyVaultName
     tags: tags
   }
 }

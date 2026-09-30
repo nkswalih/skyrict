@@ -33,6 +33,11 @@ var allTags = union(
 
 var resourceName = '${prefix}-${envName}'
 
+@description('Key Vault name. Leave empty for the conventional kv-<prefix>-<env>. Override when that name is taken by a vault that is soft-deleted WITH purge protection: such a name can never be reused and purging is refused, so the only way forward is a different name. A parameter default may not reference a var, so the fallback is resolved by resolvedKeyVaultName below.')
+param keyVaultName string = ''
+
+var resolvedKeyVaultName = empty(keyVaultName) ? 'kv-${resourceName}' : keyVaultName
+
 resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-${resourceName}'
   location: location
@@ -40,7 +45,7 @@ resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
 }
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: 'kv-${resourceName}'
+  name: resolvedKeyVaultName
   location: location
   tags: allTags
   properties: {
