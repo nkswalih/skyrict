@@ -42,11 +42,28 @@ param budgetThresholds array = [
 @description('Email addresses receiving the budget alerts.')
 param budgetContactEmails array = []
 
-@description('Budget start date (YYYY-MM-DD). The CD passes the first of the current month for idempotent re-applies.')
+@description('Budget start date (YYYY-MM-DD, or a full ISO-8601 timestamp). The CD passes the first of the current month for idempotent re-applies.')
 param budgetStartDate string = utcNow('yyyy-MM-01')
 
-@description('Budget end date - open-ended by default. Set when migrating to a committed period.')
+@description('Budget end date - open-ended by default. Set when migrating to a committed period. YYYY-MM-DD or a full ISO-8601 timestamp.')
 param budgetEndDate string = '2099-12-31'
+
+// ARM normalises the budget timePeriod dates to a full ISO-8601 timestamp on
+// write, and what-if then compares the template string against that STORED
+// value literally. A date-only template value therefore reports a Modify on
+// every single what-if, forever: "2026-09-01" in the template never matches
+// "2026-09-01T00:00:00Z" in ARM. That made the CD idempotency gate report three
+// permanent changes and fail, even though every apply had written the correct
+// value - the gate was failing on a formatting artefact, not on real drift.
+//
+// Emitting the exact stored form is what actually converges. Proven against the
+// live beta environment: with these two variables all three budgets leave the
+// what-if report entirely and real_changes_after_reapply goes 3 -> 0.
+//
+// The contains() guard passes an already-ISO value straight through, so
+// appending unconditionally cannot produce the invalid '...ZT00:00:00Z'.
+var budgetStartDateIso = contains(budgetStartDate, 'T') ? budgetStartDate : '${budgetStartDate}T00:00:00Z'
+var budgetEndDateIso = contains(budgetEndDate, 'T') ? budgetEndDate : '${budgetEndDate}T00:00:00Z'
 
 // The guard is `if (length(budgetContactEmails) > 0)` and it is not optional
 // decoration. Microsoft.Consumption/budgets validates every notification as:
@@ -66,8 +83,8 @@ resource budget 'Microsoft.Consumption/budgets@2021-10-01' = [
       category: 'Cost'
       timeGrain: 'Monthly'
       timePeriod: {
-        startDate: budgetStartDate
-        endDate: budgetEndDate
+        startDate: budgetStartDateIso
+        endDate: budgetEndDateIso
       }
       notifications: {
         'alert${threshold}pct': {
