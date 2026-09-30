@@ -43,8 +43,11 @@ param deployWorkloads bool = true
 @description('Resource ID of the Container Apps Environment.')
 param caeId string
 
-@description('Container Apps Environment name. Needed for the internal FQDNs the gateway calls and as the parent of the managed certificate.')
+@description('Container Apps Environment name. Used as the parent of the managed certificate.')
 param environmentName string
+
+@description('Container Apps Environment default domain (e.g. bluesky-957ace7a.westus.azurecontainerapps.io). Azure generates this per environment; it is NOT the environment name. Internal app FQDNs are <app>.internal.<this>.')
+param environmentDefaultDomain string
 
 @description('ACR login server (e.g. skyrictbeta.azurecr.io).')
 param acrLoginServer string
@@ -178,14 +181,33 @@ var coreAppName = 'app-core-${resourceName}'
 var aiAgentAppName = 'app-ai-agent-${resourceName}'
 var gatewayAppName = 'app-gateway-${resourceName}'
 
-// ACA's internal DNS name for an app in the same environment. The gateway is
-// given the full internal FQDNs rather than the short aliases: short names
-// ("identity", "core") are a documented ACA convenience, but pinning the FQDN
-// makes the target unambiguous and survives an environment where the alias is
-// not registered. The FQDN is also what ACA's internal ingress matches on, so
-// it is the value that has to appear in the Host header.
-var identityInternalFqdn = '${identityAppName}.${environmentName}.azurecontainerapps.io'
-var coreInternalFqdn = '${coreAppName}.${environmentName}.azurecontainerapps.io'
+// ACA's internal DNS name for an app in the same environment.
+//
+// The FQDN is '<appName>.internal.<defaultDomain>'. defaultDomain is a value
+// Azure GENERATES for the environment (skyrict-beta currently resolves to
+// bluesky-957ace7a.westus.azurecontainerapps.io) and it is not derivable from
+// any input this template has, so it is passed in as a parameter from the
+// environment module's `cae.properties.defaultDomain` output. Do not rebuild it
+// from environmentName: that produced
+//   app-identity-skyrict-beta.cae-skyrict-beta.azurecontainerapps.io
+// which is wrong twice over - the domain is generated, not the environment's
+// resource name, and the internal form carries an `internal` label. Neither
+// variant resolves, so the gateway reached nothing and the failure was invisible
+// in the resource state.
+//
+// The gateway is given the full internal FQDNs rather than the short aliases:
+// short names are a documented convenience of the DEFAULT environment only and
+// are not registered in a VNet-integrated environment like this one. The FQDN is
+// also what ACA's internal ingress matches on, so it is the value that has to
+// appear in the Host header.
+//
+// No port suffix. For HTTP ingress the ACA endpoint is always 443, and 80 as
+// well once allowInsecure is true - never the container's own targetPort.
+// targetPort is where ingress forwards TO, not a port ingress listens on, so
+// ':8000' connected to nothing.
+var identityInternalFqdn = '${identityAppName}.internal.${environmentDefaultDomain}'
+var coreInternalFqdn = '${coreAppName}.internal.${environmentDefaultDomain}'
+var aiAgentInternalFqdn = '${aiAgentAppName}.internal.${environmentDefaultDomain}'
 
 var enableManagedCertificate = bindCustomDomain && !empty(apiHostname)
 var managedCertificateName = 'env-cert-${resourceName}'
@@ -590,10 +612,14 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
             }
             {
               name: 'CORE_AI_AGENT_URL'
-              // Short-form app name - resolves inside the CAE without
-              // requiring the environment-unique FQDN suffix (no Bicep
-              // cycle between core and ai-agent).
-              value: 'http://app-ai-agent-${resourceName}'
+              // Full internal FQDN, no port - see identityInternalFqdn. The short
+              // form was used here to dodge a Bicep cycle, but there is no cycle:
+              // both apps are declared in this one module and only depend on the
+              // environment. Short-name resolution is a convenience of the
+              // default environment and is not registered in a VNet-integrated
+              // environment, so the short form does not resolve and core's agent
+              // calls fail at runtime.
+              value: 'http://${aiAgentInternalFqdn}'
             }
             {
               name: 'CORE_AI_SYNC_TOKEN'
@@ -758,16 +784,18 @@ resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
               value: baseDomain
             }
             {
+              // Full internal FQDN, no port - see identityInternalFqdn. The
+              // short form does not resolve in a VNet-integrated environment.
               name: 'AI_INVENTORY_SERVICE_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_REPORT_SERVICE_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_CORE_DOCUMENT_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_INGEST_TOKEN'
@@ -996,7 +1024,9 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             memory: containerMemory
           }
           env: [
-            // Full internal FQDNs, not the "identity"/"core" short aliases.
+            // Full internal FQDNs, not the short aliases - see the comment on
+            // identityInternalFqdn. No port: the ACA endpoint is 443 (or 80 with
+            // allowInsecure), never the container's targetPort.
             //
             // Two reasons, both load-bearing. ACA's internal ingress matches the
             // Host header against the target app's FQDN, and the gateway sends
@@ -1005,9 +1035,17 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             // ACA itself, not from the backend. And the entrypoint validates
             // these values, so a typo fails the container at boot with a named
             // error instead of 502ing every request.
+            //
+            // http:// rather than https:// because the backends are internal-only
+            // (external: false, so unreachable from the internet) and have
+            // allowInsecure: true, which is what keeps ACA serving plain HTTP on
+            // port 80 here instead of redirecting to 443. nginx does not follow
+            // a redirect it receives from an upstream, so an http:// call to an
+            // app with allowInsecure: false hands the browser a 301 and the
+            // request dies at the gateway.
             {
               name: 'SKYRRICT_IDENTITY_BACKEND'
-              value: 'http://${identityInternalFqdn}:8000'
+              value: 'http://${identityInternalFqdn}'
             }
             {
               name: 'SKYRRICT_IDENTITY_HOST'
@@ -1015,7 +1053,7 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             }
             {
               name: 'SKYRRICT_CORE_BACKEND'
-              value: 'http://${coreInternalFqdn}:8001'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'SKYRRICT_CORE_HOST'

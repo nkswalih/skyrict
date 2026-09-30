@@ -325,6 +325,7 @@ module apps 'modules/apps.bicep' = {
     deployWorkloads: deployWorkloads
     caeId: environment.outputs.environmentId
     environmentName: environment.outputs.environmentName
+    environmentDefaultDomain: environment.outputs.environmentDefaultDomain
     acrLoginServer: registry.outputs.loginServer
     uamiId: security.outputs.uamiId
     kvUri: security.outputs.kvUri
