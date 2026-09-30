@@ -52,14 +52,32 @@ segment is whatever `beta.parameters.json` sets; it is `westus`, not
 The apps reference Key Vault secrets (`jwt-public-key`, `sync-token`, …) that
 must **exist** before their revisions are created. CD therefore enforces:
 
-1. **Phase 1** — `deployWorkloads=false`: environment, security, registry,
-   data, budgets. Grants AcrPush to the deploy principal, then CD sets
-   `azure.extensions=vector,pg_trgm` and seeds the KV secrets.
-2. **Phase 2** — `deployWorkloads=true` + `imageTag`: the 3 apps and 4 jobs,
-   pinned to the immutable git-SHA image tag; then CD applies the same
-   parameters a second time and asserts **zero real changes** (idempotency).
-3. **Migrations** — CD runs `db-init` → identity → core → ai-agent jobs in
+1. **Phase 1** - `deployWorkloads=false deployApps=false`: environment,
+   security, registry, data, budgets. Grants AcrPush to the deploy principal,
+   then CD sets `azure.extensions=vector,pg_trgm,pgcrypto` and seeds the KV
+   secrets. Setting it **replaces** Azure's default allow-list rather than
+   adding to it, so every extension a migration needs must be named here.
+2. **Phase 2a** - `deployWorkloads=true deployApps=false`: the 4 jobs only.
+3. **Migrations** - CD runs `db-init` → identity → core → ai-agent in
    dependency order (identity owns `tenants`/`current_tenant_id()`).
+4. **Phase 2b** - `deployWorkloads=true deployApps=true`: the 4 apps, pinned to
+   the immutable git-SHA image tag; then CD applies the same parameters a second
+   time and asserts **zero real changes** (idempotency).
+
+**The apps come after the migrations, and the order is not negotiable.** All
+three services call `verify_startup_dependencies()` in the FastAPI lifespan;
+`check_database()` raises when the database is absent and the process exits.
+Observed live when the apps were deployed before `db-init`:
+
+```
+asyncpg.exceptions.InvalidCatalogNameError: database "skyrict_identity" does not exist
+  -> startup.verification_failed -> Application startup failed. Exiting.
+```
+
+An app deployed before `db-init` is not a slow-starting app, it is a
+crash-looping one, and whether it recovers depends on how long ACA keeps
+retrying the restart. `deployApps` is the parameter that makes the ordering
+expressible; see `infra/azure/modules/apps.bicep`.
 
 ## 3. Prerequisites
 
@@ -171,9 +189,19 @@ jobs manually per section 7.
 
 ## 6. Operational notes
 
-- **Logs**: per-app diagnostic settings (console + system + all metrics) go
-  to `log-skyrict-beta`. Job logs are fetched with
-  `az containerapp job execution logs show`.
+- **Logs**: there are **no per-app diagnostic settings**, and adding one fails
+  the whole deployment. A `Microsoft.Insights/diagnosticSettings` resource
+  pointed at a container app's `logCategories` is rejected with
+  `BadRequest: Category 'ContainerAppConsoleLogs' is not supported.` Container
+  apps expose no log categories at all - only metrics, via `:AllMetrics`. App
+  console and system logs are already routed to `log-skyrict-beta` by the
+  **environment's** `appLogsConfiguration` (see `environment.bicep`); query
+  `ContainerAppConsoleLogs_CL` and `ContainerAppSystemLogs_CL`. Do not add
+  diagnostic settings at the resource level, and do not add environment-level
+  ones either - the environment already does this.
+  Live job logs are read with `az containerapp job logs show -n <job> -g <rg>
+  --execution <exec> --container <name>`; see §7 for why the timing matters.
+  (`az containerapp job execution logs show` is not a command.)
 - **Scale**: apps run `minReplicas: 0`, scale out at 100 concurrent requests
   to `maxReplicas: 2`. That per-app cap is the only node cap: the Consumption
   workload profile accepts neither `minimumCount` nor `maximumCount`, so
@@ -182,6 +210,41 @@ jobs manually per section 7.
 - **Budgets**: subscription budgets alert at 50/80/90% of `$10` (CD passes
   the first-of-month as `budgetStartDate` so re-applies stay idempotent).
 - **Cost**: see `azure-cost-estimate.md`.
+- **`Succeeded` does not mean running.** A container app or job can report
+  `provisioningState: Succeeded` and a revision `Provisioned` while every
+  replica sits at `runningState: NotRunning`, because the process exits during
+  startup and the revision was still created. Resource state reports the ARM
+  write, not the container. Check
+  `az containerapp replica list -n <app> -g <rg> --revision <rev> --query
+  "[?properties.runningState=='Running'] | length"` and read the container log
+  before believing a deployment is healthy. This has bitten this pipeline
+  repeatedly: a swallowed exit code, a masked image tag, a probe pointing at a
+  tag the image does not have, Bicep silently dropping `workingDir`, and now an
+  app deployed before its database existed.
+- **Internal addressing.** The three backends are `external: false` and are
+  only resolvable inside the VNet, at
+  `<app>.internal.<environmentDefaultDomain>` - for example
+  `app-identity-skyrict-beta.internal.bluesky-957ace7a.westus.azurecontainerapps.io`.
+  Short app names do **not** resolve in a VNet-integrated environment, so every
+  service-URL env var carries the full internal FQDN. ACA's HTTP ingress always
+  listens on **443** (plus 80 only when `allowInsecure: true`); `targetPort` is
+  where ingress forwards *to*, never a port it listens on. The three backends
+  therefore set `allowInsecure: true` and are addressed `http://<internal-fqdn>`
+  with no port suffix - with `allowInsecure: false` ACA answers plain HTTP with
+  a 301 to HTTPS, and neither nginx nor httpx follows an upstream redirect, so
+  the gateway would hand the browser a redirect instead of an API response. The
+  gateway itself is `external: true` and keeps `allowInsecure: false`; it is the
+  only public app and must stay TLS-only.
+- **nginx `map_hash_bucket_size`.** The gateway's `nginx -t` runs in the
+  entrypoint, so a config error kills every replica at container start and the
+  app never serves a request. The `skyrict_api_segment` map has enough keys to
+  overflow the default 64 buckets, which nginx rejects with
+  `[emerg] could not build map_hash, you should increase map_hash_bucket_size:
+  64`. `gateway.conf.template` sets `map_hash_bucket_size 256;` and
+  `map_hash_max_size 2048;` in the `http` block for this reason. Keep the map
+  in sync with `apps/web/src/app/api/v1/[...path]/route.ts`, and re-run
+  `nginx -t` on the rendered config whenever the map changes - a container that
+  exits 1 at start leaves no trace in ARM state.
 
 ## 7. Jobs (db-init + migrations)
 
@@ -189,16 +252,96 @@ Run through the job CLI (CD does this automatically):
 
 ```bash
 exec=$(az containerapp job start -n job-db-init-skyrict-beta -g skyrict-beta --query name -o tsv)
-az containerapp job execution show -g skyrict-beta --job-name job-db-init-skyrict-beta --execution-name "$exec" \
-  --query properties.status -o tsv   # wait for Succeeded
+az containerapp job execution show -g skyrict-beta -n job-db-init-skyrict-beta \
+  --job-execution-name "$exec" --query properties.status -o tsv   # wait for Succeeded
 ```
 
+> The job is `-n` / `--name` and the **run** is `--job-execution-name`.
+> `--job-name` and `--execution-name` are not accepted: every call exits
+> non-zero with a usage error, and if a poll loop swallows that it spins for
+> its full timeout and then reports "timed out" for a job that may well have
+> succeeded. Verified against a real execution on `skyrict-beta`.
+
+> **A finished execution's logs are unreadable.** Once the state is terminal
+> the pod is reaped and `az containerapp job logs show` returns
+> `No replicas found for execution`. Measured on this subscription:
+>
+> | execution state | `job logs show` |
+> | --- | --- |
+> | `Running` | the container's real output |
+> | `Succeeded` | `No replicas found for execution` |
+> | `Failed` | `No replicas found for execution` |
+>
+> **Succeeded is reaped too**, so this is not a failure-only quirk - there is
+> no window in which to fetch after the fact. `--follow` is not a workaround:
+> tested, it returned on its own after 17s with exit 0 while the execution was
+> still `Running`, so it does not stream until the container exits.
+>
+> So sample on **every** iteration and keep the last one, which is what CD
+> does. Sampling only on the iteration where the status flips to `Failed`
+> captures nothing, because the replica is already gone by then:
+>
+> ```bash
+> az containerapp job logs show -g skyrict-beta -n job-db-init-skyrict-beta \
+>   --execution "$exec" --container db-init --tail 25
+> ```
+>
+> On a fast-failing job this is still a race against the 15s poll interval.
+> When you need logs that survive the execution, use Log Analytics instead -
+> the environment routes job and app console output to `log-skyrict-beta`
+> (§6), and that history is retained:
+>
+> ```kusto
+> ContainerAppConsoleLogs_CL
+> | where ContainerName == "job-identity-skyrict-beta"
+> | order by _timestamp_desc
+> ```
+>
+> That is the only source here that still has the reason once the replica is
+> gone. Two real failures on this environment were unreadable retrospectively
+> and looked like bare `Failed` statuses.
+>
+> The container names are `db-init` (the `postgres:16-alpine` job) and
+> `migrate` (the three alembic jobs). The execution record itself carries only
+> `startTime` / `status` / `template` - `properties.error` is not persisted, so
+> the container log is the only place the reason appears. Two real failures on
+> this environment were unreadable after the fact and looked like bare
+> `Failed` statuses.
+
 Order is **always** `db-init` → identity → core → ai-agent. db-init
-creates `skyrict_identity` and enables `vector` + `pg_trgm` idempotently;
+creates `skyrict_identity` and enables `vector`, `pg_trgm` and `pgcrypto`
+idempotently;
 each migration job runs `alembic upgrade head` with an explicit
 `-c /app/services/<svc>/alembic.ini` config so each service writes to its
 own version table (`alembic_version` / `alembic_version_core` /
 `alembic_version_ai`).
+
+> The migration jobs also `cd /app/services/<svc>` first. alembic resolves a
+> **relative** `script_location` against the process working directory, not
+> against the `-c` config file, and these ini files say
+> `script_location = alembic` with `prepend_sys_path = src`. With the image
+> `WORKDIR` at `/app`, running alembic from there dies immediately with
+> `Path doesn't exist: alembic` and applies nothing.
+>
+> `workingDir` is not the fix: it is not a member of the jobs `Container` type,
+> so Bicep emits `BCP037` and silently drops it. The `sh -c 'cd … && alembic …'`
+> form is.
+>
+> **Every extension a migration needs has to be in `azure.extensions`.**
+> `pgcrypto` is not optional and not a leftover: it backs the tamper-evident
+> audit hash chain, and the trigger computes `encode(digest(…, 'sha256'),'hex')`
+> on every audit insert. Two of the three services create it -
+> `identity/0001_initial_schema.py` and `core/0010_erp_sequences_and_audit_log.py`.
+> Leaving it out fails as:
+>
+> ```
+> asyncpg.exceptions.FeatureNotSupportedError: extension "pgcrypto" is not
+>   allow-listed for users in Azure Database for PostgreSQL
+> [SQL: CREATE EXTENSION IF NOT EXISTS pgcrypto]
+> ```
+>
+> Adding it to the allow-list restarts the server, which is why CD does it
+> between phase 1 and phase 2 rather than leaving it to the template.
 
 ## 8. Rollback
 
@@ -340,14 +483,34 @@ within the Azure free account's 12-month + always-free allotments:
 
   To activate it, in order, with a deploy between each step:
 
-  1. Add the registrar CNAME `api.skyrict.in` pointing **directly** at
-     `app-gateway-skyrict-beta.cae-skyrict-beta.westus.azurecontainerapps.io`
-     (an intermediate CNAME permanently blocks certificate issuance), TTL 600.
+  1. Add the registrar CNAME `api.skyrict.in` pointing **directly** at the
+     gateway's **generated** FQDN, TTL 600. An intermediate CNAME permanently
+     blocks certificate issuance.
+
+     ```
+     app-gateway-skyrict-beta.bluesky-957ace7a.westus.azurecontainerapps.io
+     ```
+
+     > The environment's default domain is whatever ACA generated -
+     > `bluesky-957ace7a.westus.azurecontainerapps.io` today - **not** the
+     > environment name. `cae-skyrict-beta.westus.azurecontainerapps.io` does
+     > not resolve. Read the real value with
+     > `az containerapp env show -g skyrict-beta -n cae-skyrict-beta --query
+     > properties.defaultDomain -o tsv`, or take it from the CD's `api_fqdn`
+     > output. It is also exported as the `environmentDefaultDomain` output for
+     > exactly this reason.
   2. Set `bindCustomDomain: true` and deploy. This registers the hostname on
      the gateway with no certificate yet, which is what step 3 requires.
-  3. Set the `validationMethod: 'CNAME'` record ACA asks for, at
-     `_acme-challenge.api.skyrict.in`, and deploy again. The certificate is
-     created and the binding picks it up.
+  3. Create the validation record ACA asks for at `_acme-challenge` under
+     `api.skyrict.in`, and deploy again. The certificate is created and the
+     binding picks it up. The Bicep property is
+     `domainControlValidation: 'CNAME'` on the managed certificate.
+
+     > `validationMethod` is not a real property. Bicep does not enum-check
+     > it, so it compiles clean and ARM ignores it, leaving the certificate
+     > with no validation method and the binding stuck. The resource is still
+     > gated on `bindCustomDomain=false` by default, so it does not deploy
+     > until step 2.
 
   Until step 3 completes, only the generated FQDN answers. The CD's `verify`
   job probes that FQDN on purpose, so the first deploy never depends on a DNS

@@ -155,6 +155,9 @@ param redisUrlOverride string = ''
 @description('Deploy the apps and jobs. False during phase 1 infra+KV+data rollout.')
 param deployWorkloads bool = false
 
+@description('Deploy the four container apps. False in phase 2 until db-init and the alembic migrations have run: the services exit at startup when the database does not exist, so an app deployed before db-init crash-loops instead of starting slowly. The jobs deploy on deployWorkloads; the apps additionally require this.')
+param deployApps bool = true
+
 @description('Image tag for all three services (git SHA from CD).')
 param imageTag string = ''
 
@@ -323,12 +326,13 @@ module apps 'modules/apps.bicep' = {
     location: location
     tags: tags
     deployWorkloads: deployWorkloads
+    deployApps: deployApps
     caeId: environment.outputs.environmentId
     environmentName: environment.outputs.environmentName
+    environmentDefaultDomain: environment.outputs.environmentDefaultDomain
     acrLoginServer: registry.outputs.loginServer
     uamiId: security.outputs.uamiId
     kvUri: security.outputs.kvUri
-    logAnalyticsWorkspaceId: environment.outputs.lawId
     imageTag: imageTag
     appEnvironment: appEnvironment
     postgresFqdn: data.outputs.postgresFqdn

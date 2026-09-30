@@ -141,6 +141,11 @@ resource cae 'Microsoft.App/managedEnvironments@2026-01-01' = {
 
 output environmentId string = cae.id
 output environmentName string = cae.name
+// Azure-generated per environment (e.g. bluesky-957ace7a.westus.azurecontainerapps.io).
+// Internal app FQDNs are '<app>.internal.<this>'. It is NOT the environment name,
+// so anything that needs an internal hostname has to read it from here rather
+// than constructing it.
+output environmentDefaultDomain string = cae.properties.defaultDomain
 output lawId string = law.id
 output lawName string = law.name
 output vnetId string = vnet.id

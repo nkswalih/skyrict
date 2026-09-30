@@ -43,6 +43,20 @@ http {
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
 
+    # The route maps below hold one entry per API segment, and the compiled
+    # hash table is sized in BYTES of key+value, not entries. The defaults
+    # (map_hash_bucket_size 64, map_hash_max_size 2048) are sized for maps with
+    # a handful of short keys and run out here, which nginx reports as
+    #     [emerg] could not build map_hash, you should increase map_hash_bucket_size: 64
+    # That is a config-load failure, so it takes the whole container down: the
+    # entrypoint runs `nginx -t` before exec, the test fails, and every replica
+    # dies with exit 1 on boot. The gateway cannot start at all until this is
+    # raised, and nothing in the resource state says why - the app reports
+    # Succeeded and the revision reports Provisioned while no container has ever
+    # run. See docs/runbooks/azure-iac.md.
+    map_hash_bucket_size 256;
+    map_hash_max_size    2048;
+
     # Upstream target is included so a misroute is visible in the access log
     # without having to correlate against the nginx config.
     log_format  gateway  '$remote_addr $host "$request" $status $body_bytes_sent '

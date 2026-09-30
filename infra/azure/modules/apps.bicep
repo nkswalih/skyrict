@@ -21,8 +21,31 @@
 //   * JWT key files are mounted as SECRET VOLUMES because the services read
 //     the PEM files at settings-load time (load_rsa_keys, sys.exit on miss).
 //
-// Everything in this module is guarded by deployWorkloads so the CD can do
-// a two-phase rollout: infra+data+KV first, seed KV secrets, then workloads.
+// Two independent guards, and the split is load-bearing rather than cosmetic:
+//
+//   deployWorkloads  everything in this module. False during phase 1, which is
+//                    infra + data + Key Vault only.
+//   deployApps       the four container apps. False in phase 2's FIRST apply.
+//
+// Phase 2 is therefore two applies around the migrations, and the order is not
+// negotiable. The three services call verify_startup_dependencies() during
+// FastAPI startup, check_database() raises out of the lifespan when the
+// database is absent, and the process exits - it does not come up degraded and
+// it does not answer 503 and wait. Observed live on all three backends:
+//
+//   asyncpg.exceptions.InvalidCatalogNameError: database "skyrict_identity"
+//   does not exist
+//   -> startup.verification_failed -> Application startup failed. Exiting.
+//
+// So an app deployed before db-init is not a slow-starting app, it is a
+// crash-looping one, and whether it ever recovers depends on how long ACA keeps
+// retrying the restart. Creating the apps only after db-init and the alembic
+// runs means the first container start is the one that succeeds.
+//
+// This is invisible in resource state, which is why it is worth a parameter: the
+// apps and jobs both report provisioningState Succeeded and their revisions
+// report Provisioned while every replica sits at runningState NotRunning. Only
+// `az containerapp replica list` shows it.
 // =============================================================================
 
 @description('Resource name prefix. Defaults to "skyrict".')
@@ -40,11 +63,17 @@ param tags object = {}
 @description('Deploy the apps and jobs. False during phase 1 infra+KV+data rollout.')
 param deployWorkloads bool = true
 
+@description('Deploy the four container apps. False in phase 2 until db-init and the alembic migrations have run, because the services exit at startup when the database does not exist. The jobs deploy on deployWorkloads; the apps additionally require this.')
+param deployApps bool = true
+
 @description('Resource ID of the Container Apps Environment.')
 param caeId string
 
-@description('Container Apps Environment name. Needed for the internal FQDNs the gateway calls and as the parent of the managed certificate.')
+@description('Container Apps Environment name. Used as the parent of the managed certificate.')
 param environmentName string
+
+@description('Container Apps Environment default domain (e.g. bluesky-957ace7a.westus.azurecontainerapps.io). Azure generates this per environment; it is NOT the environment name. Internal app FQDNs are <app>.internal.<this>.')
+param environmentDefaultDomain string
 
 @description('ACR login server (e.g. skyrictbeta.azurecr.io).')
 param acrLoginServer string
@@ -54,9 +83,6 @@ param uamiId string
 
 @description('Key Vault URI used to build secret references (e.g. https://kv-skyrict-beta.vault.azure.net/).')
 param kvUri string
-
-@description('Log Analytics workspace ID for app diagnostic settings.')
-param logAnalyticsWorkspaceId string
 
 @description('Image tag for all three services (git SHA from CD).')
 param imageTag string
@@ -181,14 +207,33 @@ var coreAppName = 'app-core-${resourceName}'
 var aiAgentAppName = 'app-ai-agent-${resourceName}'
 var gatewayAppName = 'app-gateway-${resourceName}'
 
-// ACA's internal DNS name for an app in the same environment. The gateway is
-// given the full internal FQDNs rather than the short aliases: short names
-// ("identity", "core") are a documented ACA convenience, but pinning the FQDN
-// makes the target unambiguous and survives an environment where the alias is
-// not registered. The FQDN is also what ACA's internal ingress matches on, so
-// it is the value that has to appear in the Host header.
-var identityInternalFqdn = '${identityAppName}.${environmentName}.azurecontainerapps.io'
-var coreInternalFqdn = '${coreAppName}.${environmentName}.azurecontainerapps.io'
+// ACA's internal DNS name for an app in the same environment.
+//
+// The FQDN is '<appName>.internal.<defaultDomain>'. defaultDomain is a value
+// Azure GENERATES for the environment (skyrict-beta currently resolves to
+// bluesky-957ace7a.westus.azurecontainerapps.io) and it is not derivable from
+// any input this template has, so it is passed in as a parameter from the
+// environment module's `cae.properties.defaultDomain` output. Do not rebuild it
+// from environmentName: that produced
+//   app-identity-skyrict-beta.cae-skyrict-beta.azurecontainerapps.io
+// which is wrong twice over - the domain is generated, not the environment's
+// resource name, and the internal form carries an `internal` label. Neither
+// variant resolves, so the gateway reached nothing and the failure was invisible
+// in the resource state.
+//
+// The gateway is given the full internal FQDNs rather than the short aliases:
+// short names are a documented convenience of the DEFAULT environment only and
+// are not registered in a VNet-integrated environment like this one. The FQDN is
+// also what ACA's internal ingress matches on, so it is the value that has to
+// appear in the Host header.
+//
+// No port suffix. For HTTP ingress the ACA endpoint is always 443, and 80 as
+// well once allowInsecure is true - never the container's own targetPort.
+// targetPort is where ingress forwards TO, not a port ingress listens on, so
+// ':8000' connected to nothing.
+var identityInternalFqdn = '${identityAppName}.internal.${environmentDefaultDomain}'
+var coreInternalFqdn = '${coreAppName}.internal.${environmentDefaultDomain}'
+var aiAgentInternalFqdn = '${aiAgentAppName}.internal.${environmentDefaultDomain}'
 
 var enableManagedCertificate = bindCustomDomain && !empty(apiHostname)
 var managedCertificateName = 'env-cert-${resourceName}'
@@ -297,7 +342,7 @@ var jwtVolumePublic = {
 // identity - external, :8000
 // ---------------------------------------------------------------------------
 
-resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: identityAppName
   location: location
   tags: allTags
@@ -319,7 +364,16 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorklo
         external: false
         targetPort: 8000
         transport: 'http'
-        allowInsecure: false
+        // Insecure allowed, and it costs nothing in exposure: external: false
+        // means this ingress is not reachable from the internet at all, so the
+        // only clients are the gateway and ai-agent inside the same environment.
+        // ACA's default (false) redirects plain HTTP on port 80 to HTTPS on 443,
+        // and neither nginx nor httpx follows a redirect it receives from an
+        // upstream - so every gateway call came back as a redirect to the browser
+        // instead of a response from the API. The hop never leaves the
+        // environment, so terminating TLS on it would add cost and CPU for
+        // nothing.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
@@ -510,7 +564,7 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorklo
 // core - internal only, :8001. Reached exclusively through the gateway.
 // ---------------------------------------------------------------------------
 
-resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: coreAppName
   location: location
   tags: allTags
@@ -530,7 +584,9 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
         external: false
         targetPort: 8001
         transport: 'http'
-        allowInsecure: false
+        // See the identity app: internal-only ingress plus a plain-HTTP caller
+        // is exactly the case ACA's allowInsecure: false default breaks.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
@@ -593,10 +649,14 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
             }
             {
               name: 'CORE_AI_AGENT_URL'
-              // Short-form app name - resolves inside the CAE without
-              // requiring the environment-unique FQDN suffix (no Bicep
-              // cycle between core and ai-agent).
-              value: 'http://app-ai-agent-${resourceName}'
+              // Full internal FQDN, no port - see identityInternalFqdn. The short
+              // form was used here to dodge a Bicep cycle, but there is no cycle:
+              // both apps are declared in this one module and only depend on the
+              // environment. Short-name resolution is a convenience of the
+              // default environment and is not registered in a VNet-integrated
+              // environment, so the short form does not resolve and core's agent
+              // calls fail at runtime.
+              value: 'http://${aiAgentInternalFqdn}'
             }
             {
               name: 'CORE_AI_SYNC_TOKEN'
@@ -677,7 +737,7 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
 // ai-agent - INTERNAL only, :8000
 // ---------------------------------------------------------------------------
 
-resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: aiAgentAppName
   location: location
   tags: allTags
@@ -692,10 +752,14 @@ resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
+        // ai-agent is internal-only: it is not in the gateway's public route map
+        // and is called by core over the environment's internal network only.
         external: false
         targetPort: 8000
         transport: 'http'
-        allowInsecure: false
+        // See the identity app: internal-only ingress plus a plain-HTTP caller
+        // is exactly the case ACA's allowInsecure: false default breaks.
+        allowInsecure: true
         traffic: [
           {
             latestRevision: true
@@ -761,16 +825,18 @@ resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
               value: baseDomain
             }
             {
+              // Full internal FQDN, no port - see identityInternalFqdn. The
+              // short form does not resolve in a VNet-integrated environment.
               name: 'AI_INVENTORY_SERVICE_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_REPORT_SERVICE_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_CORE_DOCUMENT_URL'
-              value: 'http://app-core-${resourceName}'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'AI_INGEST_TOKEN'
@@ -919,11 +985,18 @@ resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026
     // _acme-challenge.api.skyrict.in. Until that record exists the certificate
     // stays in a pending state, which does NOT fail the deployment - the app
     // is reachable on its generated FQDN meanwhile.
-    validationMethod: 'CNAME'
+    //
+    // The property is `domainControlValidation`, not `validationMethod`. The
+    // latter is not a member of ManagedCertificateProperties in this API
+    // version, and bicep reports that as a BCP037 warning while STILL emitting
+    // the key into the compiled ARM - so the resource deploys with an
+    // unrecognised property and the failure only appears as a provisioning
+    // error at apply time. Caught by `bicep build` and fixed here.
+    domainControlValidation: 'CNAME'
   }
 }
 
-resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: gatewayAppName
   location: location
   tags: allTags
@@ -992,7 +1065,9 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             memory: containerMemory
           }
           env: [
-            // Full internal FQDNs, not the "identity"/"core" short aliases.
+            // Full internal FQDNs, not the short aliases - see the comment on
+            // identityInternalFqdn. No port: the ACA endpoint is 443 (or 80 with
+            // allowInsecure), never the container's targetPort.
             //
             // Two reasons, both load-bearing. ACA's internal ingress matches the
             // Host header against the target app's FQDN, and the gateway sends
@@ -1001,9 +1076,17 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             // ACA itself, not from the backend. And the entrypoint validates
             // these values, so a typo fails the container at boot with a named
             // error instead of 502ing every request.
+            //
+            // http:// rather than https:// because the backends are internal-only
+            // (external: false, so unreachable from the internet) and have
+            // allowInsecure: true, which is what keeps ACA serving plain HTTP on
+            // port 80 here instead of redirecting to 443. nginx does not follow
+            // a redirect it receives from an upstream, so an http:// call to an
+            // app with allowInsecure: false hands the browser a 301 and the
+            // request dies at the gateway.
             {
               name: 'SKYRRICT_IDENTITY_BACKEND'
-              value: 'http://${identityInternalFqdn}:8000'
+              value: 'http://${identityInternalFqdn}'
             }
             {
               name: 'SKYRRICT_IDENTITY_HOST'
@@ -1011,7 +1094,7 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
             }
             {
               name: 'SKYRRICT_CORE_BACKEND'
-              value: 'http://${coreInternalFqdn}:8001'
+              value: 'http://${coreInternalFqdn}'
             }
             {
               name: 'SKYRRICT_CORE_HOST'
@@ -1072,127 +1155,14 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostic settings -> Log Analytics (console + system logs)
-// ---------------------------------------------------------------------------
-
-resource identityDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: identityApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-resource coreDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: coreApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-// The gateway's access log is the only place a misrouted request is visible:
-// its format ends with `up=$skyrict_api_backend`, so the log line says which
-// backend served a request whose response looked like someone else's 404. It
-// goes to the same workspace as the backends so one query spans the whole hop.
-resource gatewayDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: gatewayApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-resource aiAgentDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: aiAgentApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-// ---------------------------------------------------------------------------
 // db-init job - creates the shared database + extensions (idempotent)
+//
+// vector, pg_trgm and pgcrypto. pgcrypto is here because two of the three
+// migrations create it (identity 0001, core 0010) to back the tamper-evident
+// audit hash chain, so creating it here fails the job whose name says
+// 'db-init' rather than failing midway through a service's first migration.
+// ON_ERROR_STOP=1 is what makes that difference: without it psql reports
+// success for a statement that failed.
 // ---------------------------------------------------------------------------
 
 var dbInitScript = '''
@@ -1202,6 +1172,7 @@ if ! psql -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname = '$S
 fi
 psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector"
 psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+psql -d $SKYRICT_DB -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
 '''
 
 resource dbInitJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
@@ -1539,9 +1510,18 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
 // Outputs (for main.bicep / CD / runbook)
 // ---------------------------------------------------------------------------
 
-output identityFqdn string = deployWorkloads ? identityApp!.properties.configuration.ingress.fqdn : ''
-output coreFqdn string = deployWorkloads ? coreApp!.properties.configuration.ingress.fqdn : ''
-output aiAgentFqdn string = deployWorkloads ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
+// The FQDNs are guarded on deployApps, not deployWorkloads, because they are
+// read off the app resources: with deployApps=false the apps do not exist, and
+// the `!` null-assert on a resource that was never created fails the deployment
+// rather than yielding ''.
+//
+// The NAMES below are deliberately NOT guarded. They are string
+// interpolations, not resource properties, so they are correct in every phase -
+// which is why phase 1 can publish all four job names and the migrate steps
+// never hardcode one.
+output identityFqdn string = deployApps ? identityApp!.properties.configuration.ingress.fqdn : ''
+output coreFqdn string = deployApps ? coreApp!.properties.configuration.ingress.fqdn : ''
+output aiAgentFqdn string = deployApps ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
 output identityAppName string = identityAppName
 output coreAppName string = coreAppName
 output aiAgentAppName string = aiAgentAppName
@@ -1559,7 +1539,7 @@ output aiAgentMigrateJobName string = 'job-ai-agent-${resourceName}'
 // validated the domain against, so the CNAME has to point at THIS, not at
 // api.skyrict.in - the custom domain is an alias of this hostname, not a
 // replacement for it.
-output apiFqdn string = deployWorkloads ? gatewayApp!.properties.configuration.ingress.fqdn : ''
+output apiFqdn string = deployApps ? gatewayApp!.properties.configuration.ingress.fqdn : ''
 output gatewayAppName string = gatewayAppName
 
 // The value for the `TXT asuid.api` record that proves domain ownership before
