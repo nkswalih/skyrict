@@ -154,7 +154,38 @@ jobs:
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
-            --query "properties.outputs" -o json | tee /tmp/phase1-outputs.json
+            -o json > /tmp/phase1-deployment.json
+          # Fail closed on the deployment itself, and print the real error.
+          #
+          # This used to be `--query properties.outputs | tee /tmp/phase1-outputs.json`.
+          # A failed deployment writes properties.outputs as null, and because the
+          # step shell is `bash -e` with no pipefail the pipeline returned tee's
+          # exit code - so a FAILED phase 1 reported success here, wrote empty
+          # strings for every output, and the failure only surfaced two steps
+          # later as `ResourceNotFound ... flexibleServers/configurations` against
+          # `--server-name ""`. The real cause was a nested resource in another
+          # module entirely. Redirecting instead of piping removes the masking,
+          # and the state is asserted rather than assumed.
+          state=$(jq -r '.properties.provisioningState // "unknown"' /tmp/phase1-deployment.json)
+          if [ "$state" != "Succeeded" ]; then
+            echo "::error::phase 1 deployment ended in state '$state'. Actual error:"
+            jq -r '.properties.error | .. | objects | select(.code) | "  \(.code): \(.message)"' \
+              /tmp/phase1-deployment.json | head -20
+            exit 1
+          fi
+          jq '.properties.outputs' /tmp/phase1-deployment.json > /tmp/phase1-outputs.json
+
+          # Every output consumed below must exist. An absent key makes
+          # `jq -r '.x.value'` print the literal string "null" and an absent file
+          # makes it print nothing, and both are written to GITHUB_OUTPUT and
+          # consumed verbatim - so an empty value has to be an error here, not a
+          # confusing failure three steps later.
+          for key in acrLoginServer kvName postgresName dbInitJobName \
+                     identityMigrateJobName coreMigrateJobName aiAgentMigrateJobName; do
+            value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase1-outputs.json)
+            [ -n "$value" ] || { echo "::error::phase 1 output '$key' is missing or empty"; exit 1; }
+          done
+
           echo "login_server=$(jq -r '.acrLoginServer.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "kv_name=$(jq -r '.kvName.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "postgres_name=$(jq -r '.postgresName.value' /tmp/phase1-outputs.json)" >> "$GITHUB_OUTPUT"
@@ -466,7 +497,24 @@ jobs:
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
             budgetStartDate="$(date -u +%Y-%m-01)" \
-            --query "properties.outputs" -o json | tee /tmp/phase2-outputs.json
+            -o json > /tmp/phase2-deployment.json
+          # Same fail-closed contract as phase 1 - see the note there. Without it
+          # a failed phase 2 reports success and hands the migrate and verify
+          # jobs empty app names and a null api_fqdn.
+          state=$(jq -r '.properties.provisioningState // "unknown"' /tmp/phase2-deployment.json)
+          if [ "$state" != "Succeeded" ]; then
+            echo "::error::phase 2 deployment ended in state '$state'. Actual error:"
+            jq -r '.properties.error | .. | objects | select(.code) | "  \(.code): \(.message)"' \
+              /tmp/phase2-deployment.json | head -20
+            exit 1
+          fi
+          jq '.properties.outputs' /tmp/phase2-deployment.json > /tmp/phase2-outputs.json
+
+          for key in apiFqdn gatewayAppName identityAppName coreAppName aiAgentAppName; do
+            value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase2-outputs.json)
+            [ -n "$value" ] || { echo "::error::phase 2 output '$key' is missing or empty"; exit 1; }
+          done
+
           echo "api_fqdn=$(jq -r '.apiFqdn.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "identity_app_name=$(jq -r '.identityAppName.value' /tmp/phase2-outputs.json)" >> "$GITHUB_OUTPUT"
