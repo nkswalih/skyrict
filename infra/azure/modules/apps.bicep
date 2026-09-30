@@ -21,8 +21,31 @@
 //   * JWT key files are mounted as SECRET VOLUMES because the services read
 //     the PEM files at settings-load time (load_rsa_keys, sys.exit on miss).
 //
-// Everything in this module is guarded by deployWorkloads so the CD can do
-// a two-phase rollout: infra+data+KV first, seed KV secrets, then workloads.
+// Two independent guards, and the split is load-bearing rather than cosmetic:
+//
+//   deployWorkloads  everything in this module. False during phase 1, which is
+//                    infra + data + Key Vault only.
+//   deployApps       the four container apps. False in phase 2's FIRST apply.
+//
+// Phase 2 is therefore two applies around the migrations, and the order is not
+// negotiable. The three services call verify_startup_dependencies() during
+// FastAPI startup, check_database() raises out of the lifespan when the
+// database is absent, and the process exits - it does not come up degraded and
+// it does not answer 503 and wait. Observed live on all three backends:
+//
+//   asyncpg.exceptions.InvalidCatalogNameError: database "skyrict_identity"
+//   does not exist
+//   -> startup.verification_failed -> Application startup failed. Exiting.
+//
+// So an app deployed before db-init is not a slow-starting app, it is a
+// crash-looping one, and whether it ever recovers depends on how long ACA keeps
+// retrying the restart. Creating the apps only after db-init and the alembic
+// runs means the first container start is the one that succeeds.
+//
+// This is invisible in resource state, which is why it is worth a parameter: the
+// apps and jobs both report provisioningState Succeeded and their revisions
+// report Provisioned while every replica sits at runningState NotRunning. Only
+// `az containerapp replica list` shows it.
 // =============================================================================
 
 @description('Resource name prefix. Defaults to "skyrict".')
@@ -39,6 +62,9 @@ param tags object = {}
 
 @description('Deploy the apps and jobs. False during phase 1 infra+KV+data rollout.')
 param deployWorkloads bool = true
+
+@description('Deploy the four container apps. False in phase 2 until db-init and the alembic migrations have run, because the services exit at startup when the database does not exist. The jobs deploy on deployWorkloads; the apps additionally require this.')
+param deployApps bool = true
 
 @description('Resource ID of the Container Apps Environment.')
 param caeId string
@@ -316,7 +342,7 @@ var jwtVolumePublic = {
 // identity - external, :8000
 // ---------------------------------------------------------------------------
 
-resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: identityAppName
   location: location
   tags: allTags
@@ -538,7 +564,7 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorklo
 // core - internal only, :8001. Reached exclusively through the gateway.
 // ---------------------------------------------------------------------------
 
-resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: coreAppName
   location: location
   tags: allTags
@@ -711,7 +737,7 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads)
 // ai-agent - INTERNAL only, :8000
 // ---------------------------------------------------------------------------
 
-resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: aiAgentAppName
   location: location
   tags: allTags
@@ -970,7 +996,7 @@ resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026
   }
 }
 
-resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloads) {
+resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
   name: gatewayAppName
   location: location
   tags: allTags
@@ -1476,9 +1502,18 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
 // Outputs (for main.bicep / CD / runbook)
 // ---------------------------------------------------------------------------
 
-output identityFqdn string = deployWorkloads ? identityApp!.properties.configuration.ingress.fqdn : ''
-output coreFqdn string = deployWorkloads ? coreApp!.properties.configuration.ingress.fqdn : ''
-output aiAgentFqdn string = deployWorkloads ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
+// The FQDNs are guarded on deployApps, not deployWorkloads, because they are
+// read off the app resources: with deployApps=false the apps do not exist, and
+// the `!` null-assert on a resource that was never created fails the deployment
+// rather than yielding ''.
+//
+// The NAMES below are deliberately NOT guarded. They are string
+// interpolations, not resource properties, so they are correct in every phase -
+// which is why phase 1 can publish all four job names and the migrate steps
+// never hardcode one.
+output identityFqdn string = deployApps ? identityApp!.properties.configuration.ingress.fqdn : ''
+output coreFqdn string = deployApps ? coreApp!.properties.configuration.ingress.fqdn : ''
+output aiAgentFqdn string = deployApps ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
 output identityAppName string = identityAppName
 output coreAppName string = coreAppName
 output aiAgentAppName string = aiAgentAppName
@@ -1496,7 +1531,7 @@ output aiAgentMigrateJobName string = 'job-ai-agent-${resourceName}'
 // validated the domain against, so the CNAME has to point at THIS, not at
 // api.skyrict.in - the custom domain is an alias of this hostname, not a
 // replacement for it.
-output apiFqdn string = deployWorkloads ? gatewayApp!.properties.configuration.ingress.fqdn : ''
+output apiFqdn string = deployApps ? gatewayApp!.properties.configuration.ingress.fqdn : ''
 output gatewayAppName string = gatewayAppName
 
 // The value for the `TXT asuid.api` record that proves domain ownership before
