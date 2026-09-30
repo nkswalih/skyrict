@@ -327,7 +327,6 @@ module apps 'modules/apps.bicep' = {
     environmentName: environment.outputs.environmentName
     acrLoginServer: registry.outputs.loginServer
     uamiId: security.outputs.uamiId
-    uamiClientId: security.outputs.uamiClientId
     kvUri: security.outputs.kvUri
     logAnalyticsWorkspaceId: environment.outputs.lawId
     imageTag: imageTag

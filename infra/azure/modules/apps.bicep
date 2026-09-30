@@ -49,11 +49,8 @@ param environmentName string
 @description('ACR login server (e.g. skyrictbeta.azurecr.io).')
 param acrLoginServer string
 
-@description('Resource ID of the user-assigned identity used for ACR pull + Key Vault.')
+@description('Resource ID of the user-assigned identity used for ACR pull + Key Vault. Key Vault secret references need the RESOURCE ID, not the client ID - see sharedSecrets below.')
 param uamiId string
-
-@description('Client ID of the user-assigned identity (required for KV secret references).')
-param uamiClientId string
 
 @description('Key Vault URI used to build secret references (e.g. https://kv-skyrict-beta.vault.azure.net/).')
 param kvUri string
@@ -198,6 +195,16 @@ var managedCertificateName = 'env-cert-${resourceName}'
 
 // ---------------------------------------------------------------------------
 // Shared ACA secrets (all apps/jobs declare the same set)
+//
+// `identity` on a keyVaultUrl secret is the managed identity's ARM RESOURCE ID,
+// not its client ID. ACA looks the value up as a resource ID and fails the
+// revision with "Managed identity with resource ID '<guid>' was not found" when
+// handed a client ID - the two are both bare GUIDs, so the mistake is silent in
+// review and only surfaces at provisioning time.
+//
+// Proven, not assumed: two otherwise-identical container apps were created in
+// the beta environment against the same Key Vault secret, differing only in this
+// field. Client ID -> Failed. Resource ID -> Succeeded.
 // ---------------------------------------------------------------------------
 
 var sharedSecrets = [
@@ -212,28 +219,48 @@ var sharedSecrets = [
   {
     name: 'jwt-private-key'
     keyVaultUrl: '${kvUri}secrets/jwt-private-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'jwt-public-key'
     keyVaultUrl: '${kvUri}secrets/jwt-public-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'mfa-encryption-key'
     keyVaultUrl: '${kvUri}secrets/mfa-encryption-key'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'sync-token'
     keyVaultUrl: '${kvUri}secrets/sync-token'
-    identity: uamiClientId
+    identity: uamiId
   }
   {
     name: 'ingest-token'
     keyVaultUrl: '${kvUri}secrets/ingest-token'
-    identity: uamiClientId
+    identity: uamiId
   }
+  // Present ONLY when the CD actually wrote the secret. Two failure modes make
+  // this conditional rather than unconditional:
+  //
+  //  - Absent name: the identity app's env references 'turnstile-secret-key' by
+  //    secretRef, and a secretRef whose name is not in this list fails the whole
+  //    app with ContainerAppSecretRefNotFound.
+  //  - Present but empty: identity would read a blank credential and reject
+  //    every self-service signup, which is exactly what the gate on
+  //    turnstileSecretConfigured exists to prevent.
+  //
+  // Absent is therefore the only honest encoding of "not provisioned".
+  ...(turnstileSecretConfigured
+    ? [
+        {
+          name: 'turnstile-secret-key'
+          keyVaultUrl: '${kvUri}secrets/turnstile-secret-key'
+          identity: uamiId
+        }
+      ]
+    : [])
 ]
 
 // ---------------------------------------------------------------------------
@@ -1273,12 +1300,23 @@ resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkload
         {
           image: '${acrLoginServer}/identity:${imageTag}'
           name: 'migrate'
+          // The `cd` is load-bearing. alembic resolves a RELATIVE
+          // script_location against the process working directory, not against
+          // the -c config file, and this ini says `script_location = alembic`
+          // and `prepend_sys_path = src`. The image WORKDIR is /app, so running
+          // alembic from there fails immediately with "Path doesn't exist:
+          // alembic" and the job never applies a single migration. Verified in
+          // the built image: from /app it fails, from the service directory the
+          // migration graph loads and reports head 0033.
+          //
+          // A container `workingDir` would express this directly but is not a
+          // member of the jobs Container type - BCP037, and bicep drops it from
+          // the compiled ARM, so it would look applied and change nothing. The
+          // shell form is what dbInitJob above already uses.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/identity/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/identity && alembic -c /app/services/identity/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
@@ -1364,12 +1402,12 @@ resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
         {
           image: '${acrLoginServer}/core:${imageTag}'
           name: 'migrate'
+          // See the identity job above: relative script_location resolves
+          // against the working directory, not against the -c config file.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/core/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/core && alembic -c /app/services/core/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
@@ -1443,12 +1481,12 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
         {
           image: '${acrLoginServer}/ai-agent:${imageTag}'
           name: 'migrate'
+          // See the identity job above: relative script_location resolves
+          // against the working directory, not against the -c config file.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/ai-agent/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/ai-agent && alembic -c /app/services/ai-agent/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
