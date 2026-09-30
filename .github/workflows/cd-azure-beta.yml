@@ -577,7 +577,7 @@ jobs:
           # reporting zero real changes, and the gate passes for the wrong
           # reason. Verified against the live what-if: the folded form matched 1
           # of the 5 expected resources.
-          NON_CONVERGENT_MODIFY: "Microsoft\\.(DBforPostgreSQL/flexibleServers|App/managedEnvironments|ContainerRegistry/registries|KeyVault/vaults|Network/virtualNetworks)"
+          NON_CONVERGENT_MODIFY: "Microsoft\\.(DBforPostgreSQL/flexibleServers|App/(managedEnvironments|containerApps|jobs)|ContainerRegistry/registries|KeyVault/vaults|Network/virtualNetworks)"
         run: |
           az deployment group create \
             --resource-group "${{ env.RG }}" \
