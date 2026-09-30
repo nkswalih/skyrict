@@ -662,11 +662,21 @@ jobs:
 
       - name: Start and wait for db-init job
         run: |
+          set -euo pipefail
           job_name="${{ needs.provision-infra.outputs.db_init_job }}"
+          # Fail-closed on the execution name. `az ... | jq` reports jq's exit
+          # code, and jq exits 0 for BOTH ways this can go wrong: no output at
+          # all yields the empty string, and an error body yields the literal
+          # string "null". Either way the loop below then polls an execution
+          # that does not exist, `|| true` swallows all 60 misses, and the step
+          # dies 15 minutes later on a misleading "timed out". Assert first.
           exec_name=$(az containerapp job start \
             --name "$job_name" \
             --resource-group "${{ env.RG }}" \
             --output json | jq -r '.name // .properties.name')
+          case "$exec_name" in
+            ''|null) echo "::error::db-init job start returned no execution name - nothing to poll"; exit 1 ;;
+          esac
           echo "db-init execution: $exec_name"
           for i in $(seq 1 60); do
             status=$(az containerapp job execution show \
@@ -689,10 +699,16 @@ jobs:
             "${{ needs.provision-infra.outputs.core_job }}" \
             "${{ needs.provision-infra.outputs.ai_job }}"; do
             echo "=== $job ==="
+            # Same fail-closed assertion as the db-init step. pipefail alone is
+            # not enough: it catches a non-zero `az`, but `az` can also exit 0
+            # with an error body, which jq renders as the string "null".
             exec_name=$(az containerapp job start \
               --name "$job" \
               --resource-group "${{ env.RG }}" \
               --output json | jq -r '.name // .properties.name')
+            case "$exec_name" in
+              ''|null) echo "::error::$job start returned no execution name - nothing to poll"; exit 1 ;;
+            esac
             echo "  execution: $exec_name"
             for i in $(seq 1 60); do
               status=$(az containerapp job execution show \
