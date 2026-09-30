@@ -241,6 +241,26 @@ var sharedSecrets = [
     keyVaultUrl: '${kvUri}secrets/ingest-token'
     identity: uamiId
   }
+  // Present ONLY when the CD actually wrote the secret. Two failure modes make
+  // this conditional rather than unconditional:
+  //
+  //  - Absent name: the identity app's env references 'turnstile-secret-key' by
+  //    secretRef, and a secretRef whose name is not in this list fails the whole
+  //    app with ContainerAppSecretRefNotFound.
+  //  - Present but empty: identity would read a blank credential and reject
+  //    every self-service signup, which is exactly what the gate on
+  //    turnstileSecretConfigured exists to prevent.
+  //
+  // Absent is therefore the only honest encoding of "not provisioned".
+  ...(turnstileSecretConfigured
+    ? [
+        {
+          name: 'turnstile-secret-key'
+          keyVaultUrl: '${kvUri}secrets/turnstile-secret-key'
+          identity: uamiId
+        }
+      ]
+    : [])
 ]
 
 // ---------------------------------------------------------------------------
