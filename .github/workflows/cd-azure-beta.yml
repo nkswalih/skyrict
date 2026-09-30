@@ -680,8 +680,8 @@ jobs:
           echo "db-init execution: $exec_name"
           for i in $(seq 1 60); do
             status=$(az containerapp job execution show \
-              --job-name "$job_name" \
-              --execution-name "$exec_name" \
+              -n "$job_name" \
+              --job-execution-name "$exec_name" \
               --resource-group "${{ env.RG }}" \
               --query properties.status -o tsv) || true
             echo "  status: $status"
@@ -712,8 +712,8 @@ jobs:
             echo "  execution: $exec_name"
             for i in $(seq 1 60); do
               status=$(az containerapp job execution show \
-                --job-name "$job" \
-                --execution-name "$exec_name" \
+                -n "$job" \
+                --job-execution-name "$exec_name" \
                 --resource-group "${{ env.RG }}" \
                 --query properties.status -o tsv) || true
               echo "  status: $status"
