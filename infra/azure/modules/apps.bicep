@@ -1300,12 +1300,23 @@ resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkload
         {
           image: '${acrLoginServer}/identity:${imageTag}'
           name: 'migrate'
+          // The `cd` is load-bearing. alembic resolves a RELATIVE
+          // script_location against the process working directory, not against
+          // the -c config file, and this ini says `script_location = alembic`
+          // and `prepend_sys_path = src`. The image WORKDIR is /app, so running
+          // alembic from there fails immediately with "Path doesn't exist:
+          // alembic" and the job never applies a single migration. Verified in
+          // the built image: from /app it fails, from the service directory the
+          // migration graph loads and reports head 0033.
+          //
+          // A container `workingDir` would express this directly but is not a
+          // member of the jobs Container type - BCP037, and bicep drops it from
+          // the compiled ARM, so it would look applied and change nothing. The
+          // shell form is what dbInitJob above already uses.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/identity/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/identity && alembic -c /app/services/identity/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
@@ -1391,12 +1402,12 @@ resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
         {
           image: '${acrLoginServer}/core:${imageTag}'
           name: 'migrate'
+          // See the identity job above: relative script_location resolves
+          // against the working directory, not against the -c config file.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/core/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/core && alembic -c /app/services/core/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
@@ -1470,12 +1481,12 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
         {
           image: '${acrLoginServer}/ai-agent:${imageTag}'
           name: 'migrate'
+          // See the identity job above: relative script_location resolves
+          // against the working directory, not against the -c config file.
           command: [
-            'alembic'
+            '/bin/sh'
             '-c'
-            '/app/services/ai-agent/alembic.ini'
-            'upgrade'
-            'head'
+            'cd /app/services/ai-agent && alembic -c /app/services/ai-agent/alembic.ini upgrade head'
           ]
           volumeMounts: [
             {
