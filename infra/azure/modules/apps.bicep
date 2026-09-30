@@ -916,7 +916,14 @@ resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026
     // _acme-challenge.api.skyrict.in. Until that record exists the certificate
     // stays in a pending state, which does NOT fail the deployment - the app
     // is reachable on its generated FQDN meanwhile.
-    validationMethod: 'CNAME'
+    //
+    // The property is `domainControlValidation`, not `validationMethod`. The
+    // latter is not a member of ManagedCertificateProperties in this API
+    // version, and bicep reports that as a BCP037 warning while STILL emitting
+    // the key into the compiled ARM - so the resource deploys with an
+    // unrecognised property and the failure only appears as a provisioning
+    // error at apply time. Caught by `bicep build` and fixed here.
+    domainControlValidation: 'CNAME'
   }
 }
 
