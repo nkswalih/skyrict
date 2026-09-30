@@ -328,7 +328,6 @@ module apps 'modules/apps.bicep' = {
     acrLoginServer: registry.outputs.loginServer
     uamiId: security.outputs.uamiId
     kvUri: security.outputs.kvUri
-    logAnalyticsWorkspaceId: environment.outputs.lawId
     imageTag: imageTag
     appEnvironment: appEnvironment
     postgresFqdn: data.outputs.postgresFqdn

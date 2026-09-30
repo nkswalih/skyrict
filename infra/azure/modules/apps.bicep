@@ -55,9 +55,6 @@ param uamiId string
 @description('Key Vault URI used to build secret references (e.g. https://kv-skyrict-beta.vault.azure.net/).')
 param kvUri string
 
-@description('Log Analytics workspace ID for app diagnostic settings.')
-param logAnalyticsWorkspaceId string
-
 @description('Image tag for all three services (git SHA from CD).')
 param imageTag string
 
@@ -1068,126 +1065,6 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployWorkloa
         ]
       }
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Diagnostic settings -> Log Analytics (console + system logs)
-// ---------------------------------------------------------------------------
-
-resource identityDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: identityApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-resource coreDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: coreApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-// The gateway's access log is the only place a misrouted request is visible:
-// its format ends with `up=$skyrict_api_backend`, so the log line says which
-// backend served a request whose response looked like someone else's 404. It
-// goes to the same workspace as the backends so one query spans the whole hop.
-resource gatewayDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: gatewayApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}
-
-resource aiAgentDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWorkloads) {
-  scope: aiAgentApp
-  name: 'diag-to-law-${resourceName}'
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        category: 'ContainerAppConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'ContainerAppSystemLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
   }
 }
 
