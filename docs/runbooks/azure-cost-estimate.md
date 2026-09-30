@@ -69,7 +69,7 @@ documents every knob.
 
 ## Assumptions
 
-- Region `eastus` (default). Prices vary slightly by region.
+- Region `westus` (set in `beta.parameters.json`). Prices vary slightly by region.
 - Beta traffic is bursty dev/demo traffic, far below free quotas.
 - Budget alerts (`budgetAmount=10`, thresholds 50/80/90%) are the operational
   guard; see `azure-iac.md` §6.

@@ -30,7 +30,7 @@ Acceptance criteria (DoD for SKY-114):
 | UAMI            | `id-skyrict-beta`                 | ACR pull + KV secret references                    |
 | ACR             | `skyrictbeta.azurecr.io`          | Standard SKU, admin **disabled**                   |
 | Postgres        | `pg-skyrict-beta`                 | B1ms / PG16 / 32 GB, private + `vector`,`pg_trgm`  |
-| Redis (month 1) | `redisskyrictbeta`                | Standard C0, private endpoint, TLS 6380            |
+| Redis            | Upstash Serverless (external)     | `rediss://` via `AZURE_REDIS_URL_OVERRIDE`, free tier  |
 | App identity    | `app-identity-skyrict-beta`       | External ingress :8000                             |
 | App core        | `app-core-skyrict-beta`           | External ingress :8001                             |
 | App ai-agent    | `app-ai-agent-skyrict-beta`       | **Internal-only** ingress :8000                    |
@@ -42,8 +42,10 @@ Internal calls use the CAE short-name URLs (`http://app-core-skyrict-beta`,
 avoid Bicep cycles.
 
 Externally, identity and core resolve as
-`https://app-identity-skyrict-beta.<env>.eastus.azurecontainerapps.io` /
-`.../app-core-...` — the FQDNs are printed as deployment outputs.
+`https://app-identity-skyrict-beta.<env>.<region>.azurecontainerapps.io` /
+`.../app-core-...` — the FQDNs are printed as deployment outputs. The region
+segment is whatever `beta.parameters.json` sets; it is `westus`, not
+`eastus` (see section 11).
 
 ## 2. Two-phase rollout
 
@@ -110,7 +112,7 @@ This is idempotent for identity/RBAC and:
 | `AZURE_MFA_ENCRYPTION_KEY` | TOTP-at-rest encryption | Fernet key (`Fernet.generate_key()`) |
 | `AZURE_SYNC_TOKEN` | Shared sync token (core ↔ ai-agent) | URL-safe token |
 | `AZURE_INGEST_TOKEN` | Shared ingest token (core → ai-agent) | URL-safe token |
-| `AZURE_REDIS_URL_OVERRIDE` | Upstash `rediss://` URL for month 2+ | `rediss://…:6379` (**unset** in month 1 — a missing secret expands to `''` in the workflow) |
+| `AZURE_REDIS_URL_OVERRIDE` | Upstash `rediss://` URL — **required**, not optional | `rediss://…:6379`. Must be `rediss://`: with `deployManagedRedis=false` this is the only Redis, and an empty value hands the apps `REDIS_URL=''`, which crash-loops them at startup |
 
 ### 4.2 Key Vault secrets (seeded by CD / bootstrap)
 
@@ -252,12 +254,24 @@ within the Azure free account's 12-month + always-free allotments:
 
 1. **Upgrade to PAYG** within 30 days of signing up so the free tier
    continues into months 2–12.
-2. **Swap Redis to Upstash Serverless** (free tier, no Azure spend):
+2. **Redis is Upstash Serverless, and that is no longer optional** (free
+   tier, no Azure spend):
+   - Azure has **retired Azure Cache for Redis**, so this swap moved from
+     month 2 to day 1. Verified on this subscription: creating
+     `Microsoft.Cache/redis` returns *"Azure Cache for Redis is retiring"*,
+     and the `Standard_C0` SKU the template used is now rejected as an
+     invalid SKU name. The successor `Microsoft.Cache/managedRedis` is not
+     available here either - `InvalidResourceType`. Neither is recoverable
+     with credits, so `deployManagedRedis=true` can no longer deploy.
    - Set GitHub secret `AZURE_REDIS_URL_OVERRIDE` to the Upstash
-     `rediss://<user>:<pass>@<host>:6379` URL.
-   - Deploy with `deployManagedRedis=false` (a one-line parameters change).
-   - The `data` module conditionally skips Redis; `apps.bicep` computes the
-     connection URL from the override. No code change, TLS throughout.
+     `rediss://<user>:<pass>@<host>:6379` URL. It must be the `rediss://`
+     (TLS) form: Upstash rejects a plaintext `redis://` connection.
+   - `beta.parameters.json` ships `deployManagedRedis=false`, so the `data`
+     module skips Redis and `apps.bicep` computes the connection URL from
+     the override. No application code change, TLS throughout.
+   - Enabling eviction on the Upstash database is required. Without it a full
+     database rejects writes instead of evicting, and identity and ai-agent
+     both hard-depend on this cache.
 3. **Scale ACR to Basic** (`registrySku=Basic`) — the free account covers
    one Standard ACR for 12 months; Basic keeps the same auth model cheaper
    later.
@@ -270,6 +284,24 @@ within the Azure free account's 12-month + always-free allotments:
 
 ## 11. Beta limitations (documented)
 
+- **The Key Vault is `kv-skyrict-beta-2`, and `kv-skyrict-beta` is
+  permanently unusable.** `kv-skyrict-beta` was deleted and is now
+  soft-deleted *with purge protection enabled*, so Azure refuses to purge it
+  and the name can never be reused. `keyVaultName` in `beta.parameters.json`
+  therefore sets the new name. If this beta is ever torn down and recreated,
+  check whether purge protection is on before deleting: a purged-name is
+  unrecoverable, and the fix is another rename.
+
+- **The region is `westus`, and it is not a free choice.** This subscription
+  cannot create a PostgreSQL Flexible Server in `eastus` at all: every SKU
+  (B1ms, B1s, B2ms, D2s_v3), every major version (11-17) and every supported
+  API version is rejected with `ParameterOutOfRange: The value of the 'Version'
+  should be in: []` - an empty list, because the service resolves no version
+  for that region on this account. `westus`, `centralus`, `northeurope`,
+  `southeastasia` and `japaneast` were all confirmed to reach `Ready` with the
+  identical B1ms/v16 configuration. `westeurope` fails separately, with
+  `RequestDisallowedByAzure` (region not accepting new customers). Do not
+  "restore" `eastus` without re-running that check first.
 - `ai-agent` is internal-only: no public FQDN; verified via revision state.
 - The custom domain is **configured but pending**, not absent. `apiHostname`
   is set to `api.skyrict.in`, so the gateway gets an ACA-managed certificate

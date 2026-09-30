@@ -5,8 +5,11 @@
     "envName": {
       "value": "beta"
     },
+    "keyVaultName": {
+      "value": "kv-skyrict-beta-2"
+    },
     "location": {
-      "value": "eastus"
+      "value": "westus"
     },
     "appEnvironment": {
       "value": "staging"
@@ -56,7 +59,7 @@
       "value": "skyrict_identity"
     },
     "deployManagedRedis": {
-      "value": true
+      "value": false
     },
     "redisUrlOverride": {
       "value": ""
