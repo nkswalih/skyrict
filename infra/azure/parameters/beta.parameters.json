@@ -79,6 +79,9 @@
     },
     "budgetContactEmails": {
       "value": []
+    },
+    "budgetStartDate": {
+      "value": "2026-09-01"
     }
   }
 }

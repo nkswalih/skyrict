@@ -18,10 +18,16 @@
 // than no budget: it looks like a safeguard in the portal while alerting
 // nobody.
 //
-// budgetStartDate is a parameter the CD passes as the first of the current
-// month so re-applies within the same month are idempotent (a utcNow()
-// fallback changes once per month boundary and is documented as the only
-// intentional non-idempotent default).
+// budgetStartDate is FIXED and must never be derived from the current date.
+// It was previously passed as the first of the current month, which was
+// idempotent only within that month. On the 1st of each month the value rolled
+// forward and Azure rejected the update outright:
+//   400 "Start date of budgets cannot be updated. Please delete and create a
+//   new budget."
+// That is a hard rejection, not a tolerated Modify - and "delete and create" is
+// not available, because deleting a budget discards its alert history. The
+// value is pinned in the parameter file instead, so every re-apply sends the
+// date the budget was created with and the resource is left untouched.
 // =============================================================================
 
 targetScope = 'subscription'
@@ -42,8 +48,8 @@ param budgetThresholds array = [
 @description('Email addresses receiving the budget alerts.')
 param budgetContactEmails array = []
 
-@description('Budget start date (YYYY-MM-DD, or a full ISO-8601 timestamp). The CD passes the first of the current month for idempotent re-applies.')
-param budgetStartDate string = utcNow('yyyy-MM-01')
+@description('Budget start date (YYYY-MM-DD, or a full ISO-8601 timestamp). MUST be a fixed value matching the already-created budget - never derive it from the current date. Azure rejects any update that changes a budget start date ("Start date of budgets cannot be updated. Please delete and create a new budget."), so a date that rolls forward breaks the next apply and deleting the budget is not an option here.')
+param budgetStartDate string = '2026-09-01'
 
 @description('Budget end date - open-ended by default. Set when migrating to a committed period. YYYY-MM-DD or a full ISO-8601 timestamp.')
 param budgetEndDate string = '2099-12-31'

@@ -207,8 +207,15 @@ jobs manually per section 7.
   workload profile accepts neither `minimumCount` nor `maximumCount`, so
   `Microsoft.App/managedEnvironments` rejects the deployment with
   `WorkloadProfilePropertyNotSupported` if either is set.
-- **Budgets**: subscription budgets alert at 50/80/90% of `$10` (CD passes
-  the first-of-month as `budgetStartDate` so re-applies stay idempotent).
+- **Budgets**: subscription budgets alert at 50/80/90%. `budgetStartDate` is a
+  **fixed** value pinned in `infra/azure/parameters/beta.parameters.json`, not a
+  function of today. Azure forbids changing a budget's start date — an update
+  that does is rejected with `400 "Start date of budgets cannot be updated.
+  Please delete and create a new budget."` — so the value must always match the
+  date the budget was created with. An earlier version passed the first of the
+  current month, which was idempotent only within that month and broke the apply
+  on the 1st. **Never derive this from the current date, and never delete the
+  budget to work around a mismatch** (that discards its alert history).
 - **Cost**: see `azure-cost-estimate.md`.
 - **`Succeeded` does not mean running.** A container app or job can report
   `provisioningState: Succeeded` and a revision `Provisioned` while every
@@ -216,7 +223,7 @@ jobs manually per section 7.
   startup and the revision was still created. Resource state reports the ARM
   write, not the container. Check
   `az containerapp replica list -n <app> -g <rg> --revision <rev> --query
-  "[?properties.runningState=='Running'] | length"` and read the container log
+  "[?properties.runningState=='Running'] | length(@)"` and read the container log
   before believing a deployment is healthy. This has bitten this pipeline
   repeatedly: a swallowed exit code, a masked image tag, a probe pointing at a
   tag the image does not have, Bicep silently dropping `workingDir`, and now an
