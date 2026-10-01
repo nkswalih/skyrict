@@ -45,6 +45,10 @@ if TYPE_CHECKING:
 class CrmRepositoryPort(Protocol):
     """Persistence contract for leads, opportunities, and customers."""
 
+    # --- Transaction control ---
+    async def commit(self) -> None:
+        """Commit the current transaction (write handlers, before the response)."""
+
     # --- Document sequences (wired at the composition root) ---
     async def next_customer_sequence(self, tenant_id: uuid.UUID) -> int: ...
 
