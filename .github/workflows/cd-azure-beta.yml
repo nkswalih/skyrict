@@ -413,6 +413,7 @@ jobs:
           TURNSTILE_SITE_KEY: ${{ secrets.AZURE_TURNSTILE_SITE_KEY }}
           TURNSTILE_SECRET_KEY: ${{ secrets.AZURE_TURNSTILE_SECRET_KEY }}
           REDIS_URL_OVERRIDE: ${{ secrets.AZURE_REDIS_URL_OVERRIDE }}
+          EMAIL_SMTP_PASSWORD: ${{ secrets.AZURE_EMAIL_SMTP_PASSWORD }}
         run: |
           set -euo pipefail
           params=$(cat "${{ env.PARAMS_FILE }}")
@@ -425,6 +426,60 @@ jobs:
           # The secret alone is not enough: with no public site key the browser
           # sends no token and identity rejects the request anyway.
           [ -n "${TURNSTILE_SITE_KEY:-}" ] || fail "AZURE_TURNSTILE_SITE_KEY is unset - the browser cannot produce a Turnstile token without it (finding 23)."
+
+          # Transactional email relay.
+          #
+          # apps.bicep already refuses to emit the relay environment unless all
+          # five non-secret fields are present, so a partial object here cannot
+          # crash-loop identity. But it degrades *silently* to log-only email,
+          # and silently is the failure mode this preflight exists for: a first
+          # tenant signs up, no mail arrives, and the code is delivered into a
+          # log stream nobody reads. Reject it here, where the message names the
+          # missing field and the fix.
+          relay_host=$(jq -r '.parameters.emailRelayConfig.value.host // ""' <<<"$params")
+          relay_tls=$(jq -r '.parameters.emailRelayConfig.value.useTls // ""' <<<"$params")
+          relay_fields=$(jq -r '.parameters.emailRelayConfig.value | length' <<<"$params")
+          relay_missing=$(jq -r '
+            .parameters.emailRelayConfig.value as $relay
+            | ["host", "port", "username", "useTls", "fromAddr"]
+            | map(select(($relay[.] // "" | tostring) == ""))
+            | join(", ")
+          ' <<<"$params")
+
+          # Mutually exclusive branches, so a single misconfiguration produces a
+          # single message. Checking the per-field rules against a partial
+          # object reports "useTls is not true" for a useTls that is merely
+          # absent, which sends the operator after the wrong problem.
+          if [ "${relay_fields:-0}" -eq 0 ]; then
+            # The inverse half-configuration. The secret is never read, so
+            # nothing fails - but the operator believes mail is live while the
+            # service is still writing codes to a log stream.
+            [ -z "${EMAIL_SMTP_PASSWORD:-}" ] || fail "AZURE_EMAIL_SMTP_PASSWORD is set but emailRelayConfig is empty - the secret is never used, identity stays on log-only email, and no signup mail is ever delivered. Either complete vars.AZURE_EMAIL_RELAY_CONFIG or clear the secret."
+          elif [ "${relay_fields:-0}" -ne 5 ]; then
+            fail "emailRelayConfig has $relay_fields of 5 fields set (missing: $relay_missing). The relay is all-or-nothing: apps.bicep emits the environment only when every field is present, so a partial config deploys green and leaves identity on log-only email with no mail ever delivered. Complete vars.AZURE_EMAIL_RELAY_CONFIG, or clear it to {}."
+          else
+            # A host with no password is the half-configuration that looks most
+            # like success: the environment is complete, the container boots,
+            # and every send fails at SMTP AUTH. The relay, not identity, is
+            # what rejects the login, so the error surfaces per signup.
+            [ -n "${EMAIL_SMTP_PASSWORD:-}" ] || fail "AZURE_EMAIL_SMTP_PASSWORD is unset but emailRelayConfig.host is '$relay_host' - identity would select the SMTP transport with no credential, and every signup would fail to deliver at SMTP AUTH."
+            # StarTTLS is what makes the port trustworthy. Without it the relay
+            # would be contacted in cleartext; that is a silent downgrade, not
+            # a visible failure.
+            [ "$relay_tls" = "true" ] || fail "emailRelayConfig.useTls is not 'true' while a public relay host is configured - SmtpEmailService uses smtplib.SMTP + starttls(), so without it the SMTP session (and the credential) goes out in cleartext."
+            # The default sender is skyrict.dev, which beta does not own and
+            # cannot authenticate. Mail would be accepted by the relay and then
+            # rejected by the recipient on SPF/DKIM, landing in spam with no
+            # error at send time. Compare the domain after the last '@' so a
+            # display name and the angle brackets are both handled.
+            relay_from_domain=$(jq -r '
+              (.parameters.emailRelayConfig.value.fromAddr // "")
+              | if contains("@") then (split("@") | last) else "" end
+              | sub(">\\s*$"; "")
+              | ascii_downcase
+            ' <<<"$params")
+            [ "$relay_from_domain" = "skyrict.in" ] || fail "emailRelayConfig.fromAddr has domain '$relay_from_domain', not skyrict.in. The settings default is no-reply@skyrict.dev, a domain beta neither owns nor has SPF/DKIM authorised for, so every message would be accepted by the relay and then fail authentication at the recipient."
+          fi
 
           # P0 #6 - apiHostname is the single public API origin. The custom domain
           # is activated in stages (none/hostname/certificate), so apiHostname must
