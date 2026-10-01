@@ -197,6 +197,12 @@ param turnstileSiteKey string = ''
 @description('Set true when the CD workflow has written the "turnstile-secret-key" secret into Key Vault. The secret VALUE never enters Bicep: it would land in the readable env config of the container app, where anything holding Reader on the app could read it. The flag only decides whether the Key Vault reference is emitted at all, which is required because a secretRef to a missing secret makes the container fail to start.')
 param turnstileSecretConfigured bool = false
 
+@description('Transactional email relay, non-secret settings only, as an object: { host, port, username, useTls, fromAddr }. Empty leaves identity on its log-only transport. The relay password is not here - it is a Key Vault reference, see emailSmtpPasswordConfigured.')
+param emailRelayConfig object = {}
+
+@description('Set true when the CD workflow has written the "email-smtp-password" secret into Key Vault. Same reasoning as turnstileSecretConfigured: the value never enters Bicep, and the reference must not be emitted at all unless the secret exists, or the container fails to start.')
+param emailSmtpPasswordConfigured bool = false
+
 @description('Max replicas per app (scale-to-zero from minReplicas 0).')
 param maxReplicas int = 2
 
@@ -352,6 +358,8 @@ module apps 'modules/apps.bicep' = {
     customDomainStage: customDomainStage
     turnstileSiteKey: turnstileSiteKey
     turnstileSecretConfigured: turnstileSecretConfigured
+    emailRelayConfig: emailRelayConfig
+    emailSmtpPasswordConfigured: emailSmtpPasswordConfigured
     maxReplicas: maxReplicas
     containerCpu: containerCpu
     containerMemory: containerMemory
