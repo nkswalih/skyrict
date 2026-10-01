@@ -228,7 +228,7 @@ jobs:
       # ---- Artifacts -------------------------------------------------------
       - name: Upload Lighthouse results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-results
           path: apps/web/scripts/perf/lighthouse-results/

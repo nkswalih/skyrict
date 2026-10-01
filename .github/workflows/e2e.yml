@@ -292,7 +292,7 @@ jobs:
 
       - name: Upload main-phase diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-main-diagnostics
           path: /tmp/e2e-main-diagnostics/
@@ -403,7 +403,7 @@ jobs:
       # ---- Artifacts -------------------------------------------------------
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: apps/web/playwright-report/
@@ -411,7 +411,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: apps/web/test-results/
