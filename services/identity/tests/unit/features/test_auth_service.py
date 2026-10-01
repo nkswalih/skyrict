@@ -1006,10 +1006,52 @@ class TestWizard:
         assert result == {"status": "ok"}
         assert harness.turnstile.calls == ["tok"]
 
+    async def test_send_code_requires_valid_turnstile(self) -> None:
+        """The endpoint that actually sends mail has to be gated, not just its entry."""
+        harness = _Harness(turnstile=FakeTurnstile(result=False))
+
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok")
+
+        assert harness.turnstile.calls == ["tok"]
+        # Nothing was minted, stored or sent.
+        assert harness.email_svc.sent == []
+        assert await harness.verification_store.get_otp_hash("owner@neworg.com") is None
+
+    async def test_send_code_rejects_a_missing_turnstile_token(self) -> None:
+        """No token at all is the shape of the request a script would send."""
+        harness = _Harness(turnstile=FakeTurnstile(result=False))
+
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token=None)
+
+        assert harness.turnstile.calls == [None]
+        assert harness.email_svc.sent == []
+
+    async def test_send_code_verifies_before_honouring_the_resend_cooldown(self) -> None:
+        """A blocked resend must not return 200 to a caller that verified nothing.
+
+        Checking the cooldown first would hand an unverified caller a success
+        response and a countdown, which reads as a working send and hides that
+        no challenge was ever checked.
+        """
+        harness = _Harness(turnstile=FakeTurnstile(result=True))
+        await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok-1")
+
+        harness.turnstile.result = False
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(
+                email="owner@neworg.com", turnstile_token="tok-2"
+            )
+
+        assert len(harness.email_svc.sent) == 1
+
     async def test_send_code_and_verify_flow(self) -> None:
         harness = _Harness()
 
-        sent = await harness.service.signup_send_code(email="owner@neworg.com")
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", turnstile_token="tok"
+        )
         assert sent["status"] == "ok"
         assert sent["resend_in"] == settings.OTP_RESEND_COOLDOWN_SECONDS
         assert sent["code"] is not None
@@ -1028,8 +1070,10 @@ class TestWizard:
     async def test_resend_blocked_within_cooldown(self) -> None:
         harness = _Harness()
 
-        await harness.service.signup_send_code(email="owner@neworg.com")
-        blocked = await harness.service.signup_send_code(email="owner@neworg.com")
+        await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok-1")
+        blocked = await harness.service.signup_send_code(
+            email="owner@neworg.com", turnstile_token="tok-2"
+        )
 
         assert blocked["status"] == "ok"
         assert blocked["code"] is None
@@ -1038,7 +1082,9 @@ class TestWizard:
 
     async def test_otp_lockout_after_max_attempts(self) -> None:
         harness = _Harness()
-        sent = await harness.service.signup_send_code(email="owner@neworg.com")
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", turnstile_token="tok"
+        )
         code = sent["code"]
         assert code is not None
 
@@ -1141,7 +1187,9 @@ class TestWizard:
     async def test_full_wizard_provisions_verified_owner(self) -> None:
         harness = _Harness()
         await harness.service.signup_start(email="owner@neworg.com", turnstile_token="tok")
-        sent = await harness.service.signup_send_code(email="owner@neworg.com")
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", turnstile_token="tok-2"
+        )
         code = sent["code"]
         assert code is not None
         vt = (await harness.service.signup_verify_code(email="owner@neworg.com", code=code))[

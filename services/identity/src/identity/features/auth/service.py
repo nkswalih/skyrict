@@ -378,7 +378,15 @@ class AuthenticationService:
             raise ValidationError("Unable to verify you are not a robot. Try again.")
         return {"status": "ok"}
 
-    async def signup_send_code(self, *, email: str) -> dict[str, Any]:
+    async def signup_send_code(self, *, email: str, turnstile_token: str | None) -> dict[str, Any]:
+        # Verified before the resend check, not after it.
+        #
+        # Checking after would let an ungated caller consume a resend slot and
+        # get a 200 with only a countdown, which reads as success and hides the
+        # fact that no challenge was ever verified.
+        ok = await self.turnstile.verify(turnstile_token)
+        if not ok:
+            raise ValidationError("Unable to verify you are not a robot. Try again.")
         if await self.verification_store.is_resend_blocked(email):
             return {
                 "status": "ok",

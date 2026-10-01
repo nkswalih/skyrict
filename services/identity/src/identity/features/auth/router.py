@@ -215,7 +215,13 @@ async def signup_send_code(
     authn: AuthenticationService = Depends(get_authn_service),
     limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> ResponseEnvelope[SendCodeResponse]:
-    """Send a 6-digit OTP to the address (throttled per email and per IP)."""
+    """Send a 6-digit OTP to the address (Turnstile-gated, throttled per email and per IP).
+
+    Turnstile is required here, not just on /signup/start. This endpoint is the
+    one that actually sends mail: gating only the start of the wizard still
+    leaves a caller who completed it - or skipped it entirely - free to mint
+    OTPs for arbitrary addresses and spend relay quota on them.
+    """
     ip_address = client_ip(request)
     email_key = body.email.lower()
     await limiter.enforce(
@@ -228,7 +234,7 @@ async def signup_send_code(
         limit=settings.SIGNUP_CODE_RATE_LIMIT,
         window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
     )
-    result = await authn.signup_send_code(email=body.email)
+    result = await authn.signup_send_code(email=body.email, turnstile_token=body.turnstile_token)
     return ResponseEnvelope(data=SendCodeResponse(**result))
 
 
