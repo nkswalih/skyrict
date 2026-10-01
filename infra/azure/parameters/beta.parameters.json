@@ -32,6 +32,9 @@
     "apiHostname": {
       "value": "api.skyrict.in"
     },
+    "customDomainStage": {
+      "value": "certificate"
+    },
     "corsOrigins": {
       "value": [
         "https://skyrict.in"

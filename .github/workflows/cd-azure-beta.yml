@@ -414,10 +414,31 @@ jobs:
           # sends no token and identity rejects the request anyway.
           [ -n "${TURNSTILE_SITE_KEY:-}" ] || fail "AZURE_TURNSTILE_SITE_KEY is unset - the browser cannot produce a Turnstile token without it (finding 23)."
 
-          # P0 #6 - without apiHostname there is no managed certificate and no
-          # api.skyrict.in, so there is no public API origin at all.
+          # P0 #6 - apiHostname is the single public API origin. The custom domain
+          # is activated in stages (none/hostname/certificate), so apiHostname must
+          # always be set for the intended public name.
           api_hostname=$(jq -r '.parameters.apiHostname.value // ""' <<<"$params")
-          [ -n "$api_hostname" ] || fail "apiHostname is empty - the gateway would serve only its generated FQDN, leaving no public API host and no TLS certificate (finding 6)."
+          [ -n "$api_hostname" ] || fail "apiHostname is empty (finding 6)."
+
+          # P0 #6 - the custom domain is activated in two applies, so a typo in
+          # customDomainStage must not be mistaken for a working config. The
+          # template falls back to 'none' for an unrecognised value, which fails
+          # SAFE (the gateway keeps serving its generated FQDN) but would leave
+          # the public domain silently unbound. Reject it here instead, where
+          # the message names the value and the fix.
+          stage=$(jq -r '.parameters.customDomainStage.value // "none"' <<<"$params")
+          case "$stage" in
+            none|hostname|certificate) ;;
+            *) fail "customDomainStage ('$stage') must be one of: none, hostname, certificate. The template treats an unknown value as 'none', which would leave api.skyrict.in unbound with no error (finding 6)." ;;
+          esac
+          # The two stages are ordered: 'certificate' creates a managed
+          # certificate for a hostname, and ACA rejects that with
+          # RequireCustomHostnameInEnvironment unless the hostname is already
+          # registered on the app. On a fresh environment that means deploying
+          # 'hostname' first and 'certificate' second. It is not checked
+          # against live state here - `az deployment group validate` passes for
+          # the one-pass form too, because the check is server-side - so a
+          # wrong ordering surfaces as a failed apply, not as this preflight.
 
           # P0 #8 - `iss` is baked into every token at first login and is not
           # reissued on later config changes, so a wrong value silently
