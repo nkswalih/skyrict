@@ -923,17 +923,51 @@ jobs:
             "https://${{ needs.deploy-workloads.outputs.api_fqdn }}/readyz" \
             | tee /dev/stderr | grep -q '"status":"healthy"'
 
-      - name: Smoke test a core route is reachable through the gateway
-        # /api/v1/crm/* must reach core. Unauthenticated it must answer 401 -
-        # a 404 would mean the path was swallowed or misrouted, and a 502 would
-        # mean core is unreachable. Asserting the exact code is what makes this
-        # a routing test rather than a "something answered" test.
+      - name: Smoke test a core-segment route reaches a live backend
+        # /api/v1/crm/* is a CORE-mapped segment, so a correct answer here proves
+        # the gateway proxied it to a running application: a 502 or 504 would mean
+        # the backend was unreachable, and a non-JSON body would mean nginx
+        # answered instead of proxying. Asserting the exact code AND the problem
+        # type is what keeps this from degrading into a "something answered" test.
+        #
+        # It deliberately does NOT assert 401, and does NOT claim to prove the
+        # answer came from core specifically. Both were attempted; neither holds.
+        # Measured against the live beta environment on 2026-10-01:
+        #
+        #   401 is unreachable by construction. TenantContextMiddleware resolves
+        #   the tenant BEFORE the route's auth dependency runs, so a request with
+        #   no token and no tenant hint gets TenantContextMissingError (400).
+        #   No header reaches the auth layer either - beta has no tenants at all,
+        #   so every slug returns TenantNotFoundError (404) and reserved slugs are
+        #   rejected. Asserting 401 made this step fail on a healthy deploy.
+        #
+        #   Attribution is unobservable. Identity answers the same request with a
+        #   byte-identical 400 TenantContextMissingError body, and every
+        #   tenant-exempt path core serves (/health, /ready, /docs) has a first
+        #   segment the gateway's map routes to identity, not core. So nothing
+        #   reachable from outside distinguishes core from identity while the
+        #   environment holds no tenant. Proving per-backend attribution needs a
+        #   seeded tenant, which is environment state, not a smoke test.
+        #
+        # Per-backend reachability IS covered by the two steps above: /api/v1/
+        # health answers as identity, and /readyz falls through identity to core
+        # and 504s when both are down.
         run: |
-          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+          body=$(mktemp)
+          code=$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
             --retry 10 --retry-delay 10 --retry-all-errors \
             "https://${{ needs.deploy-workloads.outputs.api_fqdn }}/api/v1/crm/customers")
           echo "GET /api/v1/crm/customers -> $code"
-          [ "$code" = "401" ] || { echo "::error::expected 401 from core's auth layer, got $code"; exit 1; }
+          cat "$body"
+          echo
+          [ "$code" = "400" ] || {
+            echo "::error::expected 400 from a backend answering /api/v1/crm/* (502/504 means core is unreachable), got $code"
+            exit 1
+          }
+          grep -q 'api.skyrict.in/problems/tenant-context-missing' "$body" || {
+            echo "::error::expected a Skyrict RFC 7807 tenant-context-missing problem; anything else means the gateway answered instead of proxying"
+            exit 1
+          }
 
       - name: Verify internal backends have healthy revisions
         # identity and core are internal-only, so they have no externally
@@ -955,19 +989,35 @@ jobs:
         #   properties, resourceGroup, type), so [?state=='Running'] matches
         #   nothing and returns 0 even for a serving app - a silent false
         #   failure, because JMESPath does not error on an absent field.
+        #
+        #   "| length" is NOT the length function. JMESPath needs the call
+        #   syntax length(@); a bare `| length` is a pipe into a field named
+        #   "length", which no replica has, so it yields null and -o tsv prints
+        #   an EMPTY string. That is silent, and it fails in the worst way: the
+        #   empty value fails "${replicas:-0}" -lt 1 on every healthy app, so
+        #   this step could never pass. Measured live on 2026-10-01 against
+        #   app-identity-skyrict-beta revision ...-0000002, whose replica is
+        #   genuinely Running:
+        #
+        #     [?properties.runningState=='Running'] | length     -> (empty)
+        #     [?properties.runningState=='Running'] | length(@)  -> 1
+        #     length([?properties.runningState=='Running'])     -> 1
+        #
+        #   The two steps above fix `state` but left this one in place, so the
+        #   mistake survived the first round and only surfaces once step 6 stops
+        #   failing and the rest of the job finally runs.
         run: |
           failed=0
-          for pair in \
-            "identity:${{ needs.deploy-workloads.outputs.identity_app_name }}" \
-            "core:${{ needs.deploy-workloads.outputs.core_app_name }}"; do
-            app="${pair%%:*}"
+          for app in \
+            "${{ needs.deploy-workloads.outputs.identity_app_name }}" \
+            "${{ needs.deploy-workloads.outputs.core_app_name }}"; do
             rev=$(az containerapp show --name "$app" --resource-group "${{ env.RG }}" \
               --query properties.latestRevisionName -o tsv)
             state=$(az containerapp revision show --resource-group "${{ env.RG }}" \
               --name "$app" --revision "$rev" --query properties.provisioningState -o tsv)
             replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
               --name "$app" --revision "$rev" \
-              --query "[?properties.runningState=='Running'] | length" -o tsv)
+              --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
             echo "$app: revision=$rev state=$state running_replicas=$replicas"
             if [ "$state" != "Provisioned" ] || [ "${replicas:-0}" -lt 1 ]; then
               echo "::error::$app is not serving (state=$state running=$replicas)"
@@ -981,7 +1031,8 @@ jobs:
         # resolvable FQDN; verify liveness via revision provisioning state
         # and at least one running replica instead of an HTTP probe.
         # "Provisioned" and properties.runningState are the ACA revision/replica
-        # values - see the note on the previous step for the live evidence.
+        # values, and length(@) is the JMESPath call - see the note on the
+        # previous step for the live evidence on all three.
         run: |
           app_name="${{ needs.deploy-workloads.outputs.ai_app_name }}"
           rev=$(az containerapp show \
@@ -999,6 +1050,6 @@ jobs:
             --resource-group "${{ env.RG }}" \
             --name "$app_name" \
             --revision "$rev" \
-            --query "[?properties.runningState=='Running'] | length" -o tsv)
+            --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
           [ "$replicas" -ge 1 ] || { echo "::error::ai-agent has no running replica"; exit 1; }
           echo "ai-agent running replicas: $replicas"
