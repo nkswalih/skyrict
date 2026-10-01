@@ -232,8 +232,8 @@ param budgetThresholds array = [
 @description('Email addresses receiving the budget alerts (leave empty during bootstrap).')
 param budgetContactEmails array = []
 
-@description('Budget start date (YYYY-MM-DD). The CD passes the first of the current month for idempotent re-applies.')
-param budgetStartDate string = utcNow('yyyy-MM-01')
+@description('Budget start date (YYYY-MM-DD). MUST be a fixed value matching the already-created budget - never derive it from the current date, because Azure forbids changing a budget start date and the next apply would fail.')
+param budgetStartDate string = '2026-09-01'
 
 @description('Budget end date - open-ended by default.')
 param budgetEndDate string = '2099-12-31'
