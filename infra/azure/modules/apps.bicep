@@ -137,11 +137,11 @@ param jwksIssuer string
 @description('JWT audience claim shared by identity/core/ai-agent.')
 param jwksAudience string
 
-@description('The single public API hostname (e.g. api.skyrict.in). When set AND bindCustomDomain is true, the gateway binds a managed certificate and serves this host. Empty serves only the generated FQDN.')
+@description('The single public API hostname (e.g. api.skyrict.in). Served by the gateway once customDomainStage is "hostname" or "certificate". Empty serves only the generated FQDN.')
 param apiHostname string = ''
 
-@description('Bind apiHostname as an SNI custom domain with an ACA managed certificate. Off by default, and it cannot simply be switched on in one pass. ACA refuses to create a managed certificate for a hostname that is not already registered on a container app (RequireCustomHostnameInEnvironment), while the certificate is what the customDomains entry references - so the two have to be applied in two deployments. It also cannot be created at all before the domain resolves, so a first rollout must run with this off. See docs/runbooks/azure-iac.md section 11.')
-param bindCustomDomain bool = false
+@description('How far to take the gateway custom domain. "none" (default) serves only the generated FQDN. "hostname" registers apiHostname with bindingType Disabled and no certificateId, which is the first of the two applies ACA requires. "certificate" then creates the managed certificate and rebinds the hostname SniEnabled against it. The two cannot be combined into one apply: ACA rejects a managed certificate for a hostname not already registered on the app (RequireCustomHostnameInEnvironment), and the customDomains entry references that same certificate. Ignored when apiHostname is empty. See docs/runbooks/azure-iac.md section 11.')
+param customDomainStage string = 'none'
 
 @description('Cloudflare Turnstile site key. Public by design - it is rendered into the sign-up page, so it stays a plain app-config value and is not a secret.')
 param turnstileSiteKey string = ''
@@ -235,7 +235,40 @@ var identityInternalFqdn = '${identityAppName}.internal.${environmentDefaultDoma
 var coreInternalFqdn = '${coreAppName}.internal.${environmentDefaultDomain}'
 var aiAgentInternalFqdn = '${aiAgentAppName}.internal.${environmentDefaultDomain}'
 
-var enableManagedCertificate = bindCustomDomain && !empty(apiHostname)
+// The certificate and the custom-domain entry cannot be created in the same
+// deployment. ACA refuses a managed certificate for a hostname that is not
+// already registered on a container app:
+//   RequireCustomHostnameInEnvironment: Creating managed certificate requires
+//   hostname 'api.skyrict.in' added as a custom hostname to a container app...
+// and the customDomains entry references that same certificate, so a single
+// template cannot satisfy both halves.
+//
+// customDomainStage splits it into two applies of the SAME template:
+//   'none'       - no custom domain, gateway serves only its generated FQDN
+//   'hostname'   - registers apiHostname with bindingType 'Disabled' and NO
+//                  certificateId. The 2026-01-01 CustomDomain type requires only
+//                  'name', and 'Disabled' is a legal BindingType, so this
+//                  registers the hostname without binding anything to it.
+//   'certificate'- additionally creates the managed certificate and rebinds the
+//                  same hostname SniEnabled against it.
+//
+// Both non-default stages are gated on apiHostname being non-empty, so an
+// environment without a custom domain still deploys and stays reachable on its
+// generated FQDN. Unknown values fall back to 'none' rather than throwing: a
+// typo in a parameters file must not be able to take the gateway's ingress down.
+var customDomainStageEffective = empty(apiHostname)
+  ? 'none'
+  : (customDomainStage == 'hostname' || customDomainStage == 'certificate' ? customDomainStage : 'none')
+
+// Only the 'certificate' stage creates the certificate. At 'hostname' there must
+// be no managedCertificates resource in the deployment at all, or it is rejected
+// with RequireCustomHostnameInEnvironment.
+var enableManagedCertificate = customDomainStageEffective == 'certificate'
+
+// The hostname is registered from 'hostname' onward, and only bound to the
+// certificate at 'certificate'.
+var registerCustomHostname = customDomainStageEffective == 'hostname' || enableManagedCertificate
+
 var managedCertificateName = 'env-cert-${resourceName}'
 
 // ---------------------------------------------------------------------------
@@ -957,13 +990,17 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2026-01-01' existing = 
 // was simply wrong - it cost a full CD cycle to disprove, so do not reinstate
 // it.
 //
-// Guarded by bindCustomDomain as well as apiHostname, and the second condition
-// is not optional. ACA requires the hostname to be registered on a container app
-// before a certificate can exist for it:
+// Guarded by customDomainStage reaching 'certificate', which also requires
+// apiHostname to be non-empty. ACA requires the hostname to already be
+// registered on a container app before a certificate can exist for it:
 //   RequireCustomHostnameInEnvironment: Creating managed certificate requires
 //   hostname 'api.skyrict.in' added as a custom hostname to a container app...
-// In phase 1 the gateway does not exist yet, so an unguarded certificate fails
-// the deployment there and nothing downstream can run.
+// Reproduced against the live beta environment with no hostname registered, so
+// this is a verified ACA behaviour, not a precaution. That is what makes the
+// stage split above necessary: the 'hostname' apply must emit this resource
+// NOTHING, or it is rejected. In phase 1 the gateway does not exist yet, so an
+// unguarded certificate would also fail the deployment there and nothing
+// downstream could run.
 //
 // No subjectAlternativeNames either: ManagedCertificateProperties in this API
 // version does not accept it, and a single-name certificate does not need one.
@@ -981,10 +1018,13 @@ resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026
     // its own methods and the deployment is rejected with
     //   InvalidValidationMethod: Invalid validation method for domain
     //   'api.skyrict.in'. Supported: CNAME, HTTP, TXT.
-    // CNAME matches what the runbook tells the operator to add: a CNAME at
-    // _acme-challenge.api.skyrict.in. Until that record exists the certificate
-    // stays in a pending state, which does NOT fail the deployment - the app
-    // is reachable on its generated FQDN meanwhile.
+    //
+    // CNAME is satisfied by the registrar CNAME that already points
+    // api.skyrict.in at the gateway's generated FQDN, so it issues with no
+    // further record to add. Confirmed live: the certificate for api.skyrict.in
+    // reached provisioningState Succeeded on that CNAME alone. Until it
+    // validates the certificate stays Pending, which does NOT fail the
+    // deployment - the app stays reachable on its generated FQDN meanwhile.
     //
     // The property is `domainControlValidation`, not `validationMethod`. The
     // latter is not a member of ManagedCertificateProperties in this API
@@ -1031,14 +1071,29 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
         // custom domain still deploys and is reachable on its generated FQDN.
         // Bicep omits the property when the value is an empty array, which is
         // what an env without a domain should do.
-        customDomains: enableManagedCertificate
-          ? [
-              {
-                name: apiHostname
-                bindingType: 'SniEnabled'
-                certificateId: gatewayCert.id
-              }
-            ]
+        // At 'hostname' the entry carries bindingType 'Disabled' and NO
+        // certificateId - that is what registers the name on the app so the
+        // next apply is allowed to create the certificate for it. Referencing
+        // gatewayCert.id here at that stage would put the certificate back in
+        // the same deployment and reintroduce RequireCustomHostnameInEnvironment.
+        // certificateId is genuinely optional on the 2026-01-01 CustomDomain
+        // type (only 'name' is required) and 'Disabled' is a legal BindingType,
+        // both verified against the published Microsoft.App 2026-01-01 schema.
+        customDomains: registerCustomHostname
+          ? enableManagedCertificate
+              ? [
+                  {
+                    name: apiHostname
+                    bindingType: 'SniEnabled'
+                    certificateId: gatewayCert.id
+                  }
+                ]
+              : [
+                  {
+                    name: apiHostname
+                    bindingType: 'Disabled'
+                  }
+                ]
           : []
         traffic: [
           {
@@ -1550,13 +1605,15 @@ output gatewayAppName string = gatewayAppName
 // claiming to surface it would always be empty. The value is available from the
 // CLI, which is what the runbook uses:
 //
-//   az containerapp hostname show -n <gatewayAppName> -g <rg>
-//     --query customDomains[0].validationTxtRecord
+//   az rest --method post \
+//     --url "https://management.azure.com/subscriptions/<sub>/providers/Microsoft.App/getCustomDomainVerificationId?api-version=2026-01-01"
 //
-// or, to have ACA create the binding and print both records at once:
+// There is deliberately no `az containerapp hostname show`: the command does not
+// exist. The `hostname` command group only has add, bind, delete and list, and
+// asking for `show` fails with "'show' is misspelled or not recognized by the
+// system." Anything in this repo that told an operator to run it was wrong.
 //
-//   az containerapp hostname add -n <gatewayAppName> -g <rg> \
-//     --hostname <apiHostname> --type cname --validation-method CNAME
-//
-// See docs/runbooks/azure-iac.md section 11.
+// Registering the hostname by hand is also unnecessary now that the template has
+// a 'hostname' stage, and doing it out of band would leave state the template
+// does not declare. See docs/runbooks/azure-iac.md section 11.
 output gatewayCustomDomainName string = enableManagedCertificate ? apiHostname : ''

@@ -188,8 +188,8 @@ param jwksAudience string = ''
 @description('The single public API hostname, e.g. "api.skyrict.in". Binds the managed certificate, sets ingress.customDomains and the CORS allow-list. Empty means the generated *.azurecontainerapps.io FQDN only.')
 param apiHostname string = ''
 
-@description('Bind apiHostname as an SNI custom domain. Kept separate from apiHostname because CORS and the hostname value are useful the moment the name is known, while the certificate cannot be issued until the name resolves - and ACA additionally requires the hostname to already be registered on the app before it will issue one. See docs/runbooks/azure-iac.md section 11.')
-param bindCustomDomain bool = false
+@description('How far to take the public custom domain: none | hostname | certificate. Split in two because ACA rejects a managed certificate for a hostname that is not already registered on the app (RequireCustomHostnameInEnvironment) while the customDomains entry references that same certificate, so one deployment cannot do both. See docs/runbooks/azure-iac.md section 11.')
+param customDomainStage string = 'none'
 
 @description('Cloudflare Turnstile site key. Empty in beta, which blocks all self-service signup - see docs/runbooks/pre-release-audit-2026-09.md finding 23.')
 param turnstileSiteKey string = ''
@@ -349,7 +349,7 @@ module apps 'modules/apps.bicep' = {
     jwksIssuer: jwksIssuer
     jwksAudience: jwksAudience
     apiHostname: apiHostname
-    bindCustomDomain: bindCustomDomain
+    customDomainStage: customDomainStage
     turnstileSiteKey: turnstileSiteKey
     turnstileSecretConfigured: turnstileSecretConfigured
     maxReplicas: maxReplicas
