@@ -104,6 +104,10 @@ jobs:
       - name: Build runtime parameters (inject secrets not kept in git)
         env:
           BUDGET_CONTACT_EMAILS: ${{ secrets.AZURE_BUDGET_CONTACT_EMAILS }}
+          # A repository variable, not a secret: the relay host, port and
+          # useTls are not confidential. The SMTP login is operator identity
+          # and stays out of git either way.
+          EMAIL_RELAY_CONFIG: ${{ vars.AZURE_EMAIL_RELAY_CONFIG }}
         run: bash scripts/azure/build-params.sh "$PARAMS_TEMPLATE" "$PARAMS_FILE"
 
       - name: Register resource providers (idempotent)
@@ -132,6 +136,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 1)
@@ -147,6 +152,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --no-pretty-print | tee /tmp/whatif-phase1.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase1.json > /dev/null
 
@@ -164,6 +170,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             -o json > /tmp/phase1-deployment.json
           # Fail closed on the deployment itself, and print the real error.
           #
@@ -258,6 +265,7 @@ jobs:
             [sync-token]='${{ secrets.AZURE_SYNC_TOKEN }}'
             [ingest-token]='${{ secrets.AZURE_INGEST_TOKEN }}'
             [turnstile-secret-key]='${{ secrets.AZURE_TURNSTILE_SECRET_KEY }}'
+            [email-smtp-password]='${{ secrets.AZURE_EMAIL_SMTP_PASSWORD }}'
           )
 
           # The first four are load-bearing: the services refuse to boot without
@@ -387,6 +395,10 @@ jobs:
       - name: Build runtime parameters (inject secrets not kept in git)
         env:
           BUDGET_CONTACT_EMAILS: ${{ secrets.AZURE_BUDGET_CONTACT_EMAILS }}
+          # A repository variable, not a secret: the relay host, port and
+          # useTls are not confidential. The SMTP login is operator identity
+          # and stays out of git either way.
+          EMAIL_RELAY_CONFIG: ${{ vars.AZURE_EMAIL_RELAY_CONFIG }}
         run: bash scripts/azure/build-params.sh "$PARAMS_TEMPLATE" "$PARAMS_FILE"
 
       - name: Preflight (required configuration invariants)
@@ -521,6 +533,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2a (jobs))
@@ -537,6 +550,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --no-pretty-print | tee /tmp/whatif-phase2a.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2a.json > /dev/null
 
@@ -555,6 +569,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             -o json > /tmp/phase2a-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
@@ -700,6 +715,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --query properties.provisioningState -o tsv
 
       - name: What-if (phase 2b (apps))
@@ -716,6 +732,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --no-pretty-print | tee /tmp/whatif-phase2b.json
           jq -e '([.changes[] | select(.changeType == "Error")] | length) == 0' /tmp/whatif-phase2b.json > /dev/null
 
@@ -734,6 +751,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             -o json > /tmp/phase2b-deployment.json
           # Same fail-closed contract as phase 1 - see the note there. Without
           # it a failed apply reports success and hands the next step empty
@@ -837,6 +855,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --query properties.provisioningState -o tsv | grep -q Succeeded
           az deployment group what-if \
             --resource-group "${{ env.RG }}" \
@@ -850,6 +869,7 @@ jobs:
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
             turnstileSiteKey="${{ secrets.AZURE_TURNSTILE_SITE_KEY }}" \
             turnstileSecretConfigured="${{ secrets.AZURE_TURNSTILE_SECRET_KEY != '' }}" \
+            emailSmtpPasswordConfigured="${{ secrets.AZURE_EMAIL_SMTP_PASSWORD != '' }}" \
             --no-pretty-print | tee /tmp/whatif-noop.json
           # Role assignments are excluded deliberately. Their principalId comes
           # from a module output, i.e. a reference() that what-if cannot
