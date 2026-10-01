@@ -475,55 +475,83 @@ within the Azure free account's 12-month + always-free allotments:
   consume is non-empty. `pipefail` was deliberately not added instead: the
   `verify` job's `curl | tee /dev/stderr | grep -q` assertions would fail on
   SIGPIPE even when the assertion matched.
-- **The custom domain is off until DNS exists, and turning it on takes two
-  deploys.** `apiHostname` is set to `api.skyrict.in`, but `bindCustomDomain`
-  is `false`, so the gateway serves only its generated
-  `*.azurecontainerapps.io` FQDN and no certificate is requested. This is not
-  a precaution - the certificate cannot be created in one pass:
+- **The custom domain took two deploys to activate, and `customDomainStage` is
+  how that is expressed.** ACA refuses a managed certificate for a hostname that
+  is not already registered on a container app, and the `customDomains` entry
+  references that same certificate, so a single deployment cannot do both.
+  Reproduced live against beta with nothing registered:
 
-  - ACA refuses a managed certificate for a hostname that is not already
-    registered on a container app (`RequireCustomHostnameInEnvironment`),
-    while the `customDomains` entry references that same certificate. So the
-    hostname must be bound first, with no `certificateId`.
-  - `api.skyrict.in` has no DNS record at all, so validation cannot succeed
-    regardless.
+  ```
+  ERROR: (RequireCustomHostnameInEnvironment) Creating managed certificate
+  requires hostname 'api.skyrict.in' added as a custom hostname to a container
+  app or route in environment 'cae-skyrict-beta'
+  ```
 
-  To activate it, in order, with a deploy between each step:
+  `az deployment group validate` and `what-if` both **pass** for the one-pass
+  form, so neither is evidence that one pass works - this check is server-side
+  and preflight does not simulate it. Do not use them to "prove" it.
 
-  1. Add the registrar CNAME `api.skyrict.in` pointing **directly** at the
-     gateway's **generated** FQDN, TTL 600. An intermediate CNAME permanently
-     blocks certificate issuance.
+  The parameter is `customDomainStage`, not the old `bindCustomDomain` bool:
 
-     ```
-     app-gateway-skyrict-beta.bluesky-957ace7a.westus.azurecontainerapps.io
-     ```
+  | value | effect |
+  | --- | --- |
+  | `none` (default) | no custom domain; gateway serves only its generated FQDN |
+  | `hostname` | registers `apiHostname` with `bindingType: 'Disabled'` and no `certificateId` |
+  | `certificate` | also creates the managed certificate and rebinds `SniEnabled` against it |
 
-     > The environment's default domain is whatever ACA generated -
-     > `bluesky-957ace7a.westus.azurecontainerapps.io` today - **not** the
-     > environment name. `cae-skyrict-beta.westus.azurecontainerapps.io` does
-     > not resolve. Read the real value with
-     > `az containerapp env show -g skyrict-beta -n cae-skyrict-beta --query
-     > properties.defaultDomain -o tsv`, or take it from the CD's `api_fqdn`
-     > output. It is also exported as the `environmentDefaultDomain` output for
-     > exactly this reason.
-  2. Set `bindCustomDomain: true` and deploy. This registers the hostname on
-     the gateway with no certificate yet, which is what step 3 requires.
-  3. Create the validation record ACA asks for at `_acme-challenge` under
-     `api.skyrict.in`, and deploy again. The certificate is created and the
-     binding picks it up. The Bicep property is
-     `domainControlValidation: 'CNAME'` on the managed certificate.
+  `hostname` works because the 2026-01-01 `CustomDomain` type requires only
+  `name` - `certificateId` is optional and `Disabled` is a legal `BindingType`.
+  Both confirmed against the published Microsoft.App 2026-01-01 schema.
 
-     > `validationMethod` is not a real property. Bicep does not enum-check
-     > it, so it compiles clean and ARM ignores it, leaving the certificate
-     > with no validation method and the binding stuck. The resource is still
-     > gated on `bindCustomDomain=false` by default, so it does not deploy
-     > until step 2.
+  **DNS, both records required (beta values):**
 
-  Until step 3 completes, only the generated FQDN answers. The CD's `verify`
-  job probes that FQDN on purpose, so the first deploy never depends on a DNS
-  record that is an operator task rather than a deploy task. `BASE_DOMAIN`,
-  `JWKS_ISSUER` and `JWKS_AUDIENCE` are already configured for
-  `api.skyrict.in` and match as soon as the name resolves.
+  ```
+  CNAME  api      -> app-gateway-skyrict-beta.bluesky-957ace7a.westus.azurecontainerapps.io   TTL 600
+  TXT    asuid.api -> <subscription customDomainVerificationId>                                 TTL 600
+  ```
+
+  - The CNAME must point **directly** at the gateway's generated FQDN; an
+    intermediate CNAME permanently blocks certificate issuance. Note the
+    environment's default domain is whatever ACA generated -
+    `bluesky-957ace7a.westus.azurecontainerapps.io` today - **not** the
+    environment name. `cae-skyrict-beta.westus.azurecontainerapps.io` does not
+    resolve, and pointing the CNAME at an `eastus` name fails the same way.
+    Read the real value with `az containerapp env show -g skyrict-beta -n
+    cae-skyrict-beta --query properties.defaultDomain -o tsv`, or take it from
+    the CD's `api_fqdn` output.
+  - The TXT record is **domain ownership**, and it is a prerequisite: with no
+    hostname registered, adding one fails with
+    `(InvalidCustomHostNameValidation) A TXT record pointing from
+    asuid.api.skyrict.in to <value> was not found.` Read the value with:
+
+    ```bash
+    az rest --method post \
+      --url "https://management.azure.com/subscriptions/<sub>/providers/Microsoft.App/getCustomDomainVerificationId?api-version=2026-01-01"
+    ```
+
+    There is **no** `az containerapp hostname show` - the command does not
+    exist. The `hostname` group has only `add`, `bind`, `delete` and `list`.
+  - No `_acme-challenge` record is needed. The certificate is created with
+    `domainControlValidation: 'CNAME'` and issues on the CNAME above alone;
+    confirmed reaching `provisioningState: Succeeded` with no further record.
+  - `domainControlValidation` is the real property. `validationMethod` is not a
+    member of `ManagedCertificateProperties` in this API version, and Bicep
+    emits it into the compiled ARM anyway as a BCP037 warning, so the resource
+    deploys with an unrecognised property and the failure only appears at apply
+    time.
+
+  To activate on a new environment: add both DNS records, deploy with
+  `customDomainStage: hostname`, then deploy with `customDomainStage:
+  certificate`. Reverting to `none` removes the binding and leaves the
+  certificate resource in place (it is a separate environment-scoped resource).
+
+  The CD `verify` job probes the generated FQDN, not `api.skyrict.in`, so it
+  stays green throughout and will not catch a broken custom domain - prove that
+  separately with `curl -i https://api.skyrict.in/readyz` and by reading
+  `az containerapp env certificate list -g skyrict-beta -n cae-skyrict-beta
+  --query "[].properties.provisioningState" -o tsv`, which must report
+  `Succeeded`. `BASE_DOMAIN`, `JWKS_ISSUER` and `JWKS_AUDIENCE` are already
+  configured for `api.skyrict.in`.
 - The observability module requires subscription-level deploy permissions.
 - Jobs and apps share the KV secret store; rotation requires a redeploy.
 - Free-trial scale knobs are conservative (max 2 replicas, pooled DB
