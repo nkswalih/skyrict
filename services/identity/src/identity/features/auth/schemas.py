@@ -109,18 +109,30 @@ class SignupStartRequest(_CamelModel):
 
 
 class SignupStartResponse(_CamelModel):
-    """Response after a successful Turnstile + email gate."""
+    """Response after a successful Turnstile + email gate.
+
+    ``flow_token`` is the proof the rest of the wizard spends. It replaces a
+    second CAPTCHA challenge on the code request: one solve per signup, then a
+    short-lived, email-bound token carries the flow forward.
+    """
 
     status: Literal["ok"] = "ok"
+    flow_token: str = Field(
+        description="Short-lived proof that the challenge was cleared for this address"
+    )
 
 
 class SendCodeRequest(_CamelModel):
     """POST /auth/signup/send-code"""
 
     email: EmailStr
-    turnstile_token: str | None = Field(
+    flow_token: str | None = Field(
         default=None,
-        description="Cloudflare Turnstile response. Required: this endpoint mints and sends an email, so an ungated caller can burn relay quota on addresses they do not own.",
+        description=(
+            "Proof from /signup/start. Required: this endpoint mints and sends an "
+            "email, so a caller that never cleared the wizard's challenge must not "
+            "be able to burn relay quota on addresses they do not own."
+        ),
     )
 
 

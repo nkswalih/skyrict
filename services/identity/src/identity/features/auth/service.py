@@ -53,6 +53,7 @@ from identity.features.auth.mfa_challenge_store import MfaChallengeStore
 from identity.features.auth.verification_store import (
     VerificationStore,
     generate_otp,
+    generate_signup_flow_token,
     generate_verification_token,
     hash_otp,
 )
@@ -373,26 +374,47 @@ class AuthenticationService:
         )
 
     async def signup_start(self, *, email: str, turnstile_token: str | None) -> dict[str, Any]:
-        ok = await self.turnstile.verify(turnstile_token)
-        if not ok:
-            raise ValidationError("Unable to verify you are not a robot. Try again.")
-        return {"status": "ok"}
+        """Open the wizard: the one place the user proves they are not a robot.
 
-    async def signup_send_code(self, *, email: str, turnstile_token: str | None) -> dict[str, Any]:
-        # Verified before the resend check, not after it.
-        #
-        # Checking after would let an ungated caller consume a resend slot and
-        # get a 200 with only a countdown, which reads as success and hides the
-        # fact that no challenge was ever verified.
+        Solving it hands back a short-lived proof that the rest of the wizard
+        spends instead of solving a second challenge. The proof is minted *for
+        this address*, so one solve cannot be turned into mail to someone else's
+        inbox, and it carries a small send budget so it cannot be used to flood
+        a single address either.
+        """
         ok = await self.turnstile.verify(turnstile_token)
         if not ok:
             raise ValidationError("Unable to verify you are not a robot. Try again.")
+        flow_token = generate_signup_flow_token()
+        await self.verification_store.set_signup_flow(flow_token, email)
+        return {"status": "ok", "flow_token": flow_token}
+
+    async def signup_send_code(self, *, email: str, flow_token: str | None) -> dict[str, Any]:
+        # Proof first, before the resend check, not after it.
+        #
+        # Checking after would let a caller who never cleared the wizard's
+        # challenge consume a resend slot and get a 200 with only a countdown,
+        # which reads as success and hides the fact that nothing was verified.
+        flow = (
+            await self.verification_store.get_signup_flow(flow_token)
+            if flow_token is not None
+            else None
+        )
+        if flow_token is None or flow is None or flow.email.lower() != email.lower():
+            raise ValidationError(
+                "This sign-up session has expired. Go back to step 1 and start again."
+            )
+        if flow.sends >= settings.SIGNUP_FLOW_MAX_SENDS:
+            raise ValidationError("Too many codes requested. Go back to step 1 and start again.")
         if await self.verification_store.is_resend_blocked(email):
             return {
                 "status": "ok",
                 "resend_in": await self.verification_store.resend_in(email),
                 "code": None,
             }
+        # Charged here, not on entry: a cooldown that returned no mail must not
+        # cost the user part of their budget.
+        await self.verification_store.consume_signup_flow_send(flow_token)
         code = generate_otp()
         await self.verification_store.set_otp(email, hash_otp(code))
         await self.verification_store.mark_resend(email)

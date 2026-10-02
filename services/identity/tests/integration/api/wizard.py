@@ -25,14 +25,22 @@ def _slugify(name: str) -> str:
     return slug or f"ws-{uuid.uuid4().hex[:8]}"
 
 
-async def wizard_start(client: AsyncClient, *, email: str) -> None:
+async def wizard_start(client: AsyncClient, *, email: str) -> str:
+    """Open the wizard and return the flow proof that the code request spends."""
     resp = await client.post("/api/v1/auth/signup/start", json={"email": email})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["status"] == "ok"
+    data = resp.json()["data"]
+    assert data["status"] == "ok"
+    flow_token = data["flowToken"]
+    assert flow_token, "signup/start must return the proof that gates send-code"
+    return flow_token
 
 
-async def wizard_send_code(client: AsyncClient, *, email: str) -> str:
-    resp = await client.post("/api/v1/auth/signup/send-code", json={"email": email})
+async def wizard_send_code(client: AsyncClient, *, email: str, flow_token: str) -> str:
+    resp = await client.post(
+        "/api/v1/auth/signup/send-code",
+        json={"email": email, "flowToken": flow_token},
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
     assert data["code"] is not None, "test env must return the plaintext code"
@@ -132,8 +140,8 @@ async def provision_tenant(
     org = org or f"Wizard Corp {uuid.uuid4().hex[:8]}"
     slug = slug or _slugify(org)
 
-    await wizard_start(client, email=email)
-    code = await wizard_send_code(client, email=email)
+    flow_token = await wizard_start(client, email=email)
+    code = await wizard_send_code(client, email=email, flow_token=flow_token)
     vt = await wizard_verify_code(client, email=email, code=code)
     await wizard_set_password(client, email=email, verification_token=vt, password=password)
     data = await wizard_create_organization(

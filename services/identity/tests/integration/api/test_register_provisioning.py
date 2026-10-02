@@ -106,8 +106,8 @@ class TestProvisioning:
         org = f"Prov Corp {uuid.uuid4().hex[:8]}"
         slug = org.lower().replace(" ", "-")
 
-        await wizard_start(client, email=email)
-        code = await wizard_send_code(client, email=email)
+        flow_token = await wizard_start(client, email=email)
+        code = await wizard_send_code(client, email=email, flow_token=flow_token)
         vt = await wizard_verify_code(client, email=email, code=code)
         await wizard_set_password(
             client, email=email, verification_token=vt, password=DEFAULT_PASSWORD
@@ -250,3 +250,44 @@ class TestRateLimit:
             assert response.json()["type"].endswith("/rate-limit-exceeded")
         finally:
             app.dependency_overrides.pop(get_rate_limiter, None)
+
+
+class TestSendCodeProof:
+    """The wire contract that replaced the second CAPTCHA challenge.
+
+    Guards the property that made it safe to drop: the code request is still
+    gated, and the gate is bound to the address the challenge was solved for.
+    """
+
+    async def test_send_code_without_a_proof_is_refused(self, client: AsyncClient) -> None:
+        """The shape a script sends - a bare address, no proof."""
+        await wizard_start(client, email=f"noproof-{uuid.uuid4().hex[:8]}@test.com")
+
+        response = await client.post(
+            "/api/v1/auth/signup/send-code", json={"email": "noproof@test.com"}
+        )
+
+        assert response.status_code == 422, response.text
+
+    async def test_proof_is_not_accepted_for_a_different_address(self, client: AsyncClient) -> None:
+        """One solve must not become mail to an address it was not solved for."""
+        flow_token = await wizard_start(client, email=f"bound-{uuid.uuid4().hex[:8]}@test.com")
+
+        response = await client.post(
+            "/api/v1/auth/signup/send-code",
+            json={"email": "victim@elsewhere.com", "flowToken": flow_token},
+        )
+
+        assert response.status_code == 422, response.text
+
+    async def test_proof_is_accepted_over_the_wire(self, client: AsyncClient) -> None:
+        email = f"wire-{uuid.uuid4().hex[:8]}@test.com"
+        flow_token = await wizard_start(client, email=email)
+
+        response = await client.post(
+            "/api/v1/auth/signup/send-code",
+            json={"email": email, "flowToken": flow_token},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["code"] is not None

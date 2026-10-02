@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from identity.core.config import settings
@@ -32,6 +33,14 @@ def _vt_key(token: str) -> str:
     return f"signup_vt:{token}"
 
 
+def _flow_key(token: str) -> str:
+    return f"signup_flow:{token}"
+
+
+def _flow_sends_key(token: str) -> str:
+    return f"signup_flow_sends:{token}"
+
+
 def _as_str(value: object) -> str | None:
     if value is None:
         return None
@@ -55,6 +64,22 @@ def hash_otp(code: str) -> str:
 
 def generate_verification_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def generate_signup_flow_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+@dataclass(frozen=True, slots=True)
+class SignupFlow:
+    """A wizard that cleared its challenge, and how much of its mail budget is spent.
+
+    ``email`` is the address the challenge was solved *for*. Binding it here is
+    what stops one solved challenge from being spent on someone else's inbox.
+    """
+
+    email: str
+    sends: int
 
 
 class VerificationStore:
@@ -90,6 +115,46 @@ class VerificationStore:
 
     async def resend_in(self, email: str) -> int:
         return max(_as_int(await self._client.ttl(_otp_resend_key(email))), 0)
+
+    async def set_signup_flow(self, token: str, email: str) -> None:
+        """Record a wizard that cleared its challenge, with a fresh send budget."""
+        await self._client.set(
+            _flow_key(token),
+            json.dumps({"email": email}),
+            ex=settings.SIGNUP_FLOW_TTL_SECONDS,
+        )
+        await self._client.set(_flow_sends_key(token), "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
+
+    async def get_signup_flow(self, token: str) -> SignupFlow | None:
+        """The flow a proof names, or None if it was never issued or has expired."""
+        raw = _as_str(await self._client.get(_flow_key(token)))
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(payload, dict) or not isinstance(payload.get("email"), str):
+            return None
+        return SignupFlow(
+            email=payload["email"],
+            sends=_as_int(await self._client.get(_flow_sends_key(token))),
+        )
+
+    async def consume_signup_flow_send(self, token: str) -> int:
+        """Charge one send against the flow's budget and return the new total.
+
+        INCR rather than a read-modify-write so two concurrent sends cannot both
+        read the same remaining budget. The TTL is deliberately not refreshed:
+        the window runs from when the challenge was solved, so a caller that
+        keeps sending cannot hold a proof open indefinitely.
+        """
+        key = _flow_sends_key(token)
+        count = _as_int(await self._client.incr(key))
+        ttl = _as_int(await self._client.ttl(key))
+        if ttl < 0:
+            await self._client.expire(key, settings.SIGNUP_FLOW_TTL_SECONDS)
+        return count
 
     async def set_verification_token(self, token: str, email: str, password_hash: str) -> str:
         await self._client.set(

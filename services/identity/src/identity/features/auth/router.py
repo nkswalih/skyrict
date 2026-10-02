@@ -215,12 +215,15 @@ async def signup_send_code(
     authn: AuthenticationService = Depends(get_authn_service),
     limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> ResponseEnvelope[SendCodeResponse]:
-    """Send a 6-digit OTP to the address (Turnstile-gated, throttled per email and per IP).
+    """Send a 6-digit OTP to the address (proof-gated, throttled per email and per IP).
 
-    Turnstile is required here, not just on /signup/start. This endpoint is the
-    one that actually sends mail: gating only the start of the wizard still
-    leaves a caller who completed it - or skipped it entirely - free to mint
-    OTPs for arbitrary addresses and spend relay quota on them.
+    This endpoint is the one that actually sends mail, so it is gated - but on
+    the flow proof minted by /signup/start rather than on a second challenge.
+    The proof is issued only after a CAPTCHA passes and only for one address, so
+    a caller who skipped or replayed the wizard still cannot mint OTPs for
+    arbitrary addresses or spend relay quota on them. Asking the user to solve a
+    second challenge seconds later bought nothing this does not already hold,
+    and cost them a step they could fail on a request already proven.
     """
     ip_address = client_ip(request)
     email_key = body.email.lower()
@@ -234,7 +237,7 @@ async def signup_send_code(
         limit=settings.SIGNUP_CODE_RATE_LIMIT,
         window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
     )
-    result = await authn.signup_send_code(email=body.email, turnstile_token=body.turnstile_token)
+    result = await authn.signup_send_code(email=body.email, flow_token=body.flow_token)
     return ResponseEnvelope(data=SendCodeResponse(**result))
 
 

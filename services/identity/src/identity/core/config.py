@@ -285,6 +285,20 @@ class Settings(BaseSettings):
     OTP_EXPIRE_SECONDS: int = Field(default=600, description="email OTP TTL (seconds)")
     OTP_MAX_ATTEMPTS: int = Field(default=5, description="OTP verify attempts before lockout")
     OTP_RESEND_COOLDOWN_SECONDS: int = Field(default=60, description="OTP resend cooldown")
+    SIGNUP_FLOW_TTL_SECONDS: int = Field(
+        default=600,
+        description=(
+            "Lifetime of the signup flow proof minted once the wizard's Turnstile "
+            "gate passes, in seconds"
+        ),
+    )
+    SIGNUP_FLOW_MAX_SENDS: int = Field(
+        default=3,
+        description=(
+            "Codes one signup flow proof may send before it must be re-earned by "
+            "solving the wizard's challenge again"
+        ),
+    )
     VERIFICATION_TOKEN_TTL_SECONDS: int = Field(
         default=1800, description="wizard verificationToken TTL (seconds)"
     )
