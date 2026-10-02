@@ -62,6 +62,26 @@ Three properties do the work that the second challenge used to do:
 no valid proof gets 422, not a 200 that reads as a working send and hides the
 fact that nothing was verified.
 
+### The charge is the decision
+
+The counter's `INCR` result is what decides whether a send proceeds. Reading the
+remaining budget and comparing it first is a read-modify-write, and the cooldown
+does not close the window because it is an `EXISTS` followed by a `SET`. This is
+easy to miss, because the old design made it unreachable: Cloudflare rejects a
+replayed single-use token, so the second challenge was accidentally serialising
+the exact point where the budget is read. Removing the challenge removed that
+serialisation, and the `INCR` has to carry it instead. Twelve concurrent requests
+against a three-send budget sent twelve emails before this was fixed.
+
+Two consequences follow from making that the enforcement point:
+
+- A caller that races past the limit has its counter incremented but no mail
+  sent, so it burns its own proof rather than filling someone else's inbox.
+- A proof whose counter key is missing is **refused**, not read as zero. Losing
+  that key - a partial write, or eviction under memory pressure - must not turn
+  a bounded proof into an unlimited one. Both keys are therefore written in one
+  transaction, so the half-written state that case depends on cannot arise.
+
 ### Deliberately not bound to client IP
 
 The proof is bound to the address, not to the network it was solved from. It
@@ -95,6 +115,10 @@ user mid-flow for a step they had already cleared.
   deliberate: three emails to a single address, inside a ten-minute window,
   behind per-email and per-IP rate limits, is a materially smaller abuse surface
   than a solve-per-send requirement that users fail to satisfy.
+- A request carrying no proof is refused before the per-address limiter runs.
+  That limiter is keyed on the inbox being written to, so without this a caller
+  holding nothing could exhaust a named stranger's bucket and lock them out of
+  their own code. Guessing is still throttled, because a guess is not blank.
 
 ## Alternatives rejected
 
