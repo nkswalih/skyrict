@@ -267,6 +267,7 @@ export async function checkEmailAvailability(input: {
 
 export async function requestVerificationCode(input: {
     email: string;
+    turnstileToken?: string;
 }): Promise<{
     status: "ok";
     resendIn: number;
@@ -274,7 +275,7 @@ export async function requestVerificationCode(input: {
 }> {
     return bffPost<{ status: "ok"; resendIn: number; code?: string | null }>(
         "/api/auth/code/send",
-        { email: input.email },
+        { email: input.email, turnstileToken: input.turnstileToken },
     );
 }
 

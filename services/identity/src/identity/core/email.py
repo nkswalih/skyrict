@@ -7,8 +7,10 @@ Two transports behind the same ``EmailService`` protocol:
   prod: a real relay).
 
 SMTP failures are logged but never raised, so auth flows don't hard-fail on
-delivery problems. The OTP code is never written to logs by the SMTP transport
-(prod relays must not leak codes); only ``LogEmailService`` logs it.
+delivery problems. The SMTP transport never logs a credential (a real relay
+must not leak codes). ``LogEmailService`` does log them, because that is the
+whole point of the dev/test transport - but only in dev and test; see
+``_logged_credential``.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Protocol
 
 import structlog
 
+from identity.core.config import Environment, settings
 from identity.core.email_templates import (
     SecurityAlert,
     render_invitation_html,
@@ -31,6 +34,28 @@ from identity.core.email_templates import (
 )
 
 logger = structlog.get_logger("identity.email")
+
+# Environments where a log line is the delivery channel.
+#
+# Dev and test drive the signup wizard by reading the code back out of the log,
+# so the cleartext value is the feature there. Staging and production are not:
+# this transport is selected whenever EMAIL_SMTP_HOST is empty, which is exactly
+# what a mis-provisioned relay looks like, and the failure mode of leaving the
+# code in is an attacker reading a working credential out of the log stream.
+#
+# Redaction is keyed on ENVIRONMENT rather than on which transport was built,
+# because "which transport" is the thing that silently degrades when config is
+# wrong, and a guard that fails open on the exact failure it exists to catch is
+# not a guard.
+_CREDENTIAL_LOG_ENVIRONMENTS = frozenset({Environment.DEV, Environment.TEST})
+_REDACTED = "[redacted]"
+
+
+def _logged_credential(value: str) -> str:
+    """Render a credential for a log line: cleartext in dev/test, redacted elsewhere."""
+    if settings.ENVIRONMENT in _CREDENTIAL_LOG_ENVIRONMENTS:
+        return value
+    return _REDACTED
 
 
 class EmailService(Protocol):
@@ -59,7 +84,7 @@ class LogEmailService:
     """Transport that logs the verification payload (dev/test default)."""
 
     async def send_otp(self, *, to: str, code: str) -> None:
-        logger.info("email.otp.sent", to=to, otp_code=code)
+        logger.info("email.otp.sent", to=to, otp_code=_logged_credential(code))
 
     async def send_verification(
         self, *, to: str, full_name: str, token: str, base_url: str | None = None
@@ -69,7 +94,7 @@ class LogEmailService:
             "email.verification.sent",
             to=to,
             full_name=full_name,
-            verification_token=token,
+            verification_token=_logged_credential(token),
             base_url=base_url,
         )
 
@@ -87,7 +112,7 @@ class LogEmailService:
             to=to,
             inviter_name=inviter_name,
             organization_name=organization_name,
-            invitation_token=token,
+            invitation_token=_logged_credential(token),
             base_url=base_url,
         )
 

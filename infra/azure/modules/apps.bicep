@@ -149,6 +149,12 @@ param turnstileSiteKey string = ''
 @description('True when the CD workflow has written the "turnstile-secret-key" secret into Key Vault. Guards the secretRef: a secretRef pointing at a secret that was never provisioned makes the container fail to start, so the reference must not be emitted at all when the value is absent.')
 param turnstileSecretConfigured bool = false
 
+@description('Transactional email relay, non-secret settings only, as an object: { host, port, username, useTls, fromAddr }. Empty (the default) leaves identity on its log-only transport. One object rather than five scalars so the whole relay is configured - or not configured - as a single unit across the many bicep invocations in the CD workflow, and so no provider-specific value is ever committed to beta.parameters.json. The relay password is deliberately NOT here; it is a Key Vault reference, see emailSmtpPasswordConfigured.')
+param emailRelayConfig object = {}
+
+@description('True when the CD workflow has written the "email-smtp-password" secret into Key Vault. Guards the secretRef for the same reason as turnstileSecretConfigured: a secretRef to a missing secret makes the container fail to start.')
+param emailSmtpPasswordConfigured bool = false
+
 @description('Keep identity and core at minReplicas 1 instead of scaling to zero. The gateway fronts them, so a cold backend is a cold public API.')
 param keepBackendsWarm bool = true
 
@@ -201,6 +207,42 @@ var redisUrl = deployManagedRedis
 // it. That is what makes one hostname possible, and it is also what stops a
 // second, unmediated entry point existing alongside the audited one.
 // ---------------------------------------------------------------------------
+
+// Email relay settings, read defensively.
+//
+// Safe access (`.?`) rather than trusting the caller to supply a complete
+// object. Every property is required below before anything is emitted, so a
+// partially-specified object degrades to "not configured" instead of reaching
+// the container.
+//
+// This is not a style preference. EMAIL_SMTP_PORT is `int` and
+// EMAIL_SMTP_USE_TLS is `bool` in identity's settings, and pydantic-settings
+// parses an environment variable as int/bool - it does not fall back to the
+// field default when the variable is present but empty. Emitting
+// IDENTITY_EMAIL_SMTP_PORT='' therefore raises during `Settings()`
+// construction at module import, which crash-loops the whole identity service,
+// not just its email. Verified against the real field declarations.
+//
+// The `?? ''` fallbacks are likewise deliberate: falling back to the field
+// defaults would silently point a production relay at 1025 with TLS off, the
+// Mailpit-oriented pair, if the property were absent rather than empty.
+var emailRelayHost = emailRelayConfig.?host ?? ''
+var emailRelayPort = string(emailRelayConfig.?port ?? '')
+var emailRelayUsername = emailRelayConfig.?username ?? ''
+var emailRelayUseTls = string(emailRelayConfig.?useTls ?? '')
+var emailRelayFromAddr = emailRelayConfig.?fromAddr ?? ''
+
+// All five, or none. A host on its own is the dangerous case: it selects the
+// SMTP transport in identity while the port that transport needs is absent, so
+// the container fails to construct its settings and crash-loops. Requiring the
+// full set means a partially-specified object leaves identity on its log-only
+// transport instead, which is a visible, non-fatal degradation that the CD
+// preflight reports by name before any of this reaches Azure.
+//
+// The password is not part of this test because it is not in the object - it
+// arrives as a Key Vault reference under its own flag, and the preflight
+// requires the two to agree.
+var emailRelayConfigured = emailRelayHost != '' && emailRelayPort != '' && emailRelayUsername != '' && emailRelayUseTls != '' && emailRelayFromAddr != ''
 
 var identityAppName = 'app-identity-${resourceName}'
 var coreAppName = 'app-core-${resourceName}'
@@ -516,6 +558,47 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) 
                   {
                     name: 'IDENTITY_TURNSTILE_SECRET_KEY'
                     secretRef: 'turnstile-secret-key'
+                  }
+                ]
+              : [])
+            // Transactional email relay.
+            //
+            // Emitted only as a complete set (see emailRelayConfigured).
+            // Identity picks its transport on EMAIL_SMTP_HOST being non-empty,
+            // so emitting these unconditionally would put a live-looking but
+            // unconfigured relay in front of every deployment.
+            ...(emailRelayConfigured
+              ? [
+                  {
+                    name: 'IDENTITY_EMAIL_SMTP_HOST'
+                    value: emailRelayHost
+                  }
+                  {
+                    name: 'IDENTITY_EMAIL_SMTP_PORT'
+                    value: emailRelayPort
+                  }
+                  {
+                    name: 'IDENTITY_EMAIL_SMTP_USERNAME'
+                    value: emailRelayUsername
+                  }
+                  {
+                    name: 'IDENTITY_EMAIL_SMTP_USE_TLS'
+                    value: emailRelayUseTls
+                  }
+                  {
+                    name: 'IDENTITY_EMAIL_FROM_ADDR'
+                    value: emailRelayFromAddr
+                  }
+                ]
+              : [])
+            // Same Key Vault reasoning as the Turnstile secret above: a literal
+            // password would be readable from `az containerapp show` by anyone
+            // holding Reader on the app.
+            ...(emailSmtpPasswordConfigured
+              ? [
+                  {
+                    name: 'IDENTITY_EMAIL_SMTP_PASSWORD'
+                    secretRef: 'email-smtp-password'
                   }
                 ]
               : [])

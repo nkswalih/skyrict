@@ -9,6 +9,7 @@ import pytest
 import structlog
 
 import identity.core.email as email_mod
+from identity.core.config import Environment
 from identity.core.email import LogEmailService, SmtpEmailService
 from identity.core.email_templates import SecurityAlert
 from identity.core.logging import configure_identity_logging
@@ -72,6 +73,22 @@ def _capture_json_line(capsys) -> dict:
     return json.loads(lines[-1])
 
 
+def _pin_environment(monkeypatch, environment: Environment) -> None:
+    """Force ENVIRONMENT for one test.
+
+    Pinned explicitly rather than inherited from the config default: the whole
+    point of the redaction is which environments get it, so a test that passes
+    only because the suite happens to default to DEV proves nothing about
+    staging.
+    """
+    monkeypatch.setattr(email_mod.settings, "ENVIRONMENT", environment)
+
+
+def _use_capturing_logger() -> None:
+    configure_identity_logging(log_level="INFO", json_output=True)
+    email_mod.logger = structlog.get_logger("identity.email")
+
+
 async def test_smtp_service_sends_otp_with_code(monkeypatch) -> None:
     fake = FakeSMTP()
     monkeypatch.setattr(smtplib, "SMTP", lambda *a, **k: fake)
@@ -118,9 +135,9 @@ async def test_smtp_service_swallows_delivery_failure(monkeypatch, capsys) -> No
     assert parsed["to"] == "carol@test.com"
 
 
-async def test_log_service_logs_otp_code(capsys) -> None:
-    configure_identity_logging(log_level="INFO", json_output=True)
-    email_mod.logger = structlog.get_logger("identity.email")
+async def test_log_service_logs_otp_code_in_dev(monkeypatch, capsys) -> None:
+    _pin_environment(monkeypatch, Environment.DEV)
+    _use_capturing_logger()
 
     await LogEmailService().send_otp(to="dave@test.com", code="112233")
 
@@ -128,6 +145,65 @@ async def test_log_service_logs_otp_code(capsys) -> None:
     assert parsed["event"] == "email.otp.sent"
     assert parsed["otp_code"] == "112233"
     assert parsed["to"] == "dave@test.com"
+
+
+async def test_log_service_logs_otp_code_in_test(monkeypatch, capsys) -> None:
+    _pin_environment(monkeypatch, Environment.TEST)
+    _use_capturing_logger()
+
+    await LogEmailService().send_otp(to="dave@test.com", code="112233")
+
+    assert _capture_json_line(capsys)["otp_code"] == "112233"
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [Environment.STAGING, Environment.PRODUCTION],
+)
+async def test_log_service_redacts_otp_code_outside_dev_test(
+    monkeypatch, capsys, environment: Environment
+) -> None:
+    _pin_environment(monkeypatch, environment)
+    _use_capturing_logger()
+
+    await LogEmailService().send_otp(to="dave@test.com", code="112233")
+
+    parsed = _capture_json_line(capsys)
+    # The fact that mail was sent, and to whom, still has to be observable -
+    # the recipient is what makes a signup supportable.
+    assert parsed["event"] == "email.otp.sent"
+    assert parsed["to"] == "dave@test.com"
+    assert parsed["otp_code"] == "[redacted]"
+    # The value must be absent from the line, not merely altered.
+    assert "112233" not in json.dumps(parsed)
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [Environment.STAGING, Environment.PRODUCTION],
+)
+async def test_log_service_redacts_link_tokens_outside_dev_test(
+    monkeypatch, capsys, environment: Environment
+) -> None:
+    _pin_environment(monkeypatch, environment)
+    _use_capturing_logger()
+    service = LogEmailService()
+
+    await service.send_verification(to="frank@test.com", full_name="Frank", token="verify-secret")
+    verification = _capture_json_line(capsys)
+
+    await service.send_invitation(
+        to="gina@test.com",
+        inviter_name="Gina",
+        organization_name="Acme",
+        token="invite-secret",
+    )
+    invitation = _capture_json_line(capsys)
+
+    assert verification["verification_token"] == "[redacted]"
+    assert invitation["invitation_token"] == "[redacted]"
+    assert "verify-secret" not in json.dumps(verification)
+    assert "invite-secret" not in json.dumps(invitation)
 
 
 async def test_smtp_service_sends_security_alert_with_html(monkeypatch) -> None:

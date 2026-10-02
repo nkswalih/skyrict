@@ -67,6 +67,12 @@
     "redisUrlOverride": {
       "value": ""
     },
+    "emailRelayConfig": {
+      "value": {}
+    },
+    "emailSmtpPasswordConfigured": {
+      "value": false
+    },
     "logRetentionDays": {
       "value": 30
     },

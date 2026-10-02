@@ -118,6 +118,10 @@ class SendCodeRequest(_CamelModel):
     """POST /auth/signup/send-code"""
 
     email: EmailStr
+    turnstile_token: str | None = Field(
+        default=None,
+        description="Cloudflare Turnstile response. Required: this endpoint mints and sends an email, so an ungated caller can burn relay quota on addresses they do not own.",
+    )
 
 
 class SendCodeResponse(_CamelModel):

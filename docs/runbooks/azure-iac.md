@@ -131,6 +131,11 @@ This is idempotent for identity/RBAC and:
 | `AZURE_SYNC_TOKEN` | Shared sync token (core ↔ ai-agent) | URL-safe token |
 | `AZURE_INGEST_TOKEN` | Shared ingest token (core → ai-agent) | URL-safe token |
 | `AZURE_REDIS_URL_OVERRIDE` | Upstash `rediss://` URL — **required**, not optional | `rediss://…:6379`. Must be `rediss://`: with `deployManagedRedis=false` this is the only Redis, and an empty value hands the apps `REDIS_URL=''`, which crash-loops them at startup |
+| `AZURE_EMAIL_SMTP_PASSWORD` | Brevo SMTP key — **optional**, feature-off when absent | `xsmtpsib-…`. Required only once `AZURE_EMAIL_RELAY_CONFIG` names a host; see §12 |
+
+`AZURE_EMAIL_RELAY_CONFIG` is a repository **variable**, not a secret — the
+relay host, port and TLS flag are not confidential. It is a JSON object string;
+see §12.
 
 ### 4.2 Key Vault secrets (seeded by CD / bootstrap)
 
@@ -141,6 +146,8 @@ This is idempotent for identity/RBAC and:
 | `mfa-encryption-key` | identity | `MFA_ENCRYPTION_KEY` |
 | `sync-token` | core + ai-agent | `CORE_AI_SYNC_TOKEN` = `AI_INVENTORY_SYNC_TOKEN` + `AI_DOCUMENT_SYNC_TOKEN` |
 | `ingest-token` | core + ai-agent | `CORE_AI_INGEST_TOKEN` = `AI_INGEST_TOKEN` |
+| `turnstile-secret-key` | identity | `TURNSTILE_SECRET_KEY` |
+| `email-smtp-password` | identity | `EMAIL_SMTP_PASSWORD` (only when `AZURE_EMAIL_RELAY_CONFIG` sets a host) |
 
 Postgres/Redis credentials are **computed at deploy time** from
 `postgresPassword` and Redis `listKeys()` — they never enter Key Vault or the
@@ -557,3 +564,161 @@ within the Azure free account's 12-month + always-free allotments:
 - Free-trial scale knobs are conservative (max 2 replicas, pooled DB
   connections of 3). See ADR-010 for sizing rationale and
   `azure-cost-estimate.md` for numbers.
+
+## 12. Transactional email (Brevo) and the wildcard zone
+
+### 12.1 What is wired
+
+Identity picks its transport on one variable: `EMAIL_SMTP_HOST`. Empty means
+`LogEmailService`, which writes the message to a log stream and sends nothing.
+Any non-empty host means `SmtpEmailService` over `smtplib.SMTP` +
+`starttls()`.
+
+Nothing in the IaC set that variable before this section existed, so every
+deployment to date has run log-only email: every signup code went to a log
+line, and every password-reset and invitation mail was never delivered.
+
+The relay is configured by two GitHub values, deliberately asymmetric:
+
+| Value | Kind | Contents |
+| --- | --- | --- |
+| `AZURE_EMAIL_RELAY_CONFIG` | repository **variable** | JSON object, no secrets: `host`, `port`, `username`, `useTls`, `fromAddr` |
+| `AZURE_EMAIL_SMTP_PASSWORD` | environment **secret** | the `xsmtpsib-…` SMTP key, and nothing else |
+
+The split is why the host/port/login do not live in `beta.parameters.json`:
+that file is readable by every fork and pull-request run of the workflow, and
+the SMTP login is a credential.
+
+### 12.2 The relay is all-or-nothing, and it has to be
+
+`apps.bicep` emits the five environment variables only when **all five** fields
+are present. That is stricter than it looks, for a reason that is not obvious
+from the settings file:
+
+`EMAIL_SMTP_PORT` is `int` and `EMAIL_SMTP_USE_TLS` is `bool`. pydantic-settings
+parses an environment variable that is *present but empty* — it does not fall
+back to the field default. So a host without a port would emit
+`IDENTITY_EMAIL_SMTP_PORT=''`, which raises during `Settings()` construction at
+module import. That is not a degraded email path, it is a crash-looped
+**identity service**, taking login and signup down with it.
+
+So the options are "all five" or "none". "None" degrades to log-only email,
+which is visible in the logs and recoverable; the alternative is an outage.
+
+### 12.3 Setting it up
+
+```bash
+# 1. In Brevo: SMTP & API -> SMTP, generate a new SMTP key. The value starts
+#    with xsmtpsib-. Do NOT use the v3 API key here; they are not interchangeable.
+#    The login shown next to the key is an <id>@smtp-brevo.com address, not the
+#    account email address.
+
+# 2. Authenticate the sending domain in Brevo (Senders & Domains), then copy the
+#    SPF and DKIM records it gives you into the zone below.
+
+# 3. Repository variable (safe to read, but keep it out of forks anyway):
+gh variable set AZURE_EMAIL_RELAY_CONFIG --body '{
+  "host": "smtp-relay.brevo.com",
+  "port": 587,
+  "username": "<id>@smtp-brevo.com",
+  "useTls": true,
+  "fromAddr": "Skyrict <no-reply@skyrict.in>"
+}'
+
+# 4. The key. Prompted for, so it never reaches shell history:
+gh secret set AZURE_EMAIL_SMTP_PASSWORD --env azure-beta
+```
+
+Port **587** only. `SmtpEmailService` calls `smtplib.SMTP` then `starttls()`;
+it has no `SMTP_SSL` path, so 465 cannot work.
+
+`fromAddr` must be on `skyrict.in`. The settings default is
+`Skyrict <no-reply@skyrict.dev>`, a domain beta neither owns nor has SPF/DKIM
+authorised for — mail would be accepted by the relay and then fail
+authentication at the recipient, which is the worst of the failure modes
+because it looks like it worked.
+
+### 12.4 What the CD preflight now rejects
+
+Every one of these deploys green without the guard and is found by a tenant who
+never receives their code:
+
+| State | Consequence if deployed |
+| --- | --- |
+| partial `emailRelayConfig` | log-only email; no error anywhere |
+| host set, no password | boots fine, every send fails at SMTP AUTH |
+| password set, no relay | secret silently unused; mail still log-only |
+| `useTls: false` | SMTP session and credential sent in cleartext |
+| `fromAddr` off `skyrict.in` | mail accepted, then rejected by the recipient |
+
+The preflight reads the *runtime* parameter file that `build-params.sh` wrote,
+not the committed template, so it reports what is actually deploying.
+
+### 12.5 The DNS migration is done — the Vercel zone is authoritative
+
+This matters for two later operations, so it is recorded rather than left in
+scrollback.
+
+The apex NS records for `skyrict.in` were moved off GoDaddy into the Vercel
+zone, and every record was recreated there. **Anything about this domain is now
+edited in Vercel, not GoDaddy.** Adding Brevo's SPF and DKIM records to GoDaddy
+has no effect and they will silently fail to verify.
+
+`api.skyrict.in` and `asuid.api.skyrict.in` must not be deleted (§11 explains
+why: ACA re-validates the TXT on renewal, and losing it breaks the certificate
+regardless of the CNAME). Add to the zone, never remove from it.
+
+`*.skyrict.in` resolves on a wildcard A record, which is what lets each tenant
+get `{slug}.skyrict.in` without a per-tenant DNS change. The wildcard
+certificate is live and verified:
+
+```
+CN=*.skyrict.in
+issuer  CN=YR2, O=Let's Encrypt, C=US
+expires 12/30/2026
+TLS handshake: OK
+```
+
+The tenant console URL in security-alert email needed **no** new configuration.
+`SECURITY_CONSOLE_BASE_URL` is unset in the container, so
+`core/console_urls.py` auto-derives `https://{slug}.{BASE_DOMAIN}`, and beta
+already runs `ENVIRONMENT=staging` with `BASE_DOMAIN=skyrict.in`. Setting an
+explicit override would only add a second source of truth that can silently
+disagree with `baseDomain`. `test_staging_derives_https_tenant_apex` pins the
+derivation.
+
+The one wildcard-dependent surface that is **not** configured is `SIGNUP_APP_URL`
+for the Stripe Checkout redirect. The wizard runs before a tenant slug exists,
+so this value is used verbatim and cannot carry a `{slug}` placeholder — the
+config docstring says so, but nothing enforces it. Set it to a fixed host on the
+wildcard (e.g. `https://signup.skyrict.in`). It is unset today, and billing
+raises `ServiceUnavailableError` naming the variable rather than redirecting to
+nowhere — a deliberate, loud gap rather than a silent one. Worth knowing: a
+literal `{slug}` pasted into the value would be passed straight through to
+Stripe, so the guard is documentation, not validation.
+
+### 12.6 Verifying a deploy actually sends
+
+```bash
+# The env is on the container only when all five fields are set. Two variables
+# present and three absent means the relay was suppressed - log-only.
+# Filtered client-side on purpose: a `[?contains(...)]` JMESPath filter is
+# mangled by cmd.exe on Windows and exits 255 with no useful message.
+az containerapp show -g skyrict-beta -n app-identity-skyrict-beta \
+  --query properties.template.containers[0].env -o tsv | grep EMAIL
+
+# Expected once configured, and a useful thing to eyeball: the port must be
+# 587 and the sender must be on skyrict.in.
+#
+#   IDENTITY_EMAIL_SMTP_HOST        smtp-relay.brevo.com
+#   IDENTITY_EMAIL_SMTP_PORT        587
+#   IDENTITY_EMAIL_SMTP_USERNAME    <id>@smtp-brevo.com
+#   IDENTITY_EMAIL_SMTP_USE_TLS     true
+#   IDENTITY_EMAIL_FROM_ADDR        Skyrict <no-reply@skyrict.in>
+#   IDENTITY_EMAIL_SMTP_PASSWORD    email-smtp-password   <- the KV secretRef name
+
+# Then sign up with a real address and confirm the message arrives. Check the
+# suppressed-log path too: in non-dev environments the OTP and verification
+# tokens are redacted from logs, so a code appearing in the log stream means
+# you are running an image from before that redaction landed.
+```
