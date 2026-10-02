@@ -6,13 +6,14 @@ import {
     saveSignupFlow,
 } from "./signup-flow-token";
 
-const KEY = "skyrict.onboarding.signupFlow";
+const KEY = (email: string) =>
+    `skyrict.onboarding.signupFlow:${email.trim().toLowerCase()}`;
 
 /**
  * Vitest runs in the node environment here and the project carries no DOM
  * dependency, so the storage API itself is the only thing stubbed. Everything
- * under test - the JSON shape, the address binding, the casing rule, the
- * behaviour on rubbish input - is the real code.
+ * under test - the address binding, the key shape, the behaviour on an empty or
+ * missing value - is the real code.
  */
 function stubSessionStorage(): Map<string, string> {
     const entries = new Map<string, string>();
@@ -54,10 +55,27 @@ describe("signup flow proof storage", () => {
         expect(loadSignupFlow("Owner@NewOrg.com")).toBe("proof-1");
     });
 
+    it("ignores surrounding whitespace, which the account step trims anyway", () => {
+        saveSignupFlow("owner@neworg.com", "proof-1");
+
+        expect(loadSignupFlow("  owner@neworg.com  ")).toBe("proof-1");
+    });
+
     it("refuses a proof issued for a different address", () => {
         saveSignupFlow("owner@neworg.com", "proof-1");
 
         expect(loadSignupFlow("someone-else@elsewhere.com")).toBeNull();
+    });
+
+    it("keeps two signups in two tabs apart", () => {
+        // The backend binds a proof to one address, so a shared key would have
+        // the second tab clobber the first and report a session that never
+        // expired.
+        saveSignupFlow("owner@neworg.com", "proof-1");
+        saveSignupFlow("someone-else@elsewhere.com", "proof-2");
+
+        expect(loadSignupFlow("owner@neworg.com")).toBe("proof-1");
+        expect(loadSignupFlow("someone-else@elsewhere.com")).toBe("proof-2");
     });
 
     it("returns null when nothing was stored", () => {
@@ -76,14 +94,25 @@ describe("signup flow proof storage", () => {
 
         // The proof is what authorises sending mail to the address, so it stays
         // out of anything a Referer header or an access log would pick up.
-        expect([...entries.keys()]).toEqual([KEY]);
+        expect([...entries.keys()]).toEqual([KEY("owner@neworg.com")]);
     });
 
-    it("forgets the proof once it is spent", () => {
+    it("stores the proof as the bare token, not a serialised envelope", () => {
+        // A JSON blob would put the address in the value as well as the key,
+        // for no benefit now that the key is scoped to it.
         saveSignupFlow("owner@neworg.com", "proof-1");
-        clearSignupFlow();
+
+        expect(entries.get(KEY("owner@neworg.com"))).toBe("proof-1");
+    });
+
+    it("forgets the proof once it is spent, and only that one", () => {
+        saveSignupFlow("owner@neworg.com", "proof-1");
+        saveSignupFlow("someone-else@elsewhere.com", "proof-2");
+
+        clearSignupFlow("owner@neworg.com");
 
         expect(loadSignupFlow("owner@neworg.com")).toBeNull();
+        expect(loadSignupFlow("someone-else@elsewhere.com")).toBe("proof-2");
     });
 
     it("survives storage throwing", () => {
@@ -103,19 +132,18 @@ describe("signup flow proof storage", () => {
         // wizard must degrade to "no proof", not to a crash on render.
         expect(() => saveSignupFlow("owner@neworg.com", "proof-1")).not.toThrow();
         expect(loadSignupFlow("owner@neworg.com")).toBeNull();
-        expect(() => clearSignupFlow()).not.toThrow();
+        expect(() => clearSignupFlow("owner@neworg.com")).not.toThrow();
     });
 
     it.each([
-        ["not json", "definitely not json"],
-        ["a json scalar", "42"],
-        ["null", "null"],
-        ["an empty token", JSON.stringify({ email: "owner@neworg.com", flowToken: "" })],
-        ["a missing token", JSON.stringify({ email: "owner@neworg.com" })],
-        ["a non-string email", JSON.stringify({ email: 7, flowToken: "proof-1" })],
-    ])("treats %s as no proof at all", (_label, stored) => {
-        entries.set(KEY, stored);
+        ["an empty string", ""],
+        ["whitespace", "   "],
+        ["whitespace around a real proof", "  proof-1  "],
+    ])("normalises %s", (_label, stored) => {
+        entries.set(KEY("owner@neworg.com"), stored);
 
-        expect(loadSignupFlow("owner@neworg.com")).toBeNull();
+        expect(loadSignupFlow("owner@neworg.com")).toBe(
+            stored.includes("proof-1") ? "proof-1" : null,
+        );
     });
 });

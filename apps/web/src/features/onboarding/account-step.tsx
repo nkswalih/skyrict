@@ -86,7 +86,7 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
     }
     setSubmitError(undefined);
     const email = values.email.trim();
-    let started: { status: "ok"; flowToken: string };
+    let started: { status: "ok"; flowToken: string | null };
     try {
       started = await signupStart({
         email,
@@ -101,6 +101,14 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
     // Handed to step 2, which spends it instead of asking for a second
     // challenge. Held in sessionStorage rather than the query string so it
     // never reaches browser history, a Referer header or an access log.
+    if (!started.flowToken) {
+      // The challenge cleared but no proof came back, which is a contract
+      // violation rather than a user error. Step 2 cannot do anything without
+      // one, so say so here rather than routing them into a step guaranteed to
+      // fail.
+      setSubmitError("Could not start signup. Try again.");
+      return;
+    }
     saveSignupFlow(email, started.flowToken);
     const next = new URLSearchParams({ email });
     router.push(`/signup/verify?${next.toString()}`);

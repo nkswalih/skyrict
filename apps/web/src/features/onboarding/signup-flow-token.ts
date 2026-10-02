@@ -6,22 +6,21 @@
  * or an access log. `wizard-session.ts` sets the precedent for keeping
  * pre-login wizard context on this side of the wire.
  *
- * Bound to the address it was issued for. A proof left behind by a different
- * email is refused here instead of being sent to the backend to be rejected
- * there, which is the difference between "start again" and a 422.
+ * Keyed by the address the proof was issued for. The backend binds it that way,
+ * so two tabs signing up different people no longer overwrite each other and
+ * report a session that was never lost. The address is already in the URL of
+ * both steps, so the key adds no exposure.
  */
 
-interface StoredFlow {
-    email: string;
-    flowToken: string;
-}
+const KEY_PREFIX = "skyrict.onboarding.signupFlow:";
 
-const KEY = "skyrict.onboarding.signupFlow";
+function key(email: string): string {
+    return `${KEY_PREFIX}${email.trim().toLowerCase()}`;
+}
 
 export function saveSignupFlow(email: string, flowToken: string): void {
     try {
-        const payload: StoredFlow = { email, flowToken };
-        sessionStorage.setItem(KEY, JSON.stringify(payload));
+        sessionStorage.setItem(key(email), flowToken);
     } catch {
         /* SSR or private-browsing - safe to ignore. */
     }
@@ -29,24 +28,19 @@ export function saveSignupFlow(email: string, flowToken: string): void {
 
 export function loadSignupFlow(email: string): string | null {
     try {
-        const raw = sessionStorage.getItem(KEY);
-        if (!raw) return null;
-        const stored = JSON.parse(raw) as Partial<StoredFlow> | null;
-        if (typeof stored?.flowToken !== "string" || stored.flowToken === "") {
-            return null;
-        }
-        if (typeof stored.email !== "string") return null;
-        return stored.email.toLowerCase() === email.toLowerCase()
-            ? stored.flowToken
-            : null;
+        // The backend cannot issue a blank proof, so neither is one worth
+        // carrying. Without this a whitespace value would be sent on and come
+        // back as a 422 the user cannot act on.
+        const stored = sessionStorage.getItem(key(email))?.trim();
+        return stored ? stored : null;
     } catch {
         return null;
     }
 }
 
-export function clearSignupFlow(): void {
+export function clearSignupFlow(email: string): void {
     try {
-        sessionStorage.removeItem(KEY);
+        sessionStorage.removeItem(key(email));
     } catch {
         /* noop */
     }

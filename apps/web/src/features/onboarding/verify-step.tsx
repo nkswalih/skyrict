@@ -98,7 +98,7 @@ function VerifyStep({ email }: { email: string }) {
       if (result.status === "ok") {
         // Spent. Nothing after this step sends mail, so the proof has no
         // further use in this tab.
-        clearSignupFlow();
+        clearSignupFlow(email);
         const next = new URLSearchParams({
           email,
           vt: result.verificationToken,

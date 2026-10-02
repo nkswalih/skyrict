@@ -250,8 +250,8 @@ export async function verifyMfa(input: {
 export async function signupStart(input: {
     email: string;
     turnstileToken?: string;
-}): Promise<{ status: "ok"; flowToken: string }> {
-    return bffPost<{ status: "ok"; flowToken: string }>("/api/auth/start", {
+}): Promise<{ status: "ok"; flowToken: string | null }> {
+    return bffPost<{ status: "ok"; flowToken: string | null }>("/api/auth/start", {
         email: input.email,
         turnstileToken: input.turnstileToken,
     });
