@@ -8,6 +8,12 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 
 import { requestVerificationCode, verifyEmailCode } from "@/lib/api/auth-api";
 import { TurnstileWidget } from "@/components/onboarding/turnstile-widget";
+import {
+    canRequestCode,
+    canResend,
+    challengeContainerCollapsed,
+    stateAfterSendAttempt,
+} from "@/features/onboarding/code-send-challenge";
 import { AuthButton } from "@/lib/auth/AuthButton";
 import { OtpInput } from "@/lib/auth/OtpInput";
 import { env } from "@/config/env";
@@ -31,13 +37,32 @@ function VerifyStep({ email }: { email: string }) {
     // No challenge solved yet: nothing to send. The effect below re-runs this
     // callback as soon as the token arrives, so the first code goes out on its
     // own exactly as it did before the gate existed.
-    if (!turnstileToken) return;
+    if (!canRequestCode(turnstileToken)) return;
+
+    // Spend the token now, before awaiting, and do it whether or not the send
+    // works. Cloudflare consumes it during verification either way.
+    //
+    // Clearing it here is also what makes the re-arm below possible: the widget
+    // container collapses whenever a token is held, and Turnstile will not run
+    // a challenge inside a collapsed container. A widget hidden behind the
+    // token it just spent can only ever reset to nothing, which left resend
+    // replaying a token identity had already consumed. See
+    // code-send-challenge.ts.
+    // Read the post-send state from the same function the tests pin, rather
+    // than hard-coding null here. A test that re-implemented the rule would
+    // pass while the component drifted, which is the only thing a test of this
+    // kind is for.
+    const { token: noTokenHeld } = stateAfterSendAttempt();
+    setTurnstileToken(noTokenHeld);
+    setResetSignal((n) => n + 1);
+
+    const spent = turnstileToken;
     try {
-      const result = await requestVerificationCode({ email, turnstileToken });
+      const result = await requestVerificationCode({
+        email,
+        turnstileToken: spent,
+      });
       setResendIn(result.resendIn);
-      // The token is now spent - Turnstile tokens are single-use. Re-arm so the
-      // resend button has a fresh one to spend.
-      setResetSignal((n) => n + 1);
     } catch (err) {
       setSendError(
         err instanceof Error ? err.message : "Could not send the code. Try again.",
@@ -154,7 +179,12 @@ function VerifyStep({ email }: { email: string }) {
           This one is inline rather than the full-screen RiskChallenge overlay:
           the user has already passed that gate one step earlier, and taking the
           viewport over again to re-send a code would be a worse experience than
-          the protection is worth. It solves itself and then collapses. */}
+          the protection is worth.
+
+          It collapses only while a live token is held. That is deliberate and
+          load-bearing rather than cosmetic - Turnstile cannot solve inside a
+          `display: none` container, so a container collapsed behind the token
+          it just spent would never re-arm. See code-send-challenge.ts. */}
       {!env.turnstileSiteKey ? (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           Sign-up is unavailable: no CAPTCHA provider is configured, so the
@@ -163,10 +193,10 @@ function VerifyStep({ email }: { email: string }) {
         </div>
       ) : (
         <div
-          aria-hidden={Boolean(turnstileToken)}
-          inert={Boolean(turnstileToken)}
+          aria-hidden={challengeContainerCollapsed(turnstileToken)}
+          inert={challengeContainerCollapsed(turnstileToken)}
           className={
-            turnstileToken
+            challengeContainerCollapsed(turnstileToken)
               ? "hidden"
               : "flex justify-center py-1"
           }
@@ -217,7 +247,12 @@ function VerifyStep({ email }: { email: string }) {
             <button
               type="button"
               onClick={handleResend}
-              disabled={resending}
+              // An expired cooldown is not enough. Without an unspent token the
+              // click would reach sendCode's guard and vanish, so the button
+              // stays disabled until the re-armed challenge produces one.
+              disabled={
+                !canResend(turnstileToken, { resending, resendIn })
+              }
               className="font-medium text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
               {resending ? "Resending\n" : "Resend code"}
