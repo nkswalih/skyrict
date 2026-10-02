@@ -231,6 +231,7 @@ var emailRelayPort = string(emailRelayConfig.?port ?? '')
 var emailRelayUsername = emailRelayConfig.?username ?? ''
 var emailRelayUseTls = string(emailRelayConfig.?useTls ?? '')
 var emailRelayFromAddr = emailRelayConfig.?fromAddr ?? ''
+
 // All five, or none. A host on its own is the dangerous case: it selects the
 // SMTP transport in identity while the port that transport needs is absent, so
 // the container fails to construct its settings and crash-loops. Requiring the
@@ -562,11 +563,10 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) 
               : [])
             // Transactional email relay.
             //
-            // Emitted only when a host was supplied. Identity picks its
-            // transport on EMAIL_SMTP_HOST being non-empty, so emitting these
-            // unconditionally would put a live-looking but unconfigured relay
-            // in front of every deployment and silently switch staging to
-            // log-only email while the resource state claims otherwise.
+            // Emitted only as a complete set (see emailRelayConfigured).
+            // Identity picks its transport on EMAIL_SMTP_HOST being non-empty,
+            // so emitting these unconditionally would put a live-looking but
+            // unconfigured relay in front of every deployment.
             ...(emailRelayConfigured
               ? [
                   {
