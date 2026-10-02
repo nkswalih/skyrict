@@ -59,7 +59,7 @@ from identity.features.auth.schemas import (
 from identity.features.auth.service import AuthenticationService, TokenService
 from identity.features.billing.schemas import CheckoutSessionResponse
 from identity.features.billing.service import BillingService
-from skyrict_common.exceptions import AuthenticationError
+from skyrict_common.exceptions import AuthenticationError, ValidationError
 from skyrict_common.schemas import ResponseEnvelope
 
 if TYPE_CHECKING:
@@ -227,6 +227,17 @@ async def signup_send_code(
     """
     ip_address = client_ip(request)
     email_key = body.email.lower()
+    # Refuse a request with no proof before the per-email limiter runs.
+    #
+    # That limiter is keyed on the address being sent to, so a caller holding
+    # nothing at all could otherwise burn a victim's whole bucket and lock them
+    # out of requesting their own code for the rest of the window. Guessing is
+    # still throttled - a guess is not blank, so both limiters below still
+    # apply to it.
+    if body.flow_token is None or not body.flow_token.strip():
+        raise ValidationError(
+            "This sign-up session has expired. Go back to step 1 and start again."
+        )
     await limiter.enforce(
         key=f"{SIGNUP_CODE_LIMIT_KEY}:{email_key}",
         limit=settings.SIGNUP_CODE_RATE_LIMIT,

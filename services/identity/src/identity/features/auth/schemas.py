@@ -128,10 +128,12 @@ class SendCodeRequest(_CamelModel):
     email: EmailStr
     flow_token: str | None = Field(
         default=None,
+        max_length=128,
         description=(
             "Proof from /signup/start. Required: this endpoint mints and sends an "
             "email, so a caller that never cleared the wizard's challenge must not "
-            "be able to burn relay quota on addresses they do not own."
+            "be able to burn relay quota on addresses they do not own. Bounded "
+            "because it reaches Redis as a key suffix and is a bearer credential."
         ),
     )
 
