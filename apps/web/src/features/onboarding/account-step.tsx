@@ -10,6 +10,7 @@ import { Mail } from "lucide-react";
 
 import { env } from "@/config/env";
 import { RiskChallenge } from "@/components/onboarding/risk-challenge";
+import { saveSignupFlow } from "@/features/onboarding/signup-flow-token";
 import { checkEmailAvailability, signupStart } from "@/lib/api/auth-api";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/api/error-messages";
 import { AuthButton } from "@/lib/auth/AuthButton";
@@ -84,9 +85,11 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
       return;
     }
     setSubmitError(undefined);
+    const email = values.email.trim();
+    let started: { status: "ok"; flowToken: string };
     try {
-      await signupStart({
-        email: values.email.trim(),
+      started = await signupStart({
+        email,
         turnstileToken: captchaToken ?? undefined,
       });
     } catch (err) {
@@ -95,7 +98,11 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
       );
       return;
     }
-    const next = new URLSearchParams({ email: values.email.trim() });
+    // Handed to step 2, which spends it instead of asking for a second
+    // challenge. Held in sessionStorage rather than the query string so it
+    // never reaches browser history, a Referer header or an access log.
+    saveSignupFlow(email, started.flowToken);
+    const next = new URLSearchParams({ email });
     router.push(`/signup/verify?${next.toString()}`);
   }
 

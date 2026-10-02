@@ -33,5 +33,11 @@ export async function POST(request: NextRequest) {
         },
     });
     if (!result.ok) return backendError(result);
-    return NextResponse.json({ status: "ok" });
+
+    // The proof the rest of the wizard spends in place of a second challenge.
+    const data = result.data;
+    return NextResponse.json({
+        status: "ok",
+        flowToken: data?.flow_token ?? data?.flowToken ?? null,
+    });
 }
