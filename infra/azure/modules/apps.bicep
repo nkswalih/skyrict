@@ -381,6 +381,20 @@ var sharedSecrets = [
         }
       ]
     : [])
+  // Same rule, same reason: identity's env references 'email-smtp-password' by
+  // secretRef whenever emailSmtpPasswordConfigured is true, and a secretRef with
+  // no entry in this list fails the deployment with ContainerAppSecretRefNotFound.
+  // Both halves must therefore be gated on the same flag - declaring the env
+  // ref without declaring the secret here is the failure mode this guards.
+  ...(emailSmtpPasswordConfigured
+    ? [
+        {
+          name: 'email-smtp-password'
+          keyVaultUrl: '${kvUri}secrets/email-smtp-password'
+          identity: uamiId
+        }
+      ]
+    : [])
 ]
 
 // ---------------------------------------------------------------------------
