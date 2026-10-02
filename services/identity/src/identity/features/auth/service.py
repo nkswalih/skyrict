@@ -395,17 +395,15 @@ class AuthenticationService:
         # Checking after would let a caller who never cleared the wizard's
         # challenge consume a resend slot and get a 200 with only a countdown,
         # which reads as success and hides the fact that nothing was verified.
-        flow = (
+        flow_email = (
             await self.verification_store.get_signup_flow(flow_token)
             if flow_token is not None
             else None
         )
-        if flow_token is None or flow is None or flow.email.lower() != email.lower():
+        if flow_token is None or flow_email is None or flow_email.lower() != email.lower():
             raise ValidationError(
                 "This sign-up session has expired. Go back to step 1 and start again."
             )
-        if flow.sends >= settings.SIGNUP_FLOW_MAX_SENDS:
-            raise ValidationError("Too many codes requested. Go back to step 1 and start again.")
         if await self.verification_store.is_resend_blocked(email):
             return {
                 "status": "ok",
@@ -414,7 +412,20 @@ class AuthenticationService:
             }
         # Charged here, not on entry: a cooldown that returned no mail must not
         # cost the user part of their budget.
-        await self.verification_store.consume_signup_flow_send(flow_token)
+        #
+        # The charge is also what *decides*, not a count read earlier. Resolving
+        # the budget before charging it is a read-modify-write race, and the
+        # resend cooldown does not close it either - EXISTS-then-SET lets a
+        # burst of concurrent requests all observe "not blocked". Before the
+        # per-send CAPTCHA, Cloudflare rejecting a replayed single-use token
+        # serialised this point; the counter's INCR has to do it now.
+        #
+        # Over budget the counter has already moved but no mail goes out, so a
+        # caller that races past the limit burns its own proof rather than
+        # filling someone else's inbox.
+        count = await self.verification_store.consume_signup_flow_send(flow_token)
+        if count > settings.SIGNUP_FLOW_MAX_SENDS:
+            raise ValidationError("Too many codes requested. Go back to step 1 and start again.")
         code = generate_otp()
         await self.verification_store.set_otp(email, hash_otp(code))
         await self.verification_store.mark_resend(email)

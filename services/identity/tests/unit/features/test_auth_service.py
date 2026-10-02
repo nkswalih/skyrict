@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -37,7 +38,6 @@ from identity.features.auth.schemas import (
     LoginRequest,
 )
 from identity.features.auth.service import AuthenticationService, TokenService
-from identity.features.auth.verification_store import SignupFlow
 from skyrict_common.exceptions import (
     AuthenticationError,
     ConflictError,
@@ -459,7 +459,7 @@ class FakeVerificationStore:
         self.attempts: dict[str, int] = {}
         self.resend_until: dict[str, float] = {}
         self.tokens: dict[str, dict[str, str]] = {}
-        self.flows: dict[str, SignupFlow] = {}
+        self.flows: dict[str, str] = {}
         self.flow_sends: dict[str, int] = {}
         self.now: float = 0.0
 
@@ -493,16 +493,20 @@ class FakeVerificationStore:
         return max(int(remaining), 0)
 
     async def set_signup_flow(self, token: str, email: str) -> None:
-        self.flows[token] = SignupFlow(email=email, sends=0)
+        self.flows[token] = email
         self.flow_sends[token] = 0
 
-    async def get_signup_flow(self, token: str) -> SignupFlow | None:
-        flow = self.flows.get(token)
-        if flow is None:
+    async def get_signup_flow(self, token: str) -> str | None:
+        # A real Redis GET suspends, so concurrent callers interleave around it.
+        # The double has to as well, or a concurrency test proves nothing.
+        await asyncio.sleep(0)
+        # A proof whose budget key is gone is unusable, matching the real store.
+        if token not in self.flows or token not in self.flow_sends:
             return None
-        return SignupFlow(email=flow.email, sends=self.flow_sends.get(token, 0))
+        return self.flows[token]
 
     async def consume_signup_flow_send(self, token: str) -> int:
+        await asyncio.sleep(0)
         self.flow_sends[token] = self.flow_sends.get(token, 0) + 1
         return self.flow_sends[token]
 
@@ -1033,10 +1037,8 @@ class TestWizard:
         # challenge, so it has to actually come back.
         flow_token = result["flow_token"]
         assert isinstance(flow_token, str) and flow_token
-        flow = await harness.verification_store.get_signup_flow(flow_token)
-        assert flow is not None
-        assert flow.email == "owner@neworg.com"
-        assert flow.sends == 0
+        flow_email = await harness.verification_store.get_signup_flow(flow_token)
+        assert flow_email == "owner@neworg.com"
         assert harness.turnstile.calls == ["tok"]
 
     async def test_wizard_costs_exactly_one_challenge(self) -> None:
@@ -1150,9 +1152,51 @@ class TestWizard:
             assert blocked["code"] is None
             assert blocked["resend_in"] > 0
 
-        flow = await harness.verification_store.get_signup_flow(flow_token)
-        assert flow is not None
-        assert flow.sends == 1
+        # Blocked resends send nothing, so they must not have charged the budget.
+        assert harness.verification_store.flow_sends[flow_token] == 1
+
+    async def test_concurrent_sends_cannot_exceed_the_budget(self) -> None:
+        """The budget has to hold against a burst, not just against sequential calls.
+
+        Deciding on a budget read earlier, then charging it, is a
+        read-modify-write: every request in the burst reads the same remaining
+        budget and every one of them passes. The resend cooldown does not close
+        it - it is an EXISTS followed by a SET, so concurrent callers all observe
+        "not blocked" too. Before the per-send CAPTCHA, Cloudflare rejecting a
+        replayed single-use token serialised this point. Now the INCR is what has
+        to.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+
+        results = await asyncio.gather(
+            *(
+                harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+                for _ in range(settings.SIGNUP_FLOW_MAX_SENDS * 4)
+            ),
+            return_exceptions=True,
+        )
+
+        assert len(harness.email_svc.sent) == settings.SIGNUP_FLOW_MAX_SENDS
+        # The refused ones were refused, not silently ignored.
+        refused = sum(1 for r in results if isinstance(r, ValidationError))
+        assert refused == settings.SIGNUP_FLOW_MAX_SENDS * 3
+
+    async def test_a_proof_missing_its_budget_counter_is_refused(self) -> None:
+        """An abuse control must fail closed.
+
+        Losing the counter key - a partial write, or eviction under memory
+        pressure - must not read as a counter of zero, which would turn the
+        proof into an unlimited one for the rest of its TTL.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.verification_store.flow_sends.pop(flow_token)
+
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        assert harness.email_svc.sent == []
 
     async def test_send_code_checks_the_proof_before_honouring_the_resend_cooldown(self) -> None:
         """A blocked resend must not return 200 to a caller that proved nothing.

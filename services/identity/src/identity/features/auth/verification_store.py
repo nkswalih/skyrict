@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from identity.core.config import settings
@@ -70,18 +69,6 @@ def generate_signup_flow_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-@dataclass(frozen=True, slots=True)
-class SignupFlow:
-    """A wizard that cleared its challenge, and how much of its mail budget is spent.
-
-    ``email`` is the address the challenge was solved *for*. Binding it here is
-    what stops one solved challenge from being spent on someone else's inbox.
-    """
-
-    email: str
-    sends: int
-
-
 class VerificationStore:
     def __init__(self, client: Redis | None = None) -> None:
         self._client = client if client is not None else redis_client
@@ -117,37 +104,58 @@ class VerificationStore:
         return max(_as_int(await self._client.ttl(_otp_resend_key(email))), 0)
 
     async def set_signup_flow(self, token: str, email: str) -> None:
-        """Record a wizard that cleared its challenge, with a fresh send budget."""
-        await self._client.set(
-            _flow_key(token),
-            json.dumps({"email": email}),
-            ex=settings.SIGNUP_FLOW_TTL_SECONDS,
-        )
-        await self._client.set(_flow_sends_key(token), "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
+        """Record a wizard that cleared its challenge, with a fresh send budget.
 
-    async def get_signup_flow(self, token: str) -> SignupFlow | None:
-        """The flow a proof names, or None if it was never issued or has expired."""
+        One transaction, because a proof whose budget key failed to write would
+        be indistinguishable from an unlimited one for the rest of its life -
+        see ``get_signup_flow``.
+        """
+        async with self._client.pipeline(transaction=True) as pipe:
+            pipe.set(
+                _flow_key(token),
+                json.dumps({"email": email}),
+                ex=settings.SIGNUP_FLOW_TTL_SECONDS,
+            )
+            pipe.set(_flow_sends_key(token), "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
+            await pipe.execute()
+
+    async def get_signup_flow(self, token: str) -> str | None:
+        """The address a proof was solved for, or None if it cannot be spent.
+
+        A missing send counter means the proof is unusable, not that it has
+        budget left. Defaulting it to zero would turn a proof that lost its
+        counter key - to a partial write, or to eviction under memory pressure -
+        into an unlimited one for the remaining TTL, which is the wrong way for
+        an abuse control to fail.
+        """
         raw = _as_str(await self._client.get(_flow_key(token)))
         if raw is None:
+            return None
+        if await self._client.get(_flow_sends_key(token)) is None:
             return None
         try:
             payload = json.loads(raw)
         except (TypeError, ValueError):
             return None
-        if not isinstance(payload, dict) or not isinstance(payload.get("email"), str):
+        if not isinstance(payload, dict):
             return None
-        return SignupFlow(
-            email=payload["email"],
-            sends=_as_int(await self._client.get(_flow_sends_key(token))),
-        )
+        email = payload.get("email")
+        if not isinstance(email, str):
+            return None
+        return email
 
     async def consume_signup_flow_send(self, token: str) -> int:
         """Charge one send against the flow's budget and return the new total.
 
-        INCR rather than a read-modify-write so two concurrent sends cannot both
-        read the same remaining budget. The TTL is deliberately not refreshed:
-        the window runs from when the challenge was solved, so a caller that
-        keeps sending cannot hold a proof open indefinitely.
+        The returned count is the authority on whether the send may proceed, not
+        a statistic about a send already decided on. Checking the budget before
+        charging it is a read-modify-write race: a burst of concurrent requests
+        all reads the same remaining budget and all pass. ``INCR`` is what makes
+        the answer unique, so the caller must branch on this value.
+
+        The TTL is deliberately not refreshed. The window runs from when the
+        challenge was solved, so a caller that keeps sending cannot hold a proof
+        open indefinitely.
         """
         key = _flow_sends_key(token)
         count = _as_int(await self._client.incr(key))
