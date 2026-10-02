@@ -24,6 +24,11 @@ class TurnstileVerifier:
         if not self._secret_key:
             return settings.ENVIRONMENT in (Environment.DEV, Environment.TEST)
         if not token:
+            # Logged separately from a siteverify rejection: no token at all
+            # means the client never solved a challenge - a blocked or
+            # never-rendered widget - which is a different fault than a
+            # challenge Cloudflare actively refused.
+            logger.warning("turnstile_token_missing")
             return False
         try:
             if self._client is not None:
@@ -38,7 +43,22 @@ class TurnstileVerifier:
                         data={"secret": self._secret_key, "response": token},
                     )
             payload = response.json()
-            return bool(payload.get("success"))
+            if payload.get("success"):
+                return True
+            # The reason exists nowhere but here. Callers only ever raise a
+            # generic ValidationError, so without this line a wrong secret, an
+            # expired token, a replayed single-use token and an unregistered
+            # hostname are four indistinguishable outcomes from outside - and
+            # an incident responder has nothing to search for.
+            #
+            # The token itself is never logged: it is single-use credential
+            # material, and a rejection log is exactly where it would leak.
+            logger.warning(
+                "turnstile_verify_rejected",
+                error_codes=list(payload.get("error-codes") or []),
+                hostname=payload.get("hostname"),
+            )
+            return False
         except Exception as exc:
             logger.warning("turnstile_verify_failed", error=str(exc))
             return False
