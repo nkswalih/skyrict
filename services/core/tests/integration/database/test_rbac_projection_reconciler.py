@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import event, func, select, text
+from sqlalchemy.exc import DBAPIError
 
 from core.db.rbac import RbacRepository, grants_permission
 from core.db.session import async_session_factory
@@ -635,6 +636,74 @@ class TestFailureIsolation:
         reconciler = RbacProjectionReconciler(async_session_factory)
         await reconciler.stop()
         assert not reconciler.running
+
+
+class TestRlsCapabilityGuard:
+    """The guard that stops this worker degrading into a silent no-op.
+
+    ``core_roles`` is RLS-protected on ``tenant_id = current_tenant_id()`` and a
+    background task has no request tenant, so the tick depends on the database
+    role bypassing RLS. If it stops doing that, every tick reports healthy while
+    repairing nothing - the failure mode this guard exists to prevent.
+    """
+
+    # A literal, not a parameter: it is interpolated into DDL, and there is no
+    # reason for it to be anything else.
+    PROBE_ROLE = "skyrict_probe_rls"
+
+    @pytest.fixture
+    async def restricted_role(self) -> AsyncGenerator[str, None]:
+        """A role that cannot bypass RLS and owns none of core's tables."""
+        async with async_session_factory() as session:
+            try:
+                await session.execute(text(f'CREATE ROLE "{self.PROBE_ROLE}" NOLOGIN'))
+            except DBAPIError as exc:
+                await session.rollback()
+                pytest.skip(f"insufficient privilege to create a probe role: {exc}")
+            await session.commit()
+        try:
+            yield self.PROBE_ROLE
+        finally:
+            async with async_session_factory() as session:
+                await session.execute(text(f'DROP ROLE IF EXISTS "{self.PROBE_ROLE}"'))
+                await session.commit()
+
+    async def test_probe_distinguishes_a_role_that_cannot_bypass(
+        self, restricted_role: str
+    ) -> None:
+        from core.features.rbac.projection_worker import _CAN_BYPASS_RLS_SQL
+
+        async with async_session_factory() as session:
+            # Core's own role bypasses RLS, so the worker runs in production.
+            assert await session.scalar(_CAN_BYPASS_RLS_SQL) is True
+
+            await session.execute(text(f'SET ROLE "{restricted_role}"'))
+            try:
+                # A role with neither BYPASSRLS nor table ownership would see
+                # nothing, so the probe must say so rather than return true.
+                assert await session.scalar(_CAN_BYPASS_RLS_SQL) is False
+            finally:
+                await session.execute(text("RESET ROLE"))
+
+    async def test_loop_refuses_to_run_when_rls_would_hide_the_gap(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        async def cannot(_self: RbacProjectionReconciler) -> bool:
+            return False
+
+        monkeypatch.setattr(RbacProjectionReconciler, "_can_bypass_rls", cannot)
+
+        reconciler = RbacProjectionReconciler(async_session_factory)
+        with caplog.at_level(logging.ERROR, logger="core.features.rbac.projection_worker"):
+            reconciler.start()
+            deadline = asyncio.get_running_loop().time() + 10.0
+            while reconciler.running and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.01)
+
+        assert not reconciler.running
+        assert [r for r in caplog.records if r.message == "rbac.projection.rls_not_bypassable"]
 
 
 class TestLifespanWiring:
