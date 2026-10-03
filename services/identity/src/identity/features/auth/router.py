@@ -227,13 +227,19 @@ async def signup_send_code(
     """
     ip_address = client_ip(request)
     email_key = body.email.lower()
-    # Refuse a request with no proof before the per-email limiter runs.
+    # Refuse an empty proof before the per-email limiter runs.
     #
-    # That limiter is keyed on the address being sent to, so a caller holding
-    # nothing at all could otherwise burn a victim's whole bucket and lock them
-    # out of requesting their own code for the rest of the window. Guessing is
-    # still throttled - a guess is not blank, so both limiters below still
-    # apply to it.
+    # That limiter is keyed on the address being sent to, so a caller with
+    # nothing at all would otherwise spend a named stranger's whole bucket and
+    # lock them out of their own code for the rest of the window. A flood of
+    # empty requests is the shape that arrives first and costs nothing to refuse.
+    #
+    # What this does NOT do is stop a caller who sends a non-empty token they do
+    # not hold: that still reaches the limiter below and is still refused by the
+    # service afterwards. Closing that needs the proof checked ahead of the
+    # email-keyed limiter, which means a second read of the proof that then has
+    # to be kept in step with the service's own check. Tracked rather than
+    # half-solved here.
     if body.flow_token is None or not body.flow_token.strip():
         raise ValidationError(
             "This sign-up session has expired. Go back to step 1 and start again."

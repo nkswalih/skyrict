@@ -115,10 +115,17 @@ user mid-flow for a step they had already cleared.
   deliberate: three emails to a single address, inside a ten-minute window,
   behind per-email and per-IP rate limits, is a materially smaller abuse surface
   than a solve-per-send requirement that users fail to satisfy.
-- A request carrying no proof is refused before the per-address limiter runs.
-  That limiter is keyed on the inbox being written to, so without this a caller
-  holding nothing could exhaust a named stranger's bucket and lock them out of
-  their own code. Guessing is still throttled, because a guess is not blank.
+- A request carrying an empty proof is refused before the per-address limiter
+  runs. That limiter is keyed on the inbox being written to, so a caller with
+  nothing at all would otherwise spend a named stranger's whole bucket and lock
+  them out of their own code. **This is partial.** A caller who sends a
+  non-empty token they do not hold still reaches that limiter, so the endpoint
+  remains susceptible to being rate-limited on someone else's behalf by an
+  unauthenticated caller. That is pre-existing and unchanged by this decision —
+  before it, every request reached the limiter and then failed Turnstile — and
+  closing it properly means checking the proof ahead of the email-keyed limiter,
+  which needs a second read of the proof kept in step with the service's own
+  check. Tracked, not half-solved here.
 
 ## Alternatives rejected
 
