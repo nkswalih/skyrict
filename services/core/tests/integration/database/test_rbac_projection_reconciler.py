@@ -674,6 +674,50 @@ class TestFailureIsolation:
 
         await _delete_tenant(neighbour.tenant_id)
 
+    async def test_scoped_run_projects_only_the_named_tenants_pending_grant(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """A scoped run must not project another tenant's outstanding grant.
+
+        The tenant predicate on Step 2 is what bounds the insert set to the
+        tenant that was asked for. Without it, every ``user_roles`` row in the
+        table is joined against whatever ``core_roles`` exist, so a partly
+        projected tenant gets finished as a side effect of reconciling an
+        unrelated one.
+
+        The grant created here is *correct* - it names a role the tenant
+        really owns - so nothing about it is a safety violation. That is the
+        point: this test pins the scoping contract (do what you were asked, and
+        no more) rather than a security property, which is what the tenant pin
+        on the role lookup covers.
+        """
+        from core.seed import sync_rbac_from_identity
+
+        neighbour = await _provision_signup_tenant("pending")
+        try:
+            # Project the neighbour's role catalog but not its owner's grant,
+            # which is the partly-projected state the scoping contract is about.
+            async with async_session_factory() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO core_roles (id, tenant_id, name, permissions, is_system_role) "
+                        "SELECT r.id, r.tenant_id, r.name, r.permissions, r.is_system_role "
+                        "FROM roles r WHERE r.tenant_id = :tid"
+                    ),
+                    {"tid": neighbour.tenant_id},
+                )
+                await session.commit()
+            roles, grants = await _core_rows(neighbour.tenant_id)
+            assert (roles, grants) == (6, 0), "fixture should be roles-only"
+
+            await sync_rbac_from_identity(signup_tenant.tenant_id)
+
+            assert await _core_rows(neighbour.tenant_id) == (6, 0), (
+                "reconciling one tenant must not project another's pending grant"
+            )
+        finally:
+            await _delete_tenant(neighbour.tenant_id)
+
     async def test_loop_survives_a_failing_pass_and_stops_cleanly(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -705,10 +749,19 @@ class TestFailureIsolation:
         assert reconciler.running is True
 
         monkeypatch.setattr(RbacProjectionReconciler, "_gap_tenant_ids", real)
+        task = reconciler._task
         await reconciler.stop(timeout=10.0)
 
         assert not reconciler.running
         assert attempts == 1, "stop() must interrupt the sleep, not run a pass"
+        # Cancelling the task also ends it, so `not running` alone cannot tell a
+        # graceful stop from the timeout path. A real shutdown wakes the sleep
+        # through the stop event and lets the loop finish its own pass; only the
+        # cancel path leaves the task cancelled. Without this assertion, removing
+        # the stop signal still passes, and every shutdown silently becomes a
+        # timeout-then-cancel that holds the loop open for the full timeout.
+        assert task is not None
+        assert task.cancelled() is False, "stop() should wake the loop, not cancel it"
 
     async def test_stop_is_idempotent_without_a_task(self) -> None:
         from core.features.rbac.projection_worker import RbacProjectionReconciler
