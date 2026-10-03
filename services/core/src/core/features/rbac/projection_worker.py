@@ -109,7 +109,7 @@ _MAX_TENANTS_PER_TICK = 200
 # reconciles again on the next pass after this window.
 _NO_PROGRESS_COOLDOWN_SECONDS = 900.0
 
-# Spreads replicas apart so they do not all tick on the same boundary.
+# +/-20% of the period.
 _JITTER_FRACTION = 0.2
 
 # Driven from `tenants` so the cost tracks tenant count rather than total
@@ -244,8 +244,9 @@ class RbacProjectionReconciler:
             await asyncio.wait_for(self._stop.wait(), timeout=seconds)
 
     def _jitter(self, seconds: float) -> float:
+        """Spread the wait so replicas do not tick on the same boundary."""
         spread = seconds * _JITTER_FRACTION
-        return max(seconds - spread, seconds + random.uniform(-spread, spread))
+        return seconds + random.uniform(-spread, spread)
 
     async def _can_bypass_rls(self) -> bool:
         """True when the database role can see across tenants.
