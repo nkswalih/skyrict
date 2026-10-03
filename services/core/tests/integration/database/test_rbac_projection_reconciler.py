@@ -401,82 +401,162 @@ class TestReconcileScopeAndSafety:
         assert await _role_permissions(signup_tenant.tenant_id) == first_roles
         assert await _grant_triples(signup_tenant.tenant_id) == first_grants
 
+    async def test_foreign_grant_does_not_borrow_a_same_named_role(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """A grant naming another tenant's role must resolve to nothing.
+
+        This is the only fixture that actually exercises the tenant pin in
+        Step 2's role lookup. ``signup_tenant`` keeps its OWN role catalog, so
+        its own ``tenant_owner`` row is present and available to be matched. If
+        the lookup were unpinned, the subquery would resolve the *donor's* role
+        name, the join would find ``signup_tenant``'s own ``tenant_owner``, and
+        the user would be handed ``*`` - access widening, from a row identity
+        never meant to grant it.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        donor = await _provision_signup_tenant("donor")
+        try:
+            intruder = await _inject_foreign_grant(signup_tenant, donor)
+
+            await RbacProjectionReconciler(async_session_factory).run_once()
+
+            async with async_session_factory() as session:
+                permissions = await RbacRepository(session).resolve_user_permissions(
+                    user_id=intruder, tenant_id=signup_tenant.tenant_id
+                )
+            assert permissions == [], (
+                "a grant naming another tenant's role must not resolve to this "
+                "tenant's own same-named role"
+            )
+            # The tenant's real owner is unaffected, so this is a denial of an
+            # illegitimate grant and not the reconciler failing to work.
+            async with async_session_factory() as session:
+                assert sorted(
+                    await RbacRepository(session).resolve_user_permissions(
+                        user_id=signup_tenant.user_id, tenant_id=signup_tenant.tenant_id
+                    )
+                ) == ["*", "invitations:send"]
+        finally:
+            await _delete_tenant(donor.tenant_id)
+
+
+async def _provision_granted_tenant_without_catalog(
+    prefix: str,
+) -> tuple[SignupTenant, SignupTenant]:
+    """A tenant that has a grant but no role catalog of its own.
+
+    This is the no-progress case. Step 1 copies roles filtered by
+    ``tenant_id`` and Step 2 resolves the role through ``roles``, both pinned
+    to this tenant, so neither can write anything and ``_count_core_roles``
+    stays zero - which is what arms the cooldown.
+
+    This is NOT the same anomaly as a cross-tenant grant, and conflating the
+    two hides a bug: with no catalog of its own the tenant has no same-named
+    role to match, so the join alone already blocks the grant and Step 2's
+    tenant pin is never exercised. That case needs the target to own a
+    same-named role, and is covered by
+    ``test_foreign_grant_does_not_borrow_a_same_named_role``.
+
+    Returns the stuck tenant and the donor owning the granted role. The donor
+    must survive: ``user_roles.role_id`` cascades from ``roles``, so deleting
+    it would cascade the grant away and leave no anomaly to reconcile.
+    """
+    from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+    tenant_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    donor = await _provision_signup_tenant(prefix)
+    # Project the donor so the only remaining gap is `tenant_id` below -
+    # otherwise the donor's own rows would mask the anomaly.
+    await RbacProjectionReconciler(async_session_factory).run_once()
+
+    async with async_session_factory() as session:
+        session.add(
+            TenantModel(
+                id=tenant_id,
+                name="Catalog-less Tenant",
+                slug=f"{prefix}-{tenant_id.hex[:8]}",
+                plan_tier="free",
+                is_active=True,
+            )
+        )
+        await session.commit()
+    async with async_session_factory() as session:
+        await session.execute(
+            text(
+                "INSERT INTO users (id, tenant_id, email, password_hash, full_name) "
+                "VALUES (:uid, :tid, :email, :hash, :name)"
+            ),
+            {
+                "uid": user_id,
+                "tid": tenant_id,
+                "email": f"catalogless-{tenant_id.hex[:8]}@signup.skyrict.test",
+                "hash": "not-a-real-hash",
+                "name": "Catalog-less User",
+            },
+        )
+        donor_role = (
+            await session.execute(
+                text("SELECT id FROM roles WHERE tenant_id = :tid AND name = 'tenant_owner'"),
+                {"tid": donor.tenant_id},
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                "INSERT INTO user_roles (id, tenant_id, user_id, role_id, scope_type, scope_id) "
+                "VALUES (gen_random_uuid(), :tid, :uid, :rid, 'tenant', :tid)"
+            ),
+            {"tid": tenant_id, "uid": user_id, "rid": donor_role},
+        )
+        await session.commit()
+    return SignupTenant(tenant_id=tenant_id, user_id=user_id), donor
+
+
+async def _inject_foreign_grant(target: SignupTenant, donor: SignupTenant) -> uuid.UUID:
+    """Add a user to `target` whose only grant names `donor`'s tenant_owner.
+
+    ``user_roles`` carries three single-column FKs and no composite
+    ``(tenant_id, role_id) -> roles(tenant_id, id)``, so a row whose
+    denormalised ``tenant_id`` disagrees with its role's tenant is structurally
+    legal and identity will keep it.
+
+    ``target`` keeps its OWN role catalog, which is the load-bearing part: the
+    join in Step 2 then has a same-named ``tenant_owner`` row sitting right
+    there. Without the tenant pin on the role lookup, the subquery resolves the
+    donor's role *name*, the join finds ``target``'s own ``tenant_owner``, and
+    the user is handed full access to a tenant they were never granted.
+    """
+    user_id = await _add_user_without_roles(target.tenant_id)
+    async with async_session_factory() as session:
+        donor_role = (
+            await session.execute(
+                text("SELECT id FROM roles WHERE tenant_id = :tid AND name = 'tenant_owner'"),
+                {"tid": donor.tenant_id},
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                "INSERT INTO user_roles (id, tenant_id, user_id, role_id, scope_type, scope_id) "
+                "VALUES (gen_random_uuid(), :tid, :uid, :rid, 'tenant', :tid)"
+            ),
+            {"tid": target.tenant_id, "uid": user_id, "rid": donor_role},
+        )
+        await session.commit()
+    return user_id
+
 
 class TestNoProgressCooldown:
     """A tenant that cannot be projected must not be retried in a hot loop."""
 
-    async def _provision_cross_tenant_grant(self) -> tuple[SignupTenant, SignupTenant]:
-        """A tenant whose only grant points at a role owned by another tenant.
-
-        ``user_roles`` carries three single-column FKs and no composite
-        ``(tenant_id, role_id) -> roles(tenant_id, id)``, so this row is
-        structurally legal and identity will happily keep it. Step 2's
-        tenant-pinned role lookup matches nothing, so the scoped reconcile
-        writes no rows - the real no-progress case.
-
-        Returns the stuck tenant and the role's owning tenant. The owner is
-        still needed: ``user_roles.role_id`` cascades from ``roles``, so
-        deleting the owner would cascade the grant away and there would be no
-        anomaly left to reconcile.
-        """
-        from core.features.rbac.projection_worker import RbacProjectionReconciler
-
-        tenant_id = uuid.uuid4()
-        user_id = uuid.uuid4()
-        owner = await _provision_signup_tenant("cross")
-        # Project the owner tenant so the only remaining gap is `tenant_id`
-        # below - otherwise the owner's rows would mask the anomaly.
-        await RbacProjectionReconciler(async_session_factory).run_once()
-
-        async with async_session_factory() as session:
-            session.add(
-                TenantModel(
-                    id=tenant_id,
-                    name="Cross Tenant",
-                    slug=f"cross-{tenant_id.hex[:8]}",
-                    plan_tier="free",
-                    is_active=True,
-                )
-            )
-            await session.commit()
-        async with async_session_factory() as session:
-            await session.execute(
-                text(
-                    "INSERT INTO users (id, tenant_id, email, password_hash, full_name) "
-                    "VALUES (:uid, :tid, :email, :hash, :name)"
-                ),
-                {
-                    "uid": user_id,
-                    "tid": tenant_id,
-                    "email": f"cross-{tenant_id.hex[:8]}@signup.skyrict.test",
-                    "hash": "not-a-real-hash",
-                    "name": "Cross User",
-                },
-            )
-            # The role belongs to `owner`, but the grant claims `tenant_id`.
-            foreign_role = (
-                await session.execute(
-                    text("SELECT id FROM roles WHERE tenant_id = :tid AND name = 'tenant_owner'"),
-                    {"tid": owner.tenant_id},
-                )
-            ).scalar_one()
-            await session.execute(
-                text(
-                    "INSERT INTO user_roles (id, tenant_id, user_id, role_id, scope_type, scope_id) "
-                    "VALUES (gen_random_uuid(), :tid, :uid, :rid, 'tenant', :tid)"
-                ),
-                {"tid": tenant_id, "uid": user_id, "rid": foreign_role},
-            )
-            await session.commit()
-        return SignupTenant(tenant_id=tenant_id, user_id=user_id), owner
-
-    async def test_cross_tenant_grant_creates_no_grant_and_cools_down(
+    async def test_tenant_with_grants_but_no_catalog_cools_down(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """No grant is invented, a warning names the tenant, and it backs off."""
         from core.features.rbac.projection_worker import RbacProjectionReconciler
 
-        stuck, owner = await self._provision_cross_tenant_grant()
+        stuck, donor = await _provision_granted_tenant_without_catalog("nocatalog")
         try:
             reconciler = RbacProjectionReconciler(async_session_factory)
             with caplog.at_level(logging.WARNING, logger="core.features.rbac.projection_worker"):
@@ -500,14 +580,14 @@ class TestNoProgressCooldown:
             assert warnings[0].tenant_id == str(stuck.tenant_id)
         finally:
             await _delete_tenant(stuck.tenant_id)
-            await _delete_tenant(owner.tenant_id)
+            await _delete_tenant(donor.tenant_id)
 
     async def test_stuck_tenant_is_skipped_until_the_cooldown_expires(self) -> None:
         """The backoff is real: one attempt per cooldown window, not per tick."""
         from core.features.rbac import projection_worker
         from core.features.rbac.projection_worker import RbacProjectionReconciler
 
-        stuck, owner = await self._provision_cross_tenant_grant()
+        stuck, donor = await _provision_granted_tenant_without_catalog("nocatalog")
         try:
             now = 1_000.0
             reconciler = RbacProjectionReconciler(async_session_factory, clock=lambda: now)
@@ -529,7 +609,7 @@ class TestNoProgressCooldown:
             assert (third.tenants_reconciled, third.tenants_no_progress) == (1, 1)
         finally:
             await _delete_tenant(stuck.tenant_id)
-            await _delete_tenant(owner.tenant_id)
+            await _delete_tenant(donor.tenant_id)
 
     async def test_cooldown_clears_once_the_tenant_projects(
         self, signup_tenant: SignupTenant
