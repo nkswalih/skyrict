@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import event, func, select, text
 
 from core.db.rbac import RbacRepository, grants_permission
 from core.db.session import async_session_factory
@@ -126,10 +126,25 @@ async def signup_tenant(migrated_schema: None) -> AsyncGenerator[SignupTenant, N
         yield SignupTenant(tenant_id=tenant_id, user_id=user_id)
     finally:
         async with async_session_factory() as session:
-            await session.execute(
-                text("DELETE FROM tenants WHERE id = :tid"), {"tid": tenant_id}
-            )
+            await session.execute(text("DELETE FROM tenants WHERE id = :tid"), {"tid": tenant_id})
             await session.commit()
+
+
+@pytest.fixture
+async def captured_statements() -> AsyncGenerator[list[str], None]:
+    """Every SQL statement the engine executes while the test runs."""
+    from core.db.session import engine
+
+    statements: list[str] = []
+
+    def _record(_connection: object, _cursor: object, statement: str, *_args: object) -> None:
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _record)
+    try:
+        yield statements
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _record)
 
 
 async def _core_rows(tenant_id: uuid.UUID) -> tuple[int, int]:
@@ -189,3 +204,92 @@ class TestSignupTenantProjection:
             )
         assert sorted(permissions) == ["*", "invitations:send"]
         assert grants_permission(permissions, "erp.inventory.read")
+
+
+async def _role_permissions(tenant_id: uuid.UUID) -> dict[str, list[str]]:
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(CoreRoleModel.name, CoreRoleModel.permissions).where(
+                    CoreRoleModel.tenant_id == tenant_id
+                )
+            )
+        ).all()
+    return {name: sorted(permissions) for name, permissions in rows}
+
+
+async def _grant_triples(tenant_id: uuid.UUID) -> list[tuple[str, str, str]]:
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(
+                    CoreUserRoleModel.user_id,
+                    CoreUserRoleModel.role_id,
+                    CoreUserRoleModel.scope_id,
+                ).where(CoreUserRoleModel.tenant_id == tenant_id)
+            )
+        ).all()
+    return sorted(
+        (str(user_id), str(role_id), str(scope_id)) for user_id, role_id, scope_id in rows
+    )
+
+
+async def _drop_core_projection(tenant_id: uuid.UUID) -> None:
+    """Reset core to the post-signup state; cascading FKs clear the grants."""
+    async with async_session_factory() as session:
+        await session.execute(
+            text("DELETE FROM core_roles WHERE tenant_id = :tid"), {"tid": tenant_id}
+        )
+        await session.commit()
+
+
+class TestSyncRbacFromIdentityTenantScope:
+    """``tenant_id`` splits an additive projection from boot-time revocation."""
+
+    async def test_scoped_run_projects_the_same_rows_as_the_boot_path(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """One implementation, two callers: both forms must agree exactly."""
+        from core.seed import sync_rbac_from_identity
+
+        tenant_id = signup_tenant.tenant_id
+
+        await sync_rbac_from_identity(tenant_id)
+        scoped_roles = await _role_permissions(tenant_id)
+        scoped_grants = await _grant_triples(tenant_id)
+
+        await _drop_core_projection(tenant_id)
+        await sync_rbac_from_identity()
+        unscoped_roles = await _role_permissions(tenant_id)
+        unscoped_grants = await _grant_triples(tenant_id)
+
+        assert scoped_roles == unscoped_roles
+        assert scoped_grants == unscoped_grants
+        assert len(scoped_roles) == len(_SIGNUP_ROLE_DEFINITIONS)
+
+    async def test_scoped_run_issues_no_delete(
+        self, signup_tenant: SignupTenant, captured_statements: list[str]
+    ) -> None:
+        """A background caller must never hold the power to revoke access."""
+        from core.seed import sync_rbac_from_identity
+
+        await sync_rbac_from_identity(signup_tenant.tenant_id)
+
+        assert captured_statements, "expected the scoped sync to execute SQL"
+        deletes = [s for s in captured_statements if s.lstrip().upper().startswith("DELETE")]
+        assert deletes == []
+
+    async def test_boot_path_still_deletes(
+        self, signup_tenant: SignupTenant, captured_statements: list[str]
+    ) -> None:
+        """Companion to the assertion above - proves that check can fail.
+
+        Without this, "no DELETE" would also hold if the sync had simply lost
+        its revocation step everywhere.
+        """
+        from core.seed import sync_rbac_from_identity
+
+        await sync_rbac_from_identity()
+
+        deletes = [s for s in captured_statements if s.lstrip().upper().startswith("DELETE")]
+        assert deletes, "the boot path must keep reconciling revoked grants"
