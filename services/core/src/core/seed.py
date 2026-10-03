@@ -653,8 +653,11 @@ async def sync_rbac_from_identity(tenant_id: uuid.UUID | None = None) -> None:
         # Uses core's role_id (looked up by name) rather than identity's
         # role_id, because core's PK may differ from identity's if the role
         # was independently created. This keeps the FK valid.
+        # B608: the only interpolation is `role_name_lookup`, one of two literals
+        # chosen by `scoped` above - never caller input. Every caller-supplied
+        # value reaches the database as a bound parameter.
         step2_sql = (
-            "INSERT INTO core_user_roles (tenant_id, id, user_id, role_id, scope_id) "
+            "INSERT INTO core_user_roles (tenant_id, id, user_id, role_id, scope_id) "  # nosec B608
             "SELECT ur.tenant_id, gen_random_uuid(), ur.user_id, cr.id, ur.scope_id "
             "FROM user_roles ur "
             "JOIN core_roles cr ON cr.tenant_id = ur.tenant_id AND cr.name = "
