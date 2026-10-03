@@ -164,6 +164,23 @@ class VerificationStore:
             await self._client.expire(key, settings.SIGNUP_FLOW_TTL_SECONDS)
         return count
 
+    async def release_signup_flow_send(self, token: str) -> None:
+        """Give back a charge whose send did not happen.
+
+        Reserve-then-commit. ``consume_signup_flow_send`` has to decide, and it
+        can only decide before the mail goes out, so a relay that fails after the
+        reservation would otherwise leave the user short a send they never used -
+        and after three of those, out of budget on code they never received.
+
+        The TTL is not restored, only the count. The window still runs from when
+        the challenge was solved; a released slot does not buy more time.
+        """
+        key = _flow_sends_key(token)
+        if await self._client.decr(key) < 0:
+            # Never driven negative: a release with no matching charge would
+            # hand out budget that was never spent.
+            await self._client.set(key, "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
+
     async def set_verification_token(self, token: str, email: str, password_hash: str) -> str:
         await self._client.set(
             _vt_key(token),

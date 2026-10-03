@@ -236,6 +236,8 @@ class FakeEmailService:
 
     def __init__(self) -> None:
         self.sent: list[dict[str, str | None]] = []
+        # Flip to make send_otp raise, the way a struggling relay would.
+        self.otp_fails = False
 
     async def send_verification(
         self, *, to: str, full_name: str, token: str, base_url: str | None = None
@@ -243,6 +245,10 @@ class FakeEmailService:
         self.sent.append({"to": to, "full_name": full_name, "token": token, "base_url": base_url})
 
     async def send_otp(self, *, to: str, code: str) -> None:
+        if self.otp_fails:
+            # Stands in for a relay that times out or 5xxs. A real one is
+            # transient and unconnected to who the address belongs to.
+            raise RuntimeError("smtp unavailable")
         self.sent.append({"to": to, "code": code})
 
     async def send_security_alert(self, *, alert: SecurityAlert) -> None:
@@ -509,6 +515,11 @@ class FakeVerificationStore:
         await asyncio.sleep(0)
         self.flow_sends[token] = self.flow_sends.get(token, 0) + 1
         return self.flow_sends[token]
+
+    async def release_signup_flow_send(self, token: str) -> None:
+        await asyncio.sleep(0)
+        if token in self.flow_sends:
+            self.flow_sends[token] = max(self.flow_sends[token] - 1, 0)
 
     async def set_verification_token(self, token: str, email: str, password_hash: str) -> str:
         self.tokens[token] = {"email": email, "password_hash": password_hash}
@@ -1197,6 +1208,59 @@ class TestWizard:
             await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
 
         assert harness.email_svc.sent == []
+
+    async def test_a_failed_send_does_not_spend_the_budget(self) -> None:
+        """A send the relay never made is not a code the user used.
+
+        The charge has to be made before the mail goes out, because it is what
+        decides whether the send may proceed at all. That leaves a reservation
+        rather than a commit, so a relay failure has to give it back. Kept, three
+        transient timeouts in a row would end a signup with "too many codes
+        requested" for three codes the user never received, and no way forward
+        from that message.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.email_svc.otp_fails = True
+
+        for _ in range(settings.SIGNUP_FLOW_MAX_SENDS + 2):
+            harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+            with pytest.raises(RuntimeError):
+                await harness.service.signup_send_code(
+                    email="owner@neworg.com", flow_token=flow_token
+                )
+
+        assert harness.verification_store.flow_sends[flow_token] == 0
+
+        # And the proof is still usable once the relay recovers.
+        harness.email_svc.otp_fails = False
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", flow_token=flow_token
+        )
+        assert sent["status"] == "ok"
+
+    async def test_a_released_charge_does_not_extend_the_window(self) -> None:
+        """Releasing a send returns the budget, never the time.
+
+        The window runs from when the challenge was solved. If a failing relay
+        could push it back, a caller could keep a proof alive indefinitely by
+        failing its sends on purpose.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.email_svc.otp_fails = True
+
+        with pytest.raises(RuntimeError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+        harness.email_svc.otp_fails = False
+        # A released send must not have handed back cooldown either.
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+        blocked = await harness.service.signup_send_code(
+            email="owner@neworg.com", flow_token=flow_token
+        )
+        assert blocked["code"] is None
 
     async def test_send_code_checks_the_proof_before_honouring_the_resend_cooldown(self) -> None:
         """A blocked resend must not return 200 to a caller that proved nothing.

@@ -428,8 +428,21 @@ class AuthenticationService:
             raise ValidationError("Too many codes requested. Go back to step 1 and start again.")
         code = generate_otp()
         await self.verification_store.set_otp(email, hash_otp(code))
+        # Kept on failure. A relay that is down should not be hammered on the
+        # next click either, and the retry the cooldown hands back is honest
+        # about waiting rather than about having sent anything.
         await self.verification_store.mark_resend(email)
-        await self.email_service.send_otp(to=email, code=code)
+        try:
+            await self.email_service.send_otp(to=email, code=code)
+        except Exception:
+            # The charge was a reservation, and the send it was reserved for did
+            # not happen - a relay timeout, a 5xx, an exhausted connection pool.
+            # Keeping it would spend a send the user never used, and three of
+            # those in a row would end a signup over an infra blip with no
+            # message they can act on. The cooldown above is the limit on
+            # retries; the budget is not, because no budget was used.
+            await self.verification_store.release_signup_flow_send(flow_token)
+            raise
         return {
             "status": "ok",
             "resend_in": settings.OTP_RESEND_COOLDOWN_SECONDS,
