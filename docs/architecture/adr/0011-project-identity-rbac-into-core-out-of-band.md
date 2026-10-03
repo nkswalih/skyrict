@@ -98,10 +98,9 @@ tick, so it is O(total roles) whether or not anything is broken. Only the chosen
 
 ### Bounded on three axes
 
-Beta runs `minReplicas=1` / `maxReplicas=2`, so a tick costs at most ~83 ms of
-database time against a worst case of 41.7 ms — a 0.03% duty cycle at the 300 s
-idle cap and 1.7% at the 5 s active interval. Extrapolating linearly to 100,000
-tenants still yields only ~0.17% at idle. The intervals follow from those numbers.
+Beta runs `minReplicas=1` / `maxReplicas=2`, so two ticks cost at most ~83 ms of
+database time per period: 1.7% duty against the active interval and 0.07% against
+the idle cap at the 41.7 ms worst case.
 
 - **A 200-tenant per-tick cap.** Without it, a total outage reconciles 10,000
   tenants as 10,000 transactions inside a single tick on a 0.25-CPU container.
@@ -111,6 +110,29 @@ tenants still yields only ~0.17% at idle. The intervals follow from those number
   disagrees with its role's tenant can never match, so the tick would otherwise
   re-select it forever. It is a cooldown, not a blacklist — if the underlying row
   is repaired, the tenant converges on its own.
+
+### The idle cap sets the latency, and it was measured rather than guessed
+
+An earlier draft of this ADR claimed a new tenant's owner "resolves full
+permissions within seconds". That was wrong, and measuring it on a booted
+service showed why: sign-ups are rare, so the loop spends nearly all its time
+at the idle cap, and a tenant created just after a tick waits one whole period.
+The cap is therefore the worst case, not the 5 s active interval.
+
+Measured on core booted against this schema, with the cap at 300 s:
+
+| Loop state | Convergence |
+|---|---|
+| Already active | 4.9 s |
+| Mid-ramp | 13.4 s, 70.2 s |
+| Fully backed off | 323.6 s |
+
+The cap is therefore 60 s rather than 300 s. That bounds the worst case near
+64 s for 0.07% duty instead of 0.014% — five minutes of a tenant owner meeting
+403s is a poor trade for 14 ms of extra database time per minute. The incident
+being fixed ran ~29 minutes, so even the 300 s cap was a 5.4× improvement, but
+a locked-out owner is precisely the failure this change exists to remove, and
+the extra polling is noise against a 0.25-CPU container.
 
 ### The worker refuses to start if RLS would hide the gap
 
@@ -159,8 +181,9 @@ reconciliation instead of merely duplicating it.
 
 ## Consequences
 
-- A signup tenant's owner resolves full permissions within seconds of the tenant
-  being created, without waiting for a deploy or restart.
+- A signup tenant's owner resolves full permissions without waiting for a deploy
+  or restart: measured 4.9 s while the loop was active and ~64 s worst case at the
+  60 s idle cap, against ~29 minutes before.
 - **No user's access is widened beyond what identity grants.** The reconciler
   copies exactly identity's rows using the same SQL as the boot path, and the
   scoped form cannot delete. `test_reconcile_never_widens_beyond_identity_grants`

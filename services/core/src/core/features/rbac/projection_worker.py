@@ -78,11 +78,23 @@ logger = logging.getLogger(__name__)
 #
 # An earlier `user_roles`-driven anti-join measured 36.1 ms healthy, and a
 # variant that also tested for missing core_user_roles measured 205 ms, so
-# both were rejected. Beta runs minReplicas=1 / maxReplicas=2, making a tick
-# at most ~83 ms of database time: a 0.03% duty cycle against the idle period
-# and 1.7% against the active one.
+# both were rejected. Beta runs minReplicas=1 / maxReplicas=2, so two ticks
+# cost at most ~83 ms of database time per period: 1.7% duty against the
+# active interval, 0.07% against the idle cap at the 41.7 ms worst case.
+#
+# The idle cap, not the active interval, is what sets how long a new tenant
+# waits. Sign-ups are rare, so the loop is almost always at the cap, and a
+# tenant created just after a tick waits one whole period - which makes the
+# cap the worst case, not the 5 s active interval. Measured on a booted
+# service against this schema: 4.9 s while the loop was already active, 13.4 s
+# and 70.2 s mid-ramp, and 323.6 s with the cap at 300 s.
+#
+# The cap is 60 s because five minutes of a locked-out tenant owner is a poor
+# trade against 0.07% duty. The incident this fixes ran ~29 minutes, so even
+# the measured 300 s cap was a 5.4x improvement - but an owner meeting 403s
+# throughout is the exact failure being fixed, and the extra polling is noise.
 _ACTIVE_INTERVAL_SECONDS = 5.0
-_IDLE_INTERVAL_CAP_SECONDS = 300.0
+_IDLE_INTERVAL_CAP_SECONDS = 60.0
 
 # Without a cap, a total outage reconciles 10,000 tenants as 10,000
 # transactions inside one tick, on a 0.25-CPU container. Capping bounds every
