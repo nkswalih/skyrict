@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -235,6 +236,8 @@ class FakeEmailService:
 
     def __init__(self) -> None:
         self.sent: list[dict[str, str | None]] = []
+        # Flip to make send_otp raise, the way a struggling relay would.
+        self.otp_fails = False
 
     async def send_verification(
         self, *, to: str, full_name: str, token: str, base_url: str | None = None
@@ -242,6 +245,10 @@ class FakeEmailService:
         self.sent.append({"to": to, "full_name": full_name, "token": token, "base_url": base_url})
 
     async def send_otp(self, *, to: str, code: str) -> None:
+        if self.otp_fails:
+            # Stands in for a relay that times out or 5xxs. A real one is
+            # transient and unconnected to who the address belongs to.
+            raise RuntimeError("smtp unavailable")
         self.sent.append({"to": to, "code": code})
 
     async def send_security_alert(self, *, alert: SecurityAlert) -> None:
@@ -458,6 +465,8 @@ class FakeVerificationStore:
         self.attempts: dict[str, int] = {}
         self.resend_until: dict[str, float] = {}
         self.tokens: dict[str, dict[str, str]] = {}
+        self.flows: dict[str, str] = {}
+        self.flow_sends: dict[str, int] = {}
         self.now: float = 0.0
 
     async def set_otp(self, email: str, otp_hash: str) -> None:
@@ -488,6 +497,29 @@ class FakeVerificationStore:
     async def resend_in(self, email: str) -> int:
         remaining = self.resend_until.get(email.lower(), 0.0) - self.now
         return max(int(remaining), 0)
+
+    async def set_signup_flow(self, token: str, email: str) -> None:
+        self.flows[token] = email
+        self.flow_sends[token] = 0
+
+    async def get_signup_flow(self, token: str) -> str | None:
+        # A real Redis GET suspends, so concurrent callers interleave around it.
+        # The double has to as well, or a concurrency test proves nothing.
+        await asyncio.sleep(0)
+        # A proof whose budget key is gone is unusable, matching the real store.
+        if token not in self.flows or token not in self.flow_sends:
+            return None
+        return self.flows[token]
+
+    async def consume_signup_flow_send(self, token: str) -> int:
+        await asyncio.sleep(0)
+        self.flow_sends[token] = self.flow_sends.get(token, 0) + 1
+        return self.flow_sends[token]
+
+    async def release_signup_flow_send(self, token: str) -> None:
+        await asyncio.sleep(0)
+        if token in self.flow_sends:
+            self.flow_sends[token] = max(self.flow_sends[token] - 1, 0)
 
     async def set_verification_token(self, token: str, email: str, password_hash: str) -> str:
         self.tokens[token] = {"email": email, "password_hash": password_hash}
@@ -990,6 +1022,14 @@ def _org_request(
 
 
 class TestWizard:
+    """The wizard's anti-abuse gate: one solved challenge, then a spent proof."""
+
+    @staticmethod
+    async def _clear_challenge(harness: _Harness, email: str = "owner@neworg.com") -> str:
+        """Clear the wizard's one challenge and return the proof it mints."""
+        started = await harness.service.signup_start(email=email, turnstile_token="tok")
+        return str(started["flow_token"])
+
     async def test_signup_start_requires_valid_turnstile(self) -> None:
         harness = _Harness(turnstile=FakeTurnstile(result=False))
 
@@ -1003,54 +1043,247 @@ class TestWizard:
 
         result = await harness.service.signup_start(email="owner@neworg.com", turnstile_token="tok")
 
-        assert result == {"status": "ok"}
+        assert result["status"] == "ok"
+        # The proof is what the rest of the wizard spends instead of a second
+        # challenge, so it has to actually come back.
+        flow_token = result["flow_token"]
+        assert isinstance(flow_token, str) and flow_token
+        flow_email = await harness.verification_store.get_signup_flow(flow_token)
+        assert flow_email == "owner@neworg.com"
         assert harness.turnstile.calls == ["tok"]
 
-    async def test_send_code_requires_valid_turnstile(self) -> None:
-        """The endpoint that actually sends mail has to be gated, not just its entry."""
-        harness = _Harness(turnstile=FakeTurnstile(result=False))
+    async def test_wizard_costs_exactly_one_challenge(self) -> None:
+        """The regression this whole change exists to prevent.
+
+        A Turnstile token is single-use, so a second challenge seconds after the
+        first is not a redundant round trip - it is the solve most likely to be
+        scored as automation and rejected. The entire wizard must cost one solve.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", flow_token=flow_token
+        )
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+        await harness.service.signup_verify_code(email="owner@neworg.com", code=sent["code"])
+
+        assert harness.turnstile.calls == ["tok"]
+
+    async def test_send_code_requires_the_flow_proof(self) -> None:
+        """The endpoint that actually sends mail has to be gated, not just its entry.
+
+        The gate is now a proof rather than a fresh challenge, but it is still a
+        gate: a caller who never cleared the wizard cannot make it spend mail.
+        """
+        harness = _Harness()
 
         with pytest.raises(ValidationError):
-            await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok")
+            await harness.service.signup_send_code(
+                email="owner@neworg.com", flow_token="never-issued"
+            )
 
-        assert harness.turnstile.calls == ["tok"]
         # Nothing was minted, stored or sent.
         assert harness.email_svc.sent == []
         assert await harness.verification_store.get_otp_hash("owner@neworg.com") is None
 
-    async def test_send_code_rejects_a_missing_turnstile_token(self) -> None:
-        """No token at all is the shape of the request a script would send."""
-        harness = _Harness(turnstile=FakeTurnstile(result=False))
+    async def test_send_code_rejects_a_missing_flow_proof(self) -> None:
+        """No proof at all is the shape of the request a script would send."""
+        harness = _Harness()
 
         with pytest.raises(ValidationError):
-            await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token=None)
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=None)
 
-        assert harness.turnstile.calls == [None]
         assert harness.email_svc.sent == []
 
-    async def test_send_code_verifies_before_honouring_the_resend_cooldown(self) -> None:
-        """A blocked resend must not return 200 to a caller that verified nothing.
+    async def test_flow_proof_is_bound_to_the_address_it_was_solved_for(self) -> None:
+        """One solved challenge must not become mail to a stranger's inbox.
 
-        Checking the cooldown first would hand an unverified caller a success
-        response and a countdown, which reads as a working send and hides that
-        no challenge was ever checked.
+        This is the property the proof has to carry. While every send demanded
+        its own challenge, solving one was worth exactly one address; now a
+        single solve is reusable, so binding it to an address is what preserves
+        that limit.
         """
-        harness = _Harness(turnstile=FakeTurnstile(result=True))
-        await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok-1")
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness, "owner@neworg.com")
 
-        harness.turnstile.result = False
         with pytest.raises(ValidationError):
             await harness.service.signup_send_code(
-                email="owner@neworg.com", turnstile_token="tok-2"
+                email="someone-else@elsewhere.com", flow_token=flow_token
             )
+
+        assert harness.email_svc.sent == []
+        assert await harness.verification_store.get_otp_hash("someone-else@elsewhere.com") is None
+
+    async def test_flow_proof_matches_the_address_case_insensitively(self) -> None:
+        """The browser and the backend routinely disagree on address casing."""
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness, "owner@neworg.com")
+
+        sent = await harness.service.signup_send_code(
+            email="Owner@NewOrg.com", flow_token=flow_token
+        )
+
+        assert sent["status"] == "ok"
+
+    async def test_flow_proof_stops_after_its_send_budget(self) -> None:
+        """The ceiling that keeps one solve from becoming a mail cannon."""
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+
+        for attempt in range(settings.SIGNUP_FLOW_MAX_SENDS):
+            # Step past the resend cooldown so each call really sends.
+            harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+            sent = await harness.service.signup_send_code(
+                email="owner@neworg.com", flow_token=flow_token
+            )
+            assert sent["status"] == "ok", f"send {attempt} was refused"
+
+        harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        assert len(harness.email_svc.sent) == settings.SIGNUP_FLOW_MAX_SENDS
+
+    async def test_resend_cooldown_does_not_spend_the_proofs_budget(self) -> None:
+        """A blocked resend sends no mail, so it must not cost the user a send.
+
+        Otherwise a user who clicks resend inside the cooldown burns budget on a
+        request that never sent anything, and is told to start over after one
+        real code.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        for _ in range(settings.SIGNUP_FLOW_MAX_SENDS - 1):
+            blocked = await harness.service.signup_send_code(
+                email="owner@neworg.com", flow_token=flow_token
+            )
+            assert blocked["code"] is None
+            assert blocked["resend_in"] > 0
+
+        # Blocked resends send nothing, so they must not have charged the budget.
+        assert harness.verification_store.flow_sends[flow_token] == 1
+
+    async def test_concurrent_sends_cannot_exceed_the_budget(self) -> None:
+        """The budget has to hold against a burst, not just against sequential calls.
+
+        Deciding on a budget read earlier, then charging it, is a
+        read-modify-write: every request in the burst reads the same remaining
+        budget and every one of them passes. The resend cooldown does not close
+        it - it is an EXISTS followed by a SET, so concurrent callers all observe
+        "not blocked" too. Before the per-send CAPTCHA, Cloudflare rejecting a
+        replayed single-use token serialised this point. Now the INCR is what has
+        to.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+
+        results = await asyncio.gather(
+            *(
+                harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+                for _ in range(settings.SIGNUP_FLOW_MAX_SENDS * 4)
+            ),
+            return_exceptions=True,
+        )
+
+        assert len(harness.email_svc.sent) == settings.SIGNUP_FLOW_MAX_SENDS
+        # The refused ones were refused, not silently ignored.
+        refused = sum(1 for r in results if isinstance(r, ValidationError))
+        assert refused == settings.SIGNUP_FLOW_MAX_SENDS * 3
+
+    async def test_a_proof_missing_its_budget_counter_is_refused(self) -> None:
+        """An abuse control must fail closed.
+
+        Losing the counter key - a partial write, or eviction under memory
+        pressure - must not read as a counter of zero, which would turn the
+        proof into an unlimited one for the rest of its TTL.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.verification_store.flow_sends.pop(flow_token)
+
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        assert harness.email_svc.sent == []
+
+    async def test_a_failed_send_does_not_spend_the_budget(self) -> None:
+        """A send the relay never made is not a code the user used.
+
+        The charge has to be made before the mail goes out, because it is what
+        decides whether the send may proceed at all. That leaves a reservation
+        rather than a commit, so a relay failure has to give it back. Kept, three
+        transient timeouts in a row would end a signup with "too many codes
+        requested" for three codes the user never received, and no way forward
+        from that message.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.email_svc.otp_fails = True
+
+        for _ in range(settings.SIGNUP_FLOW_MAX_SENDS + 2):
+            harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+            with pytest.raises(RuntimeError):
+                await harness.service.signup_send_code(
+                    email="owner@neworg.com", flow_token=flow_token
+                )
+
+        assert harness.verification_store.flow_sends[flow_token] == 0
+
+        # And the proof is still usable once the relay recovers.
+        harness.email_svc.otp_fails = False
+        sent = await harness.service.signup_send_code(
+            email="owner@neworg.com", flow_token=flow_token
+        )
+        assert sent["status"] == "ok"
+
+    async def test_a_released_charge_does_not_extend_the_window(self) -> None:
+        """Releasing a send returns the budget, never the time.
+
+        The window runs from when the challenge was solved. If a failing relay
+        could push it back, a caller could keep a proof alive indefinitely by
+        failing its sends on purpose.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        harness.email_svc.otp_fails = True
+
+        with pytest.raises(RuntimeError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        harness.verification_store.now += settings.OTP_RESEND_COOLDOWN_SECONDS
+        harness.email_svc.otp_fails = False
+        # A released send must not have handed back cooldown either.
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+        blocked = await harness.service.signup_send_code(
+            email="owner@neworg.com", flow_token=flow_token
+        )
+        assert blocked["code"] is None
+
+    async def test_send_code_checks_the_proof_before_honouring_the_resend_cooldown(self) -> None:
+        """A blocked resend must not return 200 to a caller that proved nothing.
+
+        Checking the cooldown first would hand a proofless caller a success
+        response and a countdown, which reads as a working send and hides that
+        nothing was verified.
+        """
+        harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
+
+        with pytest.raises(ValidationError):
+            await harness.service.signup_send_code(email="owner@neworg.com", flow_token=None)
 
         assert len(harness.email_svc.sent) == 1
 
     async def test_send_code_and_verify_flow(self) -> None:
         harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
 
         sent = await harness.service.signup_send_code(
-            email="owner@neworg.com", turnstile_token="tok"
+            email="owner@neworg.com", flow_token=flow_token
         )
         assert sent["status"] == "ok"
         assert sent["resend_in"] == settings.OTP_RESEND_COOLDOWN_SECONDS
@@ -1069,10 +1302,11 @@ class TestWizard:
 
     async def test_resend_blocked_within_cooldown(self) -> None:
         harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
 
-        await harness.service.signup_send_code(email="owner@neworg.com", turnstile_token="tok-1")
+        await harness.service.signup_send_code(email="owner@neworg.com", flow_token=flow_token)
         blocked = await harness.service.signup_send_code(
-            email="owner@neworg.com", turnstile_token="tok-2"
+            email="owner@neworg.com", flow_token=flow_token
         )
 
         assert blocked["status"] == "ok"
@@ -1082,8 +1316,9 @@ class TestWizard:
 
     async def test_otp_lockout_after_max_attempts(self) -> None:
         harness = _Harness()
+        flow_token = await self._clear_challenge(harness)
         sent = await harness.service.signup_send_code(
-            email="owner@neworg.com", turnstile_token="tok"
+            email="owner@neworg.com", flow_token=flow_token
         )
         code = sent["code"]
         assert code is not None
@@ -1186,9 +1421,9 @@ class TestWizard:
 
     async def test_full_wizard_provisions_verified_owner(self) -> None:
         harness = _Harness()
-        await harness.service.signup_start(email="owner@neworg.com", turnstile_token="tok")
+        flow_token = await self._clear_challenge(harness)
         sent = await harness.service.signup_send_code(
-            email="owner@neworg.com", turnstile_token="tok-2"
+            email="owner@neworg.com", flow_token=flow_token
         )
         code = sent["code"]
         assert code is not None

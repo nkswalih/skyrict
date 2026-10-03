@@ -53,6 +53,7 @@ from identity.features.auth.mfa_challenge_store import MfaChallengeStore
 from identity.features.auth.verification_store import (
     VerificationStore,
     generate_otp,
+    generate_signup_flow_token,
     generate_verification_token,
     hash_otp,
 )
@@ -373,30 +374,75 @@ class AuthenticationService:
         )
 
     async def signup_start(self, *, email: str, turnstile_token: str | None) -> dict[str, Any]:
-        ok = await self.turnstile.verify(turnstile_token)
-        if not ok:
-            raise ValidationError("Unable to verify you are not a robot. Try again.")
-        return {"status": "ok"}
+        """Open the wizard: the one place the user proves they are not a robot.
 
-    async def signup_send_code(self, *, email: str, turnstile_token: str | None) -> dict[str, Any]:
-        # Verified before the resend check, not after it.
-        #
-        # Checking after would let an ungated caller consume a resend slot and
-        # get a 200 with only a countdown, which reads as success and hides the
-        # fact that no challenge was ever verified.
+        Solving it hands back a short-lived proof that the rest of the wizard
+        spends instead of solving a second challenge. The proof is minted *for
+        this address*, so one solve cannot be turned into mail to someone else's
+        inbox, and it carries a small send budget so it cannot be used to flood
+        a single address either.
+        """
         ok = await self.turnstile.verify(turnstile_token)
         if not ok:
             raise ValidationError("Unable to verify you are not a robot. Try again.")
+        flow_token = generate_signup_flow_token()
+        await self.verification_store.set_signup_flow(flow_token, email)
+        return {"status": "ok", "flow_token": flow_token}
+
+    async def signup_send_code(self, *, email: str, flow_token: str | None) -> dict[str, Any]:
+        # Proof first, before the resend check, not after it.
+        #
+        # Checking after would let a caller who never cleared the wizard's
+        # challenge consume a resend slot and get a 200 with only a countdown,
+        # which reads as success and hides the fact that nothing was verified.
+        flow_email = (
+            await self.verification_store.get_signup_flow(flow_token)
+            if flow_token is not None
+            else None
+        )
+        if flow_token is None or flow_email is None or flow_email.lower() != email.lower():
+            raise ValidationError(
+                "This sign-up session has expired. Go back to step 1 and start again."
+            )
         if await self.verification_store.is_resend_blocked(email):
             return {
                 "status": "ok",
                 "resend_in": await self.verification_store.resend_in(email),
                 "code": None,
             }
+        # Charged here, not on entry: a cooldown that returned no mail must not
+        # cost the user part of their budget.
+        #
+        # The charge is also what *decides*, not a count read earlier. Resolving
+        # the budget before charging it is a read-modify-write race, and the
+        # resend cooldown does not close it either - EXISTS-then-SET lets a
+        # burst of concurrent requests all observe "not blocked". Before the
+        # per-send CAPTCHA, Cloudflare rejecting a replayed single-use token
+        # serialised this point; the counter's INCR has to do it now.
+        #
+        # Over budget the counter has already moved but no mail goes out, so a
+        # caller that races past the limit burns its own proof rather than
+        # filling someone else's inbox.
+        count = await self.verification_store.consume_signup_flow_send(flow_token)
+        if count > settings.SIGNUP_FLOW_MAX_SENDS:
+            raise ValidationError("Too many codes requested. Go back to step 1 and start again.")
         code = generate_otp()
         await self.verification_store.set_otp(email, hash_otp(code))
+        # Kept on failure. A relay that is down should not be hammered on the
+        # next click either, and the retry the cooldown hands back is honest
+        # about waiting rather than about having sent anything.
         await self.verification_store.mark_resend(email)
-        await self.email_service.send_otp(to=email, code=code)
+        try:
+            await self.email_service.send_otp(to=email, code=code)
+        except Exception:
+            # The charge was a reservation, and the send it was reserved for did
+            # not happen - a relay timeout, a 5xx, an exhausted connection pool.
+            # Keeping it would spend a send the user never used, and three of
+            # those in a row would end a signup over an infra blip with no
+            # message they can act on. The cooldown above is the limit on
+            # retries; the budget is not, because no budget was used.
+            await self.verification_store.release_signup_flow_send(flow_token)
+            raise
         return {
             "status": "ok",
             "resend_in": settings.OTP_RESEND_COOLDOWN_SECONDS,

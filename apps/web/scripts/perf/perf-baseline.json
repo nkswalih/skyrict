@@ -468,9 +468,9 @@
     },
     {
       "route": "/signup/verify",
-      "sizeKb": 5.35,
-      "firstLoadKb": 186.0,
-      "budgetNote": "+1 kB because this route now embeds the inline TurnstileWidget and the code-send-challenge module, so a resend can re-arm a solvable challenge instead of replaying a spent token. Route-local chunk 4.31 -> 5.35 kB. Baseline 185 -> 186. The earlier shared-chunk drift (PERF-WEB-002) is unchanged."
+      "sizeKb": 4.61,
+      "firstLoadKb": 185.0,
+      "budgetNote": "The inline TurnstileWidget and code-send-challenge module that once pushed this route to 5.35 kB / 186 kB are gone: the step now spends the signup flow proof minted at step 1, so the code request no longer carries its own challenge. Measured from a full next build - route-local chunk 5.35 -> 4.61 kB, First Load JS 186 -> 185 kB, back to the pre-challenge budget. Regenerate with: node scripts/perf/parse-bundle-sizes.mjs --log build.log"
     },
     {
       "route": "/setup-mfa",

@@ -59,7 +59,7 @@ from identity.features.auth.schemas import (
 from identity.features.auth.service import AuthenticationService, TokenService
 from identity.features.billing.schemas import CheckoutSessionResponse
 from identity.features.billing.service import BillingService
-from skyrict_common.exceptions import AuthenticationError
+from skyrict_common.exceptions import AuthenticationError, ValidationError
 from skyrict_common.schemas import ResponseEnvelope
 
 if TYPE_CHECKING:
@@ -215,15 +215,35 @@ async def signup_send_code(
     authn: AuthenticationService = Depends(get_authn_service),
     limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> ResponseEnvelope[SendCodeResponse]:
-    """Send a 6-digit OTP to the address (Turnstile-gated, throttled per email and per IP).
+    """Send a 6-digit OTP to the address (proof-gated, throttled per email and per IP).
 
-    Turnstile is required here, not just on /signup/start. This endpoint is the
-    one that actually sends mail: gating only the start of the wizard still
-    leaves a caller who completed it - or skipped it entirely - free to mint
-    OTPs for arbitrary addresses and spend relay quota on them.
+    This endpoint is the one that actually sends mail, so it is gated - but on
+    the flow proof minted by /signup/start rather than on a second challenge.
+    The proof is issued only after a CAPTCHA passes and only for one address, so
+    a caller who skipped or replayed the wizard still cannot mint OTPs for
+    arbitrary addresses or spend relay quota on them. Asking the user to solve a
+    second challenge seconds later bought nothing this does not already hold,
+    and cost them a step they could fail on a request already proven.
     """
     ip_address = client_ip(request)
     email_key = body.email.lower()
+    # Refuse an empty proof before the per-email limiter runs.
+    #
+    # That limiter is keyed on the address being sent to, so a caller with
+    # nothing at all would otherwise spend a named stranger's whole bucket and
+    # lock them out of their own code for the rest of the window. A flood of
+    # empty requests is the shape that arrives first and costs nothing to refuse.
+    #
+    # What this does NOT do is stop a caller who sends a non-empty token they do
+    # not hold: that still reaches the limiter below and is still refused by the
+    # service afterwards. Closing that needs the proof checked ahead of the
+    # email-keyed limiter, which means a second read of the proof that then has
+    # to be kept in step with the service's own check. Tracked rather than
+    # half-solved here.
+    if body.flow_token is None or not body.flow_token.strip():
+        raise ValidationError(
+            "This sign-up session has expired. Go back to step 1 and start again."
+        )
     await limiter.enforce(
         key=f"{SIGNUP_CODE_LIMIT_KEY}:{email_key}",
         limit=settings.SIGNUP_CODE_RATE_LIMIT,
@@ -234,7 +254,7 @@ async def signup_send_code(
         limit=settings.SIGNUP_CODE_RATE_LIMIT,
         window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
     )
-    result = await authn.signup_send_code(email=body.email, turnstile_token=body.turnstile_token)
+    result = await authn.signup_send_code(email=body.email, flow_token=body.flow_token)
     return ResponseEnvelope(data=SendCodeResponse(**result))
 
 

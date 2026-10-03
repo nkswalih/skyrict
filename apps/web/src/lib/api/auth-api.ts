@@ -250,8 +250,8 @@ export async function verifyMfa(input: {
 export async function signupStart(input: {
     email: string;
     turnstileToken?: string;
-}): Promise<{ status: "ok" }> {
-    return bffPost<{ status: "ok" }>("/api/auth/start", {
+}): Promise<{ status: "ok"; flowToken: string | null }> {
+    return bffPost<{ status: "ok"; flowToken: string | null }>("/api/auth/start", {
         email: input.email,
         turnstileToken: input.turnstileToken,
     });
@@ -267,7 +267,8 @@ export async function checkEmailAvailability(input: {
 
 export async function requestVerificationCode(input: {
     email: string;
-    turnstileToken?: string;
+    /** Proof from signupStart. Replaces a second CAPTCHA solve on this step. */
+    flowToken: string;
 }): Promise<{
     status: "ok";
     resendIn: number;
@@ -275,7 +276,7 @@ export async function requestVerificationCode(input: {
 }> {
     return bffPost<{ status: "ok"; resendIn: number; code?: string | null }>(
         "/api/auth/code/send",
-        { email: input.email, turnstileToken: input.turnstileToken },
+        { email: input.email, flowToken: input.flowToken },
     );
 }
 

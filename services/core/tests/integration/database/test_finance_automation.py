@@ -769,12 +769,21 @@ def readiness_world(migrated_schema: None) -> dict[str, str]:
                 await session.flush()
                 account_ids[code] = acc.id
 
+            # Anchored to today rather than a fixed quarter.
+            #
+            # Audit readiness counts a period as open when it is not closed and
+            # its end date has not passed, so the hardcoded "2026 Q3" window this
+            # fixture used to seed started failing the moment the calendar rolled
+            # past 2026-09-30 - the suite broke on a date change, not a code
+            # change. Deriving the window from today keeps the check meaningful on
+            # any run date.
+            today = date.today()
             session.add(
                 ErpFiscalPeriodModel(
                     tenant_id=tenant_id,
-                    name="2026 Q3",
-                    start_date=date(2026, 7, 1),
-                    end_date=date(2026, 9, 30),
+                    name=f"{today.year} readiness period",
+                    start_date=today - timedelta(days=60),
+                    end_date=today + timedelta(days=60),
                     is_closed=False,
                 )
             )
@@ -809,14 +818,16 @@ def readiness_world(migrated_schema: None) -> dict[str, str]:
                 )
             )
 
-            # Due within 90 days of today (Sep 2026) so AR is not over_90.
+            # Not overdue, matching this fixture's docstring. Anchored to the same `today`
+            # as the period above so it cannot age into the over_90 bucket and
+            # fail the receivables check a few weeks from now.
             session.add(
                 ErpInvoiceModel(
                     tenant_id=tenant_id,
                     invoice_number="RDY-001",
                     customer_id=uuid.uuid4(),
-                    invoice_date=date(2026, 7, 1),
-                    due_date=date(2026, 8, 20),
+                    invoice_date=today - timedelta(days=30),
+                    due_date=today + timedelta(days=45),
                     status=InvoiceStatus.APPROVED,
                     total=Decimal("400"),
                     source="manual",

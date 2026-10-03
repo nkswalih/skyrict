@@ -26,16 +26,17 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    // Forwarded verbatim. The backend verifies it; the BFF deliberately does
-    // not inspect or substitute a token, because a token minted here would
-    // prove the BFF solved a challenge rather than the user.
-    const turnstileToken =
-        typeof body.turnstileToken === "string" && body.turnstileToken.trim()
-            ? body.turnstileToken
+    // Forwarded verbatim. The backend checks the proof against the address it
+    // was issued for; the BFF deliberately does not inspect or substitute one,
+    // because a proof minted here would prove the BFF cleared the challenge
+    // rather than the user.
+    const flowToken =
+        typeof body.flowToken === "string" && body.flowToken.trim()
+            ? body.flowToken
             : null;
 
     const result = await callBackend("/auth/signup/send-code", {
-        body: { email, turnstile_token: turnstileToken },
+        body: { email, flow_token: flowToken },
     });
     if (!result.ok) return backendError(result);
 

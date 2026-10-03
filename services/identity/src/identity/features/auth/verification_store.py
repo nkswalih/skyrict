@@ -32,6 +32,14 @@ def _vt_key(token: str) -> str:
     return f"signup_vt:{token}"
 
 
+def _flow_key(token: str) -> str:
+    return f"signup_flow:{token}"
+
+
+def _flow_sends_key(token: str) -> str:
+    return f"signup_flow_sends:{token}"
+
+
 def _as_str(value: object) -> str | None:
     if value is None:
         return None
@@ -54,6 +62,10 @@ def hash_otp(code: str) -> str:
 
 
 def generate_verification_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def generate_signup_flow_token() -> str:
     return secrets.token_urlsafe(32)
 
 
@@ -90,6 +102,84 @@ class VerificationStore:
 
     async def resend_in(self, email: str) -> int:
         return max(_as_int(await self._client.ttl(_otp_resend_key(email))), 0)
+
+    async def set_signup_flow(self, token: str, email: str) -> None:
+        """Record a wizard that cleared its challenge, with a fresh send budget.
+
+        One transaction, because a proof whose budget key failed to write would
+        be indistinguishable from an unlimited one for the rest of its life -
+        see ``get_signup_flow``.
+        """
+        async with self._client.pipeline(transaction=True) as pipe:
+            pipe.set(
+                _flow_key(token),
+                json.dumps({"email": email}),
+                ex=settings.SIGNUP_FLOW_TTL_SECONDS,
+            )
+            pipe.set(_flow_sends_key(token), "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
+            await pipe.execute()
+
+    async def get_signup_flow(self, token: str) -> str | None:
+        """The address a proof was solved for, or None if it cannot be spent.
+
+        A missing send counter means the proof is unusable, not that it has
+        budget left. Defaulting it to zero would turn a proof that lost its
+        counter key - to a partial write, or to eviction under memory pressure -
+        into an unlimited one for the remaining TTL, which is the wrong way for
+        an abuse control to fail.
+        """
+        raw = _as_str(await self._client.get(_flow_key(token)))
+        if raw is None:
+            return None
+        if await self._client.get(_flow_sends_key(token)) is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        email = payload.get("email")
+        if not isinstance(email, str):
+            return None
+        return email
+
+    async def consume_signup_flow_send(self, token: str) -> int:
+        """Charge one send against the flow's budget and return the new total.
+
+        The returned count is the authority on whether the send may proceed, not
+        a statistic about a send already decided on. Checking the budget before
+        charging it is a read-modify-write race: a burst of concurrent requests
+        all reads the same remaining budget and all pass. ``INCR`` is what makes
+        the answer unique, so the caller must branch on this value.
+
+        The TTL is deliberately not refreshed. The window runs from when the
+        challenge was solved, so a caller that keeps sending cannot hold a proof
+        open indefinitely.
+        """
+        key = _flow_sends_key(token)
+        count = _as_int(await self._client.incr(key))
+        ttl = _as_int(await self._client.ttl(key))
+        if ttl < 0:
+            await self._client.expire(key, settings.SIGNUP_FLOW_TTL_SECONDS)
+        return count
+
+    async def release_signup_flow_send(self, token: str) -> None:
+        """Give back a charge whose send did not happen.
+
+        Reserve-then-commit. ``consume_signup_flow_send`` has to decide, and it
+        can only decide before the mail goes out, so a relay that fails after the
+        reservation would otherwise leave the user short a send they never used -
+        and after three of those, out of budget on code they never received.
+
+        The TTL is not restored, only the count. The window still runs from when
+        the challenge was solved; a released slot does not buy more time.
+        """
+        key = _flow_sends_key(token)
+        if await self._client.decr(key) < 0:
+            # Never driven negative: a release with no matching charge would
+            # hand out budget that was never spent.
+            await self._client.set(key, "0", ex=settings.SIGNUP_FLOW_TTL_SECONDS)
 
     async def set_verification_token(self, token: str, email: str, password_hash: str) -> str:
         await self._client.set(

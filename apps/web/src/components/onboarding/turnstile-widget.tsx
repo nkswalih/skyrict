@@ -66,22 +66,11 @@ function loadTurnstile(): Promise<TurnstileApi> {
 function TurnstileWidget({
     siteKey,
     onTokenChange,
-    resetSignal,
 }: {
     siteKey: string;
     onTokenChange: (token: string | null) => void;
-    /**
-     * Bump to re-arm the widget for a second use.
-     *
-     * Turnstile tokens are single-use and short-lived, so a widget that has
-     * already fired once cannot serve the next call. Bumping this calls
-     * `reset()`, which re-runs the challenge and fires the callback again with
-     * a fresh token. Omit it when one challenge per mount is enough.
-     */
-    resetSignal?: number;
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const widgetIdRef = useRef<string | undefined>(undefined);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string>();
 
@@ -106,7 +95,6 @@ function TurnstileWidget({
                     "expired-callback": () => onTokenChangeRef.current(null),
                     "error-callback": () => onTokenChangeRef.current(null),
                 });
-                widgetIdRef.current = widgetId;
                 setLoading(false);
             })
             .catch((err: unknown) => {
@@ -126,20 +114,6 @@ function TurnstileWidget({
             }
         };
     }, [siteKey]);
-
-    // Re-arm for a repeat call. Skipped on mount: the render effect above has
-    // not produced a widget yet, and resetting an unknown id would either throw
-    // or silently no-op depending on the Turnstile build.
-    const armedOnce = useRef(false);
-    useEffect(() => {
-        if (!armedOnce.current) {
-            armedOnce.current = true;
-            return;
-        }
-        const widgetId = widgetIdRef.current;
-        if (!widgetId || !window.turnstile) return;
-        window.turnstile.reset(widgetId);
-    }, [resetSignal]);
 
     if (error) {
         return (
