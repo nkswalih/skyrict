@@ -166,12 +166,30 @@ reconciliation instead of merely duplicating it.
   scoped form cannot delete. `test_reconcile_never_widens_beyond_identity_grants`
   asserts the resolved permission set equals identity's grants key for key, and
   that a user identity granted nothing stays at zero permissions.
-- Reconciliation cannot widen scope through a mismatched role: the scoped lookup
-  pins the role name to the grant's own tenant, so a mismatched row matches
-  nothing and is reported by the no-progress path instead of resolving to a
-  same-named role in the target tenant. The unscoped boot path keeps its original
-  form and still relies on role UUIDs being globally unique — a latent
-  assumption this change deliberately does not alter.
+- Reconciliation cannot widen scope through a mismatched role: the scoped
+  lookup pins the role name to the grant's own tenant, so a grant naming another
+  tenant's role resolves to nothing instead of matching a same-named role in the
+  target tenant. The unscoped boot path keeps its original form and still relies
+  on role UUIDs being globally unique — a latent assumption this change
+  deliberately does not alter.
+- **Two different anomalies, two different defences.** Mutation checking
+  established that they are not interchangeable, and conflating them hides a
+  bug. A grant naming another tenant's role is dangerous only when the target
+  *owns* a same-named role: that is what the pin above defends against, and
+  without it the user is handed `*`. A tenant with grants but no catalog of its
+  own is a separate case — Step 1 writes nothing, so nothing lands and the
+  no-progress cooldown applies. A test fixture built on the second anomaly does
+  not exercise the first, because with no catalog the join alone already blocks
+  the row; that gap was found only by removing the pin and watching a test stay
+  green.
+- **The step-2 tenant predicate is a scoping contract, not a safety guard.** It
+  bounds the insert set to the tenant actually asked for, so a partly projected
+  tenant is not finished as a side effect of reconciling an unrelated one. With
+  the pin in place, removing it changes nothing observable for safety: every
+  other row it would also consider resolves to that row's own tenant's role.
+  `test_scoped_run_projects_only_the_named_tenants_pending_grant` pins the
+  contract, and says in its docstring that it is not a second copy of the pin's
+  test.
 - `RBAC_PROJECTION_ENABLED` is the kill switch. Default true, declared in
   `apps.bicep` as `CORE_RBAC_PROJECTION_ENABLED` so it is changed declaratively
   and delivered by CD. Hand-editing the live app drifts from the declarative
