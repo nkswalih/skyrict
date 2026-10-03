@@ -21,7 +21,10 @@ and authorization stays deterministic.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,7 +38,7 @@ from core.models.core_user_role import CoreUserRoleModel
 from core.models.tenant import TenantModel
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, AsyncIterator
 
 pytestmark = pytest.mark.integration
 
@@ -64,9 +67,8 @@ class SignupTenant:
     user_id: uuid.UUID
 
 
-@pytest.fixture
-async def signup_tenant(migrated_schema: None) -> AsyncGenerator[SignupTenant, None]:
-    """A tenant whose identity rows exist and whose core rows do not yet.
+async def _provision_signup_tenant(prefix: str) -> SignupTenant:
+    """Write exactly what identity's signup writes, for one tenant.
 
     This is the exact post-signup state that caused the incident: identity has
     committed the role catalog and the owner's grant, and nothing has yet
@@ -79,8 +81,8 @@ async def signup_tenant(migrated_schema: None) -> AsyncGenerator[SignupTenant, N
         session.add(
             TenantModel(
                 id=tenant_id,
-                name="Signup Tenant",
-                slug=f"signup-{tenant_id.hex[:8]}",
+                name=f"{prefix.title()} Tenant",
+                slug=f"{prefix}-{tenant_id.hex[:8]}",
                 plan_tier="free",
                 is_active=True,
             )
@@ -122,12 +124,23 @@ async def signup_tenant(migrated_schema: None) -> AsyncGenerator[SignupTenant, N
         )
         await session.commit()
 
+    return SignupTenant(tenant_id=tenant_id, user_id=user_id)
+
+
+async def _delete_tenant(tenant_id: uuid.UUID) -> None:
+    """Remove a tenant; the composite-PK FKs cascade to every child table."""
+    async with async_session_factory() as session:
+        await session.execute(text("DELETE FROM tenants WHERE id = :tid"), {"tid": tenant_id})
+        await session.commit()
+
+
+@pytest.fixture
+async def signup_tenant(migrated_schema: None) -> AsyncGenerator[SignupTenant, None]:
+    provisioned = await _provision_signup_tenant("signup")
     try:
-        yield SignupTenant(tenant_id=tenant_id, user_id=user_id)
+        yield provisioned
     finally:
-        async with async_session_factory() as session:
-            await session.execute(text("DELETE FROM tenants WHERE id = :tid"), {"tid": tenant_id})
-            await session.commit()
+        await _delete_tenant(provisioned.tenant_id)
 
 
 @pytest.fixture
@@ -293,3 +306,380 @@ class TestSyncRbacFromIdentityTenantScope:
 
         deletes = [s for s in captured_statements if s.lstrip().upper().startswith("DELETE")]
         assert deletes, "the boot path must keep reconciling revoked grants"
+
+
+async def _add_user_without_roles(tenant_id: uuid.UUID) -> uuid.UUID:
+    """A user identity knows about but has granted nothing."""
+    user_id = uuid.uuid4()
+    async with async_session_factory() as session:
+        await session.execute(
+            text(
+                "INSERT INTO users (id, tenant_id, email, password_hash, full_name) "
+                "VALUES (:uid, :tid, :email, :hash, :name)"
+            ),
+            {
+                "uid": user_id,
+                "tid": tenant_id,
+                "email": f"ungranted-{user_id.hex[:8]}@signup.skyrict.test",
+                "hash": "not-a-real-hash",
+                "name": "Ungranted User",
+            },
+        )
+        await session.commit()
+    return user_id
+
+
+class TestReconcileScopeAndSafety:
+    """The safety properties a reviewer will demand before merging this."""
+
+    async def test_reconcile_never_touches_another_tenant(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """Repairing tenant A must leave tenant B completely untouched.
+
+        ``run_once`` reconciles every gap it finds, so the assertion that
+        matters is on the scoped call itself: given tenant A alone, tenant B
+        must gain no rows and must stay denied.
+        """
+        from core.seed import sync_rbac_from_identity
+
+        neighbour = await _provision_signup_tenant("neighbour")
+        try:
+            await sync_rbac_from_identity(signup_tenant.tenant_id)
+
+            assert await _core_rows(signup_tenant.tenant_id) != (0, 0)
+            assert await _core_rows(neighbour.tenant_id) == (0, 0)
+            async with async_session_factory() as session:
+                assert (
+                    await RbacRepository(session).resolve_user_permissions(
+                        user_id=neighbour.user_id, tenant_id=neighbour.tenant_id
+                    )
+                    == []
+                )
+        finally:
+            await _delete_tenant(neighbour.tenant_id)
+
+    async def test_reconcile_never_widens_beyond_identity_grants(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """Core's answer must equal identity's grants, key for key.
+
+        The ungranted user is the load-bearing half: a projection that copied
+        the whole role catalog onto every user, or that resolved permissions
+        from the tenant rather than the user's grants, would pass an
+        owner-only assertion and fail this one.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        ungranted = await _add_user_without_roles(signup_tenant.tenant_id)
+        await RbacProjectionReconciler(async_session_factory).run_once()
+
+        async with async_session_factory() as session:
+            repository = RbacRepository(session)
+            owner = await repository.resolve_user_permissions(
+                user_id=signup_tenant.user_id, tenant_id=signup_tenant.tenant_id
+            )
+            other = await repository.resolve_user_permissions(
+                user_id=ungranted, tenant_id=signup_tenant.tenant_id
+            )
+
+        assert sorted(owner) == ["*", "invitations:send"]
+        assert other == []
+
+    async def test_reconcile_is_idempotent(self, signup_tenant: SignupTenant) -> None:
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        reconciler = RbacProjectionReconciler(async_session_factory)
+        await reconciler.run_once()
+        first_roles = await _role_permissions(signup_tenant.tenant_id)
+        first_grants = await _grant_triples(signup_tenant.tenant_id)
+
+        second = await reconciler.run_once()
+
+        assert second.tenants_reconciled == 0
+        assert await _role_permissions(signup_tenant.tenant_id) == first_roles
+        assert await _grant_triples(signup_tenant.tenant_id) == first_grants
+
+
+class TestNoProgressCooldown:
+    """A tenant that cannot be projected must not be retried in a hot loop."""
+
+    async def _provision_cross_tenant_grant(self) -> tuple[SignupTenant, SignupTenant]:
+        """A tenant whose only grant points at a role owned by another tenant.
+
+        ``user_roles`` carries three single-column FKs and no composite
+        ``(tenant_id, role_id) -> roles(tenant_id, id)``, so this row is
+        structurally legal and identity will happily keep it. Step 2's
+        tenant-pinned role lookup matches nothing, so the scoped reconcile
+        writes no rows - the real no-progress case.
+
+        Returns the stuck tenant and the role's owning tenant. The owner is
+        still needed: ``user_roles.role_id`` cascades from ``roles``, so
+        deleting the owner would cascade the grant away and there would be no
+        anomaly left to reconcile.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        tenant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        owner = await _provision_signup_tenant("cross")
+        # Project the owner tenant so the only remaining gap is `tenant_id`
+        # below - otherwise the owner's rows would mask the anomaly.
+        await RbacProjectionReconciler(async_session_factory).run_once()
+
+        async with async_session_factory() as session:
+            session.add(
+                TenantModel(
+                    id=tenant_id,
+                    name="Cross Tenant",
+                    slug=f"cross-{tenant_id.hex[:8]}",
+                    plan_tier="free",
+                    is_active=True,
+                )
+            )
+            await session.commit()
+        async with async_session_factory() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO users (id, tenant_id, email, password_hash, full_name) "
+                    "VALUES (:uid, :tid, :email, :hash, :name)"
+                ),
+                {
+                    "uid": user_id,
+                    "tid": tenant_id,
+                    "email": f"cross-{tenant_id.hex[:8]}@signup.skyrict.test",
+                    "hash": "not-a-real-hash",
+                    "name": "Cross User",
+                },
+            )
+            # The role belongs to `owner`, but the grant claims `tenant_id`.
+            foreign_role = (
+                await session.execute(
+                    text("SELECT id FROM roles WHERE tenant_id = :tid AND name = 'tenant_owner'"),
+                    {"tid": owner.tenant_id},
+                )
+            ).scalar_one()
+            await session.execute(
+                text(
+                    "INSERT INTO user_roles (id, tenant_id, user_id, role_id, scope_type, scope_id) "
+                    "VALUES (gen_random_uuid(), :tid, :uid, :rid, 'tenant', :tid)"
+                ),
+                {"tid": tenant_id, "uid": user_id, "rid": foreign_role},
+            )
+            await session.commit()
+        return SignupTenant(tenant_id=tenant_id, user_id=user_id), owner
+
+    async def test_cross_tenant_grant_creates_no_grant_and_cools_down(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """No grant is invented, a warning names the tenant, and it backs off."""
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        stuck, owner = await self._provision_cross_tenant_grant()
+        try:
+            reconciler = RbacProjectionReconciler(async_session_factory)
+            with caplog.at_level(logging.WARNING, logger="core.features.rbac.projection_worker"):
+                outcome = await reconciler.run_once()
+
+            assert outcome.tenants_reconciled == 1
+            assert outcome.tenants_no_progress == 1
+            assert await _core_rows(stuck.tenant_id) == (0, 0)
+            async with async_session_factory() as session:
+                assert (
+                    await RbacRepository(session).resolve_user_permissions(
+                        user_id=stuck.user_id, tenant_id=stuck.tenant_id
+                    )
+                    == []
+                )
+
+            warnings = [
+                r for r in caplog.records if r.message == "rbac.projection.tenant_no_progress"
+            ]
+            assert len(warnings) == 1
+            assert warnings[0].tenant_id == str(stuck.tenant_id)
+        finally:
+            await _delete_tenant(stuck.tenant_id)
+            await _delete_tenant(owner.tenant_id)
+
+    async def test_stuck_tenant_is_skipped_until_the_cooldown_expires(self) -> None:
+        """The backoff is real: one attempt per cooldown window, not per tick."""
+        from core.features.rbac import projection_worker
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        stuck, owner = await self._provision_cross_tenant_grant()
+        try:
+            now = 1_000.0
+            reconciler = RbacProjectionReconciler(async_session_factory, clock=lambda: now)
+
+            first = await reconciler.run_once()
+            assert (first.tenants_reconciled, first.tenants_no_progress) == (1, 1)
+
+            # Still inside the window: the gap is still seen, but not retried.
+            now += projection_worker._NO_PROGRESS_COOLDOWN_SECONDS - 1
+            second = await reconciler.run_once()
+            assert second.gap_tenants == 1
+            assert second.tenants_reconciled == 0
+            assert second.tenants_cooling_down == 1
+            assert second.tenants_no_progress == 0
+
+            # After the window: retried once, and it still cannot make progress.
+            now += 1
+            third = await reconciler.run_once()
+            assert (third.tenants_reconciled, third.tenants_no_progress) == (1, 1)
+        finally:
+            await _delete_tenant(stuck.tenant_id)
+            await _delete_tenant(owner.tenant_id)
+
+    async def test_cooldown_clears_once_the_tenant_projects(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """A repaired tenant is reconciled normally, not held back by history."""
+        from core.features.rbac import projection_worker
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        now = 1_000.0
+        reconciler = RbacProjectionReconciler(async_session_factory, clock=lambda: now)
+        reconciler._cooldowns[signup_tenant.tenant_id] = (
+            now + projection_worker._NO_PROGRESS_COOLDOWN_SECONDS
+        )
+
+        # Inside the window it is skipped...
+        assert (await reconciler.run_once()).tenants_cooling_down == 1
+        # ...and reconciling it clears the cooldown rather than leaving it set.
+        now += projection_worker._NO_PROGRESS_COOLDOWN_SECONDS
+        assert (await reconciler.run_once()).tenants_reconciled == 1
+        assert signup_tenant.tenant_id not in reconciler._cooldowns
+
+
+class TestFailureIsolation:
+    """One bad tenant must not stop the pass, the loop, or the process."""
+
+    async def test_failing_tenant_is_logged_and_the_pass_continues(
+        self,
+        signup_tenant: SignupTenant,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The failure is logged with a traceback and swallowed at the tenant."""
+        import core.features.rbac.projection_worker as worker
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        neighbour = await _provision_signup_tenant("resilient")
+        calls: list[uuid.UUID] = []
+        real = worker.sync_rbac_from_identity
+
+        async def flaky(tenant_id: uuid.UUID | None = None) -> None:
+            calls.append(tenant_id)  # type: ignore[arg-type]
+            if tenant_id == neighbour.tenant_id:
+                raise RuntimeError("simulated database failure")
+            await real(tenant_id)
+
+        monkeypatch.setattr(worker, "sync_rbac_from_identity", flaky)
+
+        with caplog.at_level(logging.ERROR, logger="core.features.rbac.projection_worker"):
+            outcome = await RbacProjectionReconciler(async_session_factory).run_once()
+
+        assert neighbour.tenant_id in calls
+        assert signup_tenant.tenant_id in calls
+        assert outcome.tenants_failed == 1
+        assert outcome.tenants_reconciled == 1
+        assert await _core_rows(signup_tenant.tenant_id) != (0, 0)
+        assert await _core_rows(neighbour.tenant_id) == (0, 0)
+
+        failures = [r for r in caplog.records if r.message == "rbac.projection.tenant_failed"]
+        assert len(failures) == 1
+        assert failures[0].tenant_id == str(neighbour.tenant_id)
+        assert failures[0].exc_info is not None
+
+        await _delete_tenant(neighbour.tenant_id)
+
+    async def test_loop_survives_a_failing_pass_and_stops_cleanly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pass that raises outright must not kill the background loop.
+
+        Per-tenant failures are already contained inside ``run_once``; this
+        covers the failure that escapes it - the gap query itself failing,
+        e.g. the database going away - and asserts the loop keeps running and
+        still shuts down cleanly.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        real = RbacProjectionReconciler._gap_tenant_ids
+        attempts = 0
+
+        async def broken(_self: RbacProjectionReconciler) -> list[uuid.UUID]:
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("simulated database failure")
+
+        monkeypatch.setattr(RbacProjectionReconciler, "_gap_tenant_ids", broken)
+
+        reconciler = RbacProjectionReconciler(async_session_factory)
+        reconciler.start()
+        deadline = asyncio.get_running_loop().time() + 10.0
+        while attempts == 0 and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.01)
+        assert attempts == 1
+        assert reconciler.running is True
+
+        monkeypatch.setattr(RbacProjectionReconciler, "_gap_tenant_ids", real)
+        await reconciler.stop(timeout=10.0)
+
+        assert not reconciler.running
+        assert attempts == 1, "stop() must interrupt the sleep, not run a pass"
+
+    async def test_stop_is_idempotent_without_a_task(self) -> None:
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        reconciler = RbacProjectionReconciler(async_session_factory)
+        await reconciler.stop()
+        assert not reconciler.running
+
+
+class TestLifespanWiring:
+    """Boot-path wiring, including the documented kill switch."""
+
+    @staticmethod
+    @asynccontextmanager
+    async def _lifespan(monkeypatch: pytest.MonkeyPatch, *, enabled: bool) -> AsyncIterator:
+        """Run the real lifespan with the flag forced, yielding inside it."""
+        from core.api.lifespan import lifespan
+        from core.core.config import Environment, settings
+        from core.main import app
+
+        monkeypatch.setattr(settings, "RBAC_PROJECTION_ENABLED", enabled)
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.DEV)
+        async with lifespan(app):
+            yield app.state.rbac_projection_reconciler
+
+    async def test_reconciler_starts_when_enabled(
+        self, migrated_schema: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The enabled default actually starts a running background task."""
+        async with self._lifespan(monkeypatch, enabled=True) as reconciler:
+            assert reconciler is not None
+            assert reconciler.running is True
+
+    async def test_kill_switch_stops_it_starting(
+        self, migrated_schema: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the flag off, no task exists - the documented off switch."""
+        async with self._lifespan(monkeypatch, enabled=False) as reconciler:
+            assert reconciler is None
+
+    async def test_disabled_under_the_test_environment(
+        self, migrated_schema: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Integration tests drive run_once() directly, so the loop stays off."""
+        from contextlib import AsyncExitStack
+
+        from core.api.lifespan import lifespan
+        from core.core.config import Environment, settings
+        from core.main import app
+
+        monkeypatch.setattr(settings, "RBAC_PROJECTION_ENABLED", True)
+        monkeypatch.setattr(settings, "ENVIRONMENT", Environment.TEST)
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(lifespan(app))
+            assert app.state.rbac_projection_reconciler is None
