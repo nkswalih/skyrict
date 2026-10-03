@@ -9,6 +9,7 @@ records the commands the store issues.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -46,11 +47,13 @@ class FakePipeline:
             for cmd, args, kwargs in self._queued:
                 self._client.apply(cmd, args, kwargs)
             return []
-        # MULTI/EXEC applies all of them or none, and a fault aborts the lot.
+        # A connection lost before EXEC applies none of them. Both commands are
+        # well-formed SETs of a string with a TTL, so a per-command error is not
+        # reachable here - the realistic fault is the connection.
         if self._client.fail_on is not None and any(
             self._client.fail_on in str(arg) for _cmd, args, _kwargs in self._queued for arg in args
         ):
-            raise RuntimeError("EXECABORT")
+            raise RuntimeError("connection lost before EXEC")
         return [self._client.apply(cmd, args, kwargs) for cmd, args, kwargs in self._queued]
 
 
@@ -61,6 +64,9 @@ class FakeRedis:
         self.values: dict[str, str] = {}
         self.expiries: dict[str, int] = {}
         self.pipeline_calls: list[bool] = []
+        # Every command the store issues, so a test can assert on the shape of
+        # the traffic and not just its effect.
+        self.commands: list[str] = []
         # Set to a key fragment to make the next transactional pipeline abort,
         # standing in for a connection lost mid-write.
         self.fail_on: str | None = None
@@ -78,17 +84,21 @@ class FakeRedis:
         return FakePipeline(self, transaction)
 
     async def get(self, key: str) -> str | None:
+        self.commands.append(f"get {key}")
         return self.values.get(key)
 
     async def incr(self, key: str) -> int:
+        self.commands.append(f"incr {key}")
         count = int(self.values.get(key, "0")) + 1
         self.values[key] = str(count)
         return count
 
     async def ttl(self, key: str) -> int:
+        self.commands.append(f"ttl {key}")
         return self.expiries.get(key, -2)
 
     async def expire(self, key: str, seconds: int) -> bool:
+        self.commands.append(f"expire {key}")
         self.expiries[key] = seconds
         return True
 
@@ -122,10 +132,18 @@ class TestSetSignupFlow:
     async def test_the_two_writes_are_one_transaction(
         self, store: VerificationStore, client: FakeRedis
     ) -> None:
-        """A proof without a budget reads as unlimited, so they must not split."""
+        """A proof without a budget reads as unlimited, so they must not split.
+
+        Two things are being held. `FakeRedis` has no `set` at all, so the pair
+        cannot have been written as bare commands - the fake would raise before
+        this assertion. And the pipeline was asked to be transactional, which is
+        what decides whether a fault between the two leaves half a flow behind -
+        see the next test, which is the one that actually proves it.
+        """
         await store.set_signup_flow("tok", "owner@neworg.com")
 
         assert client.pipeline_calls == [True]
+        assert not hasattr(client, "set")
 
     async def test_a_failed_write_leaves_no_usable_proof(
         self, store: VerificationStore, client: FakeRedis
@@ -186,6 +204,27 @@ class TestConsumeSignupFlowSend:
 
         assert [await store.consume_signup_flow_send("tok") for _ in range(3)] == [1, 2, 3]
 
+    async def test_one_charge_is_one_incr(
+        self, store: VerificationStore, client: FakeRedis
+    ) -> None:
+        """The count is settled by Redis, so it has to be read-modify-written there.
+
+        A GET followed by a computed SET is the race this design exists to
+        avoid. Asserting on the commands rather than the result catches that even
+        though this fake cannot interleave - it is the shape of the traffic that
+        gives INCR its atomicity, and Redis is what supplies the guarantee.
+        """
+        await store.set_signup_flow("tok", "owner@neworg.com")
+        client.commands.clear()
+
+        await store.consume_signup_flow_send("tok")
+
+        reads = [c for c in client.commands if c.startswith("get ")]
+        assert reads == []
+        assert [c for c in client.commands if c.startswith("incr ")] == [
+            "incr signup_flow_sends:tok"
+        ]
+
     async def test_concurrent_charges_never_return_the_same_count(
         self, store: VerificationStore
     ) -> None:
@@ -193,10 +232,9 @@ class TestConsumeSignupFlowSend:
 
         The caller branches on this value to decide whether the send may proceed.
         If two charges could return the same number, two sends would both be
-        admitted against one budget slot.
+        admitted against one budget slot. The uniqueness comes from Redis - see
+        `test_one_charge_is_one_incr` for the part this side is responsible for.
         """
-        import asyncio
-
         await store.set_signup_flow("tok", "owner@neworg.com")
 
         counts = await asyncio.gather(*(store.consume_signup_flow_send("tok") for _ in range(8)))
