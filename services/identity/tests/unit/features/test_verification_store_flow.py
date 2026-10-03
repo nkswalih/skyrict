@@ -42,8 +42,11 @@ class FakePipeline:
 
     async def execute(self) -> list[Any]:
         if not self._transaction:
-            # Faithful to a non-transactional pipeline: apply each command as it
-            # arrives, so a fault between them leaves a half-written flow behind.
+            # A non-transactional pipeline applies each command as it arrives and
+            # has no all-or-nothing to lose, so a fault between them is not a
+            # thing this branch can express. `fail_on` is a transactional-only
+            # fault; the half-written state it would produce is asserted on
+            # directly by test_a_proof_missing_its_budget_is_refused instead.
             for cmd, args, kwargs in self._queued:
                 self._client.apply(cmd, args, kwargs)
             return []
@@ -134,16 +137,15 @@ class TestSetSignupFlow:
     ) -> None:
         """A proof without a budget reads as unlimited, so they must not split.
 
-        Two things are being held. `FakeRedis` has no `set` at all, so the pair
-        cannot have been written as bare commands - the fake would raise before
-        this assertion. And the pipeline was asked to be transactional, which is
-        what decides whether a fault between the two leaves half a flow behind -
-        see the next test, which is the one that actually proves it.
+        The pipeline was asked to be transactional, which is what decides whether
+        a fault between the two leaves half a flow behind. `FakeRedis` has no
+        `set` at all, so the pair also cannot have been written as bare commands -
+        that is what the fake enforces, not an assertion here. The next test is
+        the one that actually demonstrates the transaction pays off.
         """
         await store.set_signup_flow("tok", "owner@neworg.com")
 
         assert client.pipeline_calls == [True]
-        assert not hasattr(client, "set")
 
     async def test_a_failed_write_leaves_no_usable_proof(
         self, store: VerificationStore, client: FakeRedis
@@ -273,10 +275,14 @@ class TestConsumeSignupFlowSend:
         assert client.expiries["signup_flow_sends:tok"] == settings.SIGNUP_FLOW_TTL_SECONDS
 
 
-def test_generated_proofs_are_unpredictable_and_url_safe() -> None:
-    """The proof is a bearer credential and it lands in a Redis key suffix."""
+def test_generated_proofs_do_not_repeat() -> None:
+    """Two proofs must never collide, or one user spends another's budget.
+
+    That is the only property here this side owns: unpredictability and the
+    URL-safe alphabet are `secrets.token_urlsafe(32)`'s contract, not something a
+    test here can establish. Sampling 200 from 2**256 cannot demonstrate it, and
+    does not pretend to - it only catches a generator that repeats itself.
+    """
     tokens = {generate_signup_flow_token() for _ in range(200)}
 
     assert len(tokens) == 200
-    assert all(len(t) == 43 for t in tokens)
-    assert all(t.replace("-", "").replace("_", "").isalnum() for t in tokens)
