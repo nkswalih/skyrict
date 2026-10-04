@@ -152,6 +152,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         app.state.budget_overrun_worker = None
 
+    # RBAC projection reconciler (SKY-120): a background asyncio loop that
+    # projects identity's grants into core's RBAC tables for tenants that have
+    # none. Closes the window where a self-service signup tenant exists with
+    # identity grants but no core projection, which 403'd its owner on every
+    # permission check until core happened to restart. Disabled under the test
+    # environment so integration tests drive run_once() directly.
+    if settings.RBAC_PROJECTION_ENABLED and settings.ENVIRONMENT != Environment.TEST:
+        from core.db.session import async_session_factory
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        app.state.rbac_projection_reconciler = RbacProjectionReconciler(async_session_factory)
+        app.state.rbac_projection_reconciler.start()
+    else:
+        app.state.rbac_projection_reconciler = None
+
     # Graceful shutdown: uvicorn owns SIGTERM/SIGINT handling; on signal it
     # runs this context manager's exit, closing the readiness gate, the AI
     # client and the DB engine so in-flight work can drain cleanly.
@@ -177,5 +192,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     budget_overrun_worker = getattr(app.state, "budget_overrun_worker", None)
     if budget_overrun_worker is not None:
         await budget_overrun_worker.stop()
+    projection_reconciler = getattr(app.state, "rbac_projection_reconciler", None)
+    if projection_reconciler is not None:
+        await projection_reconciler.stop()
     await app.state.ai_client.aclose()
     await engine.dispose()

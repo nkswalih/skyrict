@@ -382,6 +382,24 @@ class Settings(BaseSettings):
         description="max overdue steps one escalation pass marks escalated per tenant",
     )
 
+    # --- RBAC projection reconciler (SKY-120) ---
+    RBAC_PROJECTION_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "run the in-process RBAC projection reconciler (a background asyncio "
+            "loop that copies identity's role catalog and user grants into "
+            "core's core_roles/core_user_roles for tenants that have none). "
+            "Without it, a tenant created by self-service signup keeps no core "
+            "projection until core restarts, and its owner is denied by every "
+            "require_permission check. Kill switch: set to false to stop the "
+            "loop; the boot-path sync still runs, so existing tenants are "
+            "unaffected. Declared in infra/azure/modules/apps.bicep as "
+            "CORE_RBAC_PROJECTION_ENABLED - change it there and let CD deploy, "
+            "do not hand-edit the live app. Disabled under the test "
+            "environment so integration tests drive run_once() directly."
+        ),
+    )
+
     # --- Budget overrun notification worker (SKY-85) ---
     FINANCE_BUDGET_OVERRUN_WORKER_ENABLED: bool = Field(
         default=True,

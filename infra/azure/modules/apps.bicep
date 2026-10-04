@@ -804,6 +804,14 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
               name: 'CORE_DB_MAX_OVERFLOW'
               value: string(dbMaxOverflow)
             }
+            {
+              // SKY-120 kill switch for the RBAC projection reconciler.
+              // Declared here so it is changed declaratively and picked up by
+              // CD, never by hand-editing the live app - a manual change
+              // drifts from this file and is reverted by the next deploy.
+              name: 'CORE_RBAC_PROJECTION_ENABLED'
+              value: 'true'
+            }
           ]
           probes: [
             {

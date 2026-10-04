@@ -577,7 +577,7 @@ async def seed_approval_workflow_defaults(tenant_id: uuid.UUID) -> None:
         await session.commit()
 
 
-async def sync_rbac_from_identity() -> None:
+async def sync_rbac_from_identity(tenant_id: uuid.UUID | None = None) -> None:
     """Sync user→role grants from identity's tables into core's RBAC tables.
 
     Both services share one database, so this reads identity's ``user_roles``
@@ -597,7 +597,37 @@ async def sync_rbac_from_identity() -> None:
     longer holds because a role was revoked or a member downgraded - are
     removed, so identity stays the single source of truth for who can do
     what.
+
+    Args:
+        tenant_id: Project a single tenant instead of every tenant. ``None``
+            is the boot path and is unchanged: identical SQL, all three steps,
+            every tenant. A tenant id runs the two INSERT steps for that
+            tenant alone and SKIPS the revocation step.
+
+    The scoped form is additive by construction - it can create a missing
+    projection but never remove one. Step 3's DELETE is how IAM revocations
+    reach core, and a background caller must not hold that power: its job is
+    to restore access that is missing, and a tenant with no projection has no
+    rows to revoke. Revocation stays on the boot path, where it is already
+    reconciled on every deploy.
     """
+    scoped = tenant_id is not None
+    params: dict[str, uuid.UUID] = {"tenant_id": tenant_id} if tenant_id is not None else {}
+
+    # Step 2 resolves the role NAME through a correlated subquery on identity's
+    # roles. In the scoped form the lookup is pinned to the grant's own tenant:
+    # user_roles has no composite FK to roles(tenant_id, id), so a row whose
+    # denormalised tenant_id disagrees with its role's tenant is structurally
+    # possible. Without the predicate such a row could match a same-named role
+    # in the target tenant and silently grant the WRONG role; with it, the row
+    # matches nothing, writes nothing, and is reported by the caller's
+    # no-progress handling instead.
+    role_name_lookup = (
+        "  (SELECT r.name FROM roles r WHERE r.id = ur.role_id AND r.tenant_id = ur.tenant_id) "
+        if scoped
+        else "  (SELECT r.name FROM roles r WHERE r.id = ur.role_id) "
+    )
+
     async with async_session_factory() as session:
         # Step 1: Sync role permissions from identity's roles into core_roles.
         # On conflict (same tenant + name), REPLACE permissions (never merge)
@@ -605,31 +635,40 @@ async def sync_rbac_from_identity() -> None:
         # role definitions. Core's own role `id` is NEVER overwritten - it is
         # the PK that core_user_roles FKs reference, so replacing it would
         # break existing grants.
-        await session.execute(
-            text(
-                "INSERT INTO core_roles (tenant_id, id, name, permissions, is_system_role) "
-                "SELECT ir.tenant_id, ir.id, ir.name, ir.permissions, ir.is_system_role "
-                "FROM roles ir "
-                "ON CONFLICT (tenant_id, name) DO UPDATE SET "
-                "permissions = EXCLUDED.permissions, "
-                "is_system_role = EXCLUDED.is_system_role, updated_at = now()"
-            )
+        step1_sql = (
+            "INSERT INTO core_roles (tenant_id, id, name, permissions, is_system_role) "
+            "SELECT ir.tenant_id, ir.id, ir.name, ir.permissions, ir.is_system_role "
+            "FROM roles ir"
         )
+        if scoped:
+            step1_sql += " WHERE ir.tenant_id = :tenant_id"
+        step1_sql += (
+            " ON CONFLICT (tenant_id, name) DO UPDATE SET "
+            "permissions = EXCLUDED.permissions, "
+            "is_system_role = EXCLUDED.is_system_role, updated_at = now()"
+        )
+        await session.execute(text(step1_sql), params)
 
         # Step 2: Upsert core_user_roles from identity's user_roles table.
         # Uses core's role_id (looked up by name) rather than identity's
         # role_id, because core's PK may differ from identity's if the role
         # was independently created. This keeps the FK valid.
-        await session.execute(
-            text(
-                "INSERT INTO core_user_roles (tenant_id, id, user_id, role_id, scope_id) "
-                "SELECT ur.tenant_id, gen_random_uuid(), ur.user_id, cr.id, ur.scope_id "
-                "FROM user_roles ur "
-                "JOIN core_roles cr ON cr.tenant_id = ur.tenant_id AND cr.name = "
-                "  (SELECT r.name FROM roles r WHERE r.id = ur.role_id) "
-                "ON CONFLICT DO NOTHING"
-            )
+        # B608: the only interpolation is `role_name_lookup`, one of two literals
+        # chosen by `scoped` above - never caller input. Every caller-supplied
+        # value reaches the database as a bound parameter.
+        step2_sql = (
+            "INSERT INTO core_user_roles (tenant_id, id, user_id, role_id, scope_id) "  # nosec B608
+            "SELECT ur.tenant_id, gen_random_uuid(), ur.user_id, cr.id, ur.scope_id "
+            "FROM user_roles ur "
+            "JOIN core_roles cr ON cr.tenant_id = ur.tenant_id AND cr.name = "
+            f"{role_name_lookup}"
         )
+        # The predicate goes AFTER the join: a WHERE clause cannot precede a
+        # JOIN in the FROM list.
+        if scoped:
+            step2_sql += "WHERE ur.tenant_id = :tenant_id "
+        step2_sql += "ON CONFLICT DO NOTHING"
+        await session.execute(text(step2_sql), params)
 
         # Step 3: Remove stale grants - rows whose (tenant, user, role, scope)
         # no longer exist in identity's user_roles. Identity is authoritative:
@@ -647,25 +686,32 @@ async def sync_rbac_from_identity() -> None:
         # grants and break authorization. Identity-managed tenants always have
         # mirror rows (the admin grant is seeded with the tenant), so real
         # revocations still propagate.
-        await session.execute(
-            text(
-                "DELETE FROM core_user_roles cur "
-                "WHERE EXISTS ("
-                "  SELECT 1 FROM user_roles ur_own "
-                "  WHERE ur_own.tenant_id = cur.tenant_id"
-                ") "
-                "AND NOT EXISTS ("
-                "  SELECT 1 "
-                "  FROM user_roles ur "
-                "  JOIN roles r ON r.id = ur.role_id "
-                "  JOIN core_roles cr ON cr.tenant_id = r.tenant_id AND cr.name = r.name "
-                "  WHERE ur.tenant_id = cur.tenant_id "
-                "    AND ur.user_id = cur.user_id "
-                "    AND cr.id = cur.role_id "
-                "    AND ur.scope_id IS NOT DISTINCT FROM cur.scope_id "
-                ")"
+        #
+        # Boot path only - see the scoped-form note in the docstring.
+        if not scoped:
+            await session.execute(
+                text(
+                    "DELETE FROM core_user_roles cur "
+                    "WHERE EXISTS ("
+                    "  SELECT 1 FROM user_roles ur_own "
+                    "  WHERE ur_own.tenant_id = cur.tenant_id"
+                    ") "
+                    "AND NOT EXISTS ("
+                    "  SELECT 1 "
+                    "  FROM user_roles ur "
+                    "  JOIN roles r ON r.id = ur.role_id "
+                    "  JOIN core_roles cr ON cr.tenant_id = r.tenant_id AND cr.name = r.name "
+                    "  WHERE ur.tenant_id = cur.tenant_id "
+                    "    AND ur.user_id = cur.user_id "
+                    "    AND cr.id = cur.role_id "
+                    "    AND ur.scope_id IS NOT DISTINCT FROM cur.scope_id "
+                    ")"
+                )
             )
-        )
 
         await session.commit()
+
+    if scoped:
+        logger.info("seed.rbac_sync.tenant_completed", tenant_id=str(tenant_id))
+    else:
         logger.info("seed.rbac_sync.completed")
