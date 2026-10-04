@@ -449,8 +449,8 @@ async def _provision_granted_tenant_without_catalog(
 
     This is the no-progress case. Step 1 copies roles filtered by
     ``tenant_id`` and Step 2 resolves the role through ``roles``, both pinned
-    to this tenant, so neither can write anything and ``_count_core_roles``
-    stays zero - which is what arms the cooldown.
+    to this tenant, so neither can write anything and
+    ``_count_core_user_roles`` stays zero - which is what arms the cooldown.
 
     This is NOT the same anomaly as a cross-tenant grant, and conflating the
     two hides a bug: with no catalog of its own the tenant has no same-named
@@ -545,6 +545,133 @@ async def _inject_foreign_grant(target: SignupTenant, donor: SignupTenant) -> uu
         )
         await session.commit()
     return user_id
+
+
+async def _provision_roles_only_tenant(prefix: str) -> tuple[SignupTenant, SignupTenant]:
+    """A tenant holding a full role catalog and zero projected grants.
+
+    This is the state a failed Step 2 leaves behind, and it is the state the
+    earlier ``core_roles`` anti-join was blind to. Step 1 copies ``roles``
+    filtered by ``tenant_id`` and succeeds, so ``core_roles`` is populated;
+    Step 2 resolves the grant through the tenant-pinned role-name join, which
+    cannot match a grant naming another tenant's role, so ``core_user_roles``
+    stays empty. The tenant is locked out while looking fully provisioned.
+
+    Keying the anti-join off ``core_roles`` made this tenant invisible: the
+    presence of a role catalog satisfied the query, the tick logged it as
+    reconciled, and it was never selected again.
+
+    Returns the stuck tenant and the donor owning the granted role. The donor
+    must survive - ``user_roles.role_id`` cascades from ``roles``.
+    """
+    from core.seed import sync_rbac_from_identity
+
+    target = await _provision_signup_tenant(f"{prefix}-target")
+    donor = await _provision_signup_tenant(f"{prefix}-donor")
+
+    # Drop the tenant's own valid grant, then replace it with one that cannot
+    # match, so the ONLY thing standing between this tenant and a projection is
+    # the tenant pin on Step 2's role lookup.
+    async with async_session_factory() as session:
+        await session.execute(
+            text("DELETE FROM user_roles WHERE tenant_id = :tid"), {"tid": target.tenant_id}
+        )
+        await session.commit()
+    await _inject_foreign_grant(target, donor)
+
+    # Land Step 1's output: role catalog in, grants impossible.
+    await sync_rbac_from_identity(target.tenant_id)
+    return target, donor
+
+
+class TestRolesProjectedGrantsMissing:
+    """A tenant with a role catalog and no grants must still be detected.
+
+    The gap query keys off ``core_user_roles`` because that is the table
+    ``require_permission`` reads. Keying it off ``core_roles`` made a tenant
+    whose catalog had landed but whose grants had not look healthy - it was
+    logged as reconciled, never selected again, and its owner stayed locked out
+    with no warning anywhere.
+    """
+
+    async def test_grants_absent_but_roles_present_is_repaired(
+        self, signup_tenant: SignupTenant
+    ) -> None:
+        """The gap is detected and closed when identity's data is sound.
+
+        Constructed by projecting the tenant in full and then deleting only its
+        ``core_user_roles`` rows, which is exactly the shape a failed Step 2
+        leaves. Under the old ``core_roles`` anti-join this tenant was not
+        selected at all, so ``tenants_reconciled`` would be 0 here.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+        from core.seed import sync_rbac_from_identity
+
+        await sync_rbac_from_identity(signup_tenant.tenant_id)
+        async with async_session_factory() as session:
+            await session.execute(
+                text("DELETE FROM core_user_roles WHERE tenant_id = :tid"),
+                {"tid": signup_tenant.tenant_id},
+            )
+            await session.commit()
+
+        roles, grants = await _core_rows(signup_tenant.tenant_id)
+        assert roles > 0, "precondition: the role catalog must still be projected"
+        assert grants == 0, "precondition: no grants may be projected"
+
+        outcome = await RbacProjectionReconciler(async_session_factory).run_once()
+
+        assert outcome.tenants_reconciled == 1
+        assert outcome.tenants_no_progress == 0
+        assert await _core_rows(signup_tenant.tenant_id) == (roles, 1)
+        async with async_session_factory() as session:
+            assert sorted(
+                await RbacRepository(session).resolve_user_permissions(
+                    user_id=signup_tenant.user_id, tenant_id=signup_tenant.tenant_id
+                )
+            ) == ["*", "invitations:send"]
+
+    async def test_unmatchable_grant_is_flagged_not_reported_as_repaired(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A catalog that cannot be completed is warned about, not swallowed.
+
+        The tenant keeps being selected - it is still locked out, so the gap
+        query must keep seeing it - and the cooldown is what stops the tick
+        re-attempting it every few seconds. Under the old ``core_roles``
+        anti-join this tenant was invisible, so no warning was ever logged.
+        """
+        from core.features.rbac.projection_worker import RbacProjectionReconciler
+
+        stuck, donor = await _provision_roles_only_tenant("rolesonly")
+        try:
+            roles, grants = await _core_rows(stuck.tenant_id)
+            assert roles > 0, "precondition: Step 1 must have landed the catalog"
+            assert grants == 0, "precondition: Step 2 must have landed nothing"
+
+            reconciler = RbacProjectionReconciler(async_session_factory)
+            with caplog.at_level(logging.WARNING, logger="core.features.rbac.projection_worker"):
+                outcome = await reconciler.run_once()
+
+            assert outcome.tenants_no_progress == 1
+            assert await _core_rows(stuck.tenant_id) == (roles, 0)
+            async with async_session_factory() as session:
+                assert (
+                    await RbacRepository(session).resolve_user_permissions(
+                        user_id=stuck.user_id, tenant_id=stuck.tenant_id
+                    )
+                    == []
+                )
+
+            warnings = [
+                r for r in caplog.records if r.message == "rbac.projection.tenant_no_progress"
+            ]
+            assert len(warnings) == 1, "a tenant that cannot be projected must be reported"
+            assert warnings[0].tenant_id == str(stuck.tenant_id)
+            assert stuck.tenant_id in reconciler._cooldowns
+        finally:
+            await _delete_tenant(stuck.tenant_id)
+            await _delete_tenant(donor.tenant_id)
 
 
 class TestNoProgressCooldown:
@@ -774,15 +901,20 @@ class TestFailureIsolation:
 class TestRlsCapabilityGuard:
     """The guard that stops this worker degrading into a silent no-op.
 
-    ``core_roles`` is RLS-protected on ``tenant_id = current_tenant_id()`` and a
-    background task has no request tenant, so the tick depends on the database
-    role bypassing RLS. If it stops doing that, every tick reports healthy while
-    repairing nothing - the failure mode this guard exists to prevent.
+    ``core_roles`` and ``core_user_roles`` are RLS-protected on
+    ``tenant_id = current_tenant_id()`` and a background task has no request
+    tenant, so the tick depends on the database role bypassing RLS. If it stops
+    doing that, every tick reports healthy while repairing nothing - the failure
+    mode this guard exists to prevent. The probe requires capability on **both**
+    tables, because ownership is per-table and the worker reads both.
     """
 
     # A literal, not a parameter: it is interpolated into DDL, and there is no
     # reason for it to be anything else.
     PROBE_ROLE = "skyrict_probe_rls"
+    # Distinct from PROBE_ROLE: this fixture reassigns table ownership, so it
+    # must never share a role with the fixture that only probes.
+    PROBE_OWNER_ROLE = "skyrict_probe_owner"
 
     @pytest.fixture
     async def restricted_role(self) -> AsyncGenerator[str, None]:
@@ -814,6 +946,58 @@ class TestRlsCapabilityGuard:
             try:
                 # A role with neither BYPASSRLS nor table ownership would see
                 # nothing, so the probe must say so rather than return true.
+                assert await session.scalar(_CAN_BYPASS_RLS_SQL) is False
+            finally:
+                await session.execute(text("RESET ROLE"))
+
+    @pytest.fixture
+    async def owns_core_roles_only(self) -> AsyncGenerator[str, None]:
+        """A role that owns ``core_roles`` but NOT ``core_user_roles``.
+
+        Ownership is per-table, so this is a real configuration rather than a
+        contrived one: a role can satisfy a probe that inspects a single table
+        while its reads of the other are still filtered by RLS. The worker
+        reads both - the gap query and the progress count - so the probe has to
+        require both. Table ownership is restored on teardown because the rest
+        of the suite runs against these same tables.
+        """
+        async with async_session_factory() as session:
+            try:
+                await session.execute(text(f'CREATE ROLE "{self.PROBE_OWNER_ROLE}" NOLOGIN'))
+            except DBAPIError as exc:
+                await session.rollback()
+                pytest.skip(f"insufficient privilege to create a probe role: {exc}")
+            owner = (
+                await session.execute(
+                    text(
+                        "SELECT pg_get_userbyid(relowner) FROM pg_class "
+                        "WHERE oid = 'core_roles'::regclass"
+                    )
+                )
+            ).scalar_one()
+            await session.execute(
+                text(f'ALTER TABLE core_roles OWNER TO "{self.PROBE_OWNER_ROLE}"')
+            )
+            await session.commit()
+        try:
+            yield self.PROBE_OWNER_ROLE
+        finally:
+            async with async_session_factory() as session:
+                await session.execute(text(f'ALTER TABLE core_roles OWNER TO "{owner}"'))
+                await session.commit()
+                await session.execute(text(f'DROP ROLE IF EXISTS "{self.PROBE_OWNER_ROLE}"'))
+                await session.commit()
+
+    async def test_probe_requires_both_rbac_tables(self, owns_core_roles_only: str) -> None:
+        """Owning one of the two tables must not be reported as sufficient."""
+        from core.features.rbac.projection_worker import _CAN_BYPASS_RLS_SQL
+
+        async with async_session_factory() as session:
+            await session.execute(text(f'SET ROLE "{owns_core_roles_only}"'))
+            try:
+                # If this returned true the worker would start, and its reads of
+                # core_user_roles would be RLS-filtered: every tenant would look
+                # unprojected, so every tick would select every tenant.
                 assert await session.scalar(_CAN_BYPASS_RLS_SQL) is False
             finally:
                 await session.execute(text("RESET ROLE"))
