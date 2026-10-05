@@ -48,7 +48,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^15.5.22",
+    "eslint-config-next": "^16.3.8",
     "import-in-the-middle": "3.5.1",
     "lighthouse": "^13.4.1",
     "postcss": "^8.5.0",
