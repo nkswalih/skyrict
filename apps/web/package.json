@@ -18,7 +18,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@floating-ui/react": "^0.27.20",
     "@hookform/resolvers": "^5.5.7",
-    "@sentry/nextjs": "^10.74.0",
+    "@sentry/nextjs": "^11.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "flag-icons": "^7.5.0",
