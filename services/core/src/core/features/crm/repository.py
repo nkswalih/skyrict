@@ -275,6 +275,10 @@ class CrmRepository:
         self.session = session
         self._next_sequence = next_sequence
 
+    async def commit(self) -> None:
+        """Commit the current transaction (write handlers, before the response)."""
+        await self.session.commit()
+
     async def parallel(
         self,
         tenant_id: object,
