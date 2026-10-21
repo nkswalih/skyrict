@@ -111,6 +111,14 @@ strict = true
 - Index naming convention: `ix_{table}_{columns}`
 - Foreign key naming convention: `fk_{table}_{referenced_table}`
 
+### Public artifacts and test data
+
+- Docs, ADRs, PR titles and descriptions, commit messages, commands, and
+  docstrings must not name real tenants, customers, user accounts, personal
+  email addresses, or production request IDs.
+- Describe production findings generically (`a production tenant`) and use
+  reserved example domains (`@example.com`) for fixtures.
+
 ## Testing
 
 | Type        | Tool                    | Target                 | Run                     |
