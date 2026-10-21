@@ -250,8 +250,25 @@ class HttpCoreGateway(CoreHttpTransport):
                     headers=self._headers(),
                 )
                 response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # A non-2xx answer is a core-side fact - 403 when the caller's RBAC
+            # projection is missing, 404 for an unknown slug, 5xx for a core
+            # fault - and says nothing about reachability. Log the status and
+            # core's request id so the two are distinguishable. The body is not
+            # logged: it can echo tenant data.
+            logger.warning(
+                "narrator_gateway_http_error",
+                path=path,
+                status_code=exc.response.status_code,
+                request_id=exc.response.headers.get("X-Request-ID"),
+            )
+            raise AiUnavailableError("Core service is temporarily unavailable") from exc
         except httpx.HTTPError as exc:
-            logger.warning("narrator_gateway_unreachable", path=path)
+            logger.warning(
+                "narrator_gateway_unreachable",
+                path=path,
+                error_type=type(exc).__name__,
+            )
             raise AiUnavailableError("Core service is temporarily unavailable") from exc
         try:
             payload = response.json()

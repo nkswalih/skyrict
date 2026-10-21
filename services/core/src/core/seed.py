@@ -577,6 +577,36 @@ async def seed_approval_workflow_defaults(tenant_id: uuid.UUID) -> None:
         await session.commit()
 
 
+async def provision_tenant_defaults(tenant_id: uuid.UUID) -> None:
+    """Apply every non-RBAC per-tenant default pack for one tenant.
+
+    This is the provisioning contract ``features/reporting/seeds.py`` documents
+    ("``core.seed`` applies the same pack when a new tenant is provisioned")
+    but which nothing implemented: until this function existed, every seed
+    below was reachable only from ``core seed --tenant-id``. A tenant created
+    after core migration 0039 therefore had no report definitions, no HR
+    defaults, no chart of accounts and no approval definitions, and every
+    ``/api/v1/reports/{slug}/run`` call returned 404
+    ``Report '<slug>' was not found`` for it.
+
+    RBAC is deliberately **excluded**. ``seed_core_roles_for_tenant`` unions
+    core's static ``CORE_SYSTEM_ROLES`` permissions into existing rows, which
+    would widen access beyond what identity granted and break the guarantee
+    ``RbacProjectionReconciler`` exists to provide. ``core_roles`` and
+    ``core_user_roles`` remain a projection of identity, never of core's own
+    defaults.
+
+    Idempotent. Each step reconciles what is missing and leaves matching rows
+    untouched, so a retry after a partial failure is safe and a completed
+    tenant is a no-op.
+    """
+    await seed_tenant_hr_defaults(tenant_id)
+    await seed_tenant_finance_defaults(tenant_id)
+    await seed_reporting_defaults(tenant_id)
+    await seed_approval_workflow_defaults(tenant_id)
+    logger.info("seed.tenant_defaults.provisioned", tenant_id=str(tenant_id))
+
+
 async def sync_rbac_from_identity(tenant_id: uuid.UUID | None = None) -> None:
     """Sync user→role grants from identity's tables into core's RBAC tables.
 

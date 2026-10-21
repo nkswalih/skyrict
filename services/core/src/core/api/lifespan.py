@@ -167,6 +167,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         app.state.rbac_projection_reconciler = None
 
+    # Tenant default pack reconciler: a background asyncio loop that applies
+    # the non-RBAC per-tenant packs (reports, HR, chart of accounts, approval
+    # definitions) to active tenants missing any of them. Closes the window
+    # where a tenant created after migration 0039 has no report definitions,
+    # so every report endpoint 404s for it until an operator runs
+    # `core seed --tenant-id`. Disabled under the test environment so
+    # integration tests drive run_once() directly.
+    if settings.TENANT_PROVISIONING_ENABLED and settings.ENVIRONMENT != Environment.TEST:
+        from core.db.session import async_session_factory
+        from core.features.provisioning.worker import TenantProvisioningReconciler
+
+        app.state.tenant_provisioning_reconciler = TenantProvisioningReconciler(
+            async_session_factory
+        )
+        app.state.tenant_provisioning_reconciler.start()
+    else:
+        app.state.tenant_provisioning_reconciler = None
+
     # Graceful shutdown: uvicorn owns SIGTERM/SIGINT handling; on signal it
     # runs this context manager's exit, closing the readiness gate, the AI
     # client and the DB engine so in-flight work can drain cleanly.
@@ -195,5 +213,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     projection_reconciler = getattr(app.state, "rbac_projection_reconciler", None)
     if projection_reconciler is not None:
         await projection_reconciler.stop()
+    provisioning_reconciler = getattr(app.state, "tenant_provisioning_reconciler", None)
+    if provisioning_reconciler is not None:
+        await provisioning_reconciler.stop()
     await app.state.ai_client.aclose()
     await engine.dispose()

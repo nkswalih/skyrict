@@ -11,8 +11,10 @@ The service is provider-AGNOSTIC: provider credentials (AI_PROVIDER/AI_MODEL/
 AI_BASE_URL/AI_API_KEY and the AI_FALLBACK_* quartet) are optional at boot.
 With no providers configured, the service still starts and serves health -
 AI requests then fail with a typed 503 ai_unavailable instead of crashing.
-``INVENTORY_SERVICE_URL`` is accepted WITHOUT the prefix (compose contract
-from the AI infrastructure spec §6.4) via a validation alias.
+``INVENTORY_SERVICE_URL`` and ``REPORT_SERVICE_URL`` are accepted WITHOUT the
+prefix (compose contract from the AI infrastructure spec §6.4) as well as with
+the ``AI_`` prefix that the Azure deployment sets; the prefixed name wins when
+both are present.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import sys
 from pathlib import Path  # noqa: TC003  # pydantic resolves annotations at runtime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # NonEmptyStr is a runtime type here: pydantic builds the field validator while
@@ -62,6 +64,24 @@ class Settings(BaseSettings):
     # --- Database (CRITICAL - no default) ---
     DATABASE_URL: NonEmptyStr = Field(
         ..., description="async PostgreSQL connection string - REQUIRED, must not be empty"
+    )
+    DB_POOL_SIZE: int = Field(
+        default=10,
+        gt=0,
+        description=(
+            "SQLAlchemy pool size. The Azure deployment sets AI_DB_POOL_SIZE; "
+            "before this field existed the value was hardcoded and the env var "
+            "was silently ignored."
+        ),
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "SQLAlchemy pool overflow. The Azure deployment sets "
+            "AI_DB_MAX_OVERFLOW; before this field existed the value was "
+            "hardcoded and the env var was silently ignored."
+        ),
     )
 
     # --- Redis (CRITICAL - required for distributed rate limiting) ---
@@ -118,11 +138,17 @@ class Settings(BaseSettings):
     # --- Core (inventory) service - data plane for AI features ---
     INVENTORY_SERVICE_URL: str = Field(
         default="http://localhost:8001",
-        validation_alias="INVENTORY_SERVICE_URL",
+        # A plain validation_alias disables env_prefix for this field, so the
+        # alias itself must name both forms. Before this, only the unprefixed
+        # name was read and the AI_INVENTORY_SERVICE_URL the Azure deployment
+        # sets was ignored, leaving the gateway pointed at localhost:8001 in
+        # production (every core read failed -> 503 ai_unavailable).
+        validation_alias=AliasChoices("AI_INVENTORY_SERVICE_URL", "INVENTORY_SERVICE_URL"),
         description=(
-            "base URL of the core monolith (inventory endpoints). Accepts the "
-            "UNPREFIXED INVENTORY_SERVICE_URL per compose contract; in docker "
-            "networks set INVENTORY_SERVICE_URL=http://skyrict-core:8001."
+            "base URL of the core monolith (inventory endpoints). Accepts "
+            "AI_INVENTORY_SERVICE_URL (the name the Azure deployment sets) and "
+            "the UNPREFIXED INVENTORY_SERVICE_URL per compose contract; in "
+            "docker networks set INVENTORY_SERVICE_URL=http://skyrict-core:8001."
         ),
     )
     INVENTORY_SERVICE_TIMEOUT_SECONDS: float = Field(
@@ -134,13 +160,17 @@ class Settings(BaseSettings):
     # --- Core (reporting) service - data plane for the NL report builder (SKY-80) ---
     REPORT_SERVICE_URL: str = Field(
         default="http://localhost:8001",
-        validation_alias="REPORT_SERVICE_URL",
+        # Same dual-name contract as INVENTORY_SERVICE_URL: the prefixed name is
+        # what the Azure deployment sets, the unprefixed one is the compose
+        # contract, and a plain validation_alias would ignore the prefix.
+        validation_alias=AliasChoices("AI_REPORT_SERVICE_URL", "REPORT_SERVICE_URL"),
         description=(
             "base URL of the core monolith (reporting endpoints, /api/v1/reports). "
-            "Accepts the UNPREFIXED REPORT_SERVICE_URL per compose contract; in "
-            "docker networks set REPORT_SERVICE_URL=http://skyrict-core:8001. "
-            "Defaults to the same host as INVENTORY_SERVICE_URL because both "
-            "APIs live on the core monolith."
+            "Accepts AI_REPORT_SERVICE_URL and the UNPREFIXED REPORT_SERVICE_URL "
+            "per compose contract; in docker networks set "
+            "REPORT_SERVICE_URL=http://skyrict-core:8001. Defaults to the same "
+            "host as INVENTORY_SERVICE_URL because both APIs live on the core "
+            "monolith."
         ),
     )
     REPORT_SERVICE_TIMEOUT_SECONDS: float = Field(

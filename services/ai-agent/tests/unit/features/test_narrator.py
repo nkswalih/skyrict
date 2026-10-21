@@ -12,9 +12,12 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import httpx
 import pytest
+from structlog.testing import capture_logs
 
 from ai_agent.core.audit_events import AI_NARRATOR_GENERATED
+from ai_agent.core.exceptions import AiUnavailableError
 from ai_agent.features.narrator.extract import (
     build_prompt,
     build_signals_dict,
@@ -360,6 +363,55 @@ class TestHttpGateway:
         assert signal.dead_stock_count == 2
         assert signal.slow_mover_count == 0
         assert signal.tied_up_capital == Decimal("0")
+
+    async def test_http_error_logs_status_and_request_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A core-side non-2xx must not masquerade as an unreachable core."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                headers={"X-Request-ID": "req-123"},
+                json={"detail": "forbidden"},
+            )
+
+        gateway = self._gateway()
+        monkeypatch.setattr(
+            gateway,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with capture_logs() as logs, pytest.raises(AiUnavailableError):
+            await gateway._get("/finance/reports/balance-sheet", {})
+
+        assert logs[0]["event"] == "narrator_gateway_http_error"
+        assert logs[0]["status_code"] == 403
+        assert logs[0]["request_id"] == "req-123"
+        assert logs[0]["path"] == "/finance/reports/balance-sheet"
+
+    async def test_transport_error_logs_the_error_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A refused connection is the only case that is really unreachable."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        gateway = self._gateway()
+        monkeypatch.setattr(
+            gateway,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with capture_logs() as logs, pytest.raises(AiUnavailableError):
+            await gateway._get("/crm/opportunities", {})
+
+        assert logs[0]["event"] == "narrator_gateway_unreachable"
+        assert logs[0]["error_type"] == "ConnectError"
+        assert logs[0]["path"] == "/crm/opportunities"
 
 
 class TestNarrate:

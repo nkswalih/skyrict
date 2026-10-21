@@ -812,6 +812,14 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
               name: 'CORE_RBAC_PROJECTION_ENABLED'
               value: 'true'
             }
+            {
+              // Kill switch for the tenant-default pack reconciler (reports,
+              // HR, chart of accounts, approval definitions). Declared here so
+              // it is changed declaratively and picked up by CD, never by
+              // hand-editing the live app.
+              name: 'CORE_TENANT_PROVISIONING_ENABLED'
+              value: 'true'
+            }
           ]
           probes: [
             {
