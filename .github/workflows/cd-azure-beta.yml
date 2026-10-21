@@ -705,6 +705,38 @@ jobs:
           [ "$failed" -eq 0 ] || { echo "::error::Preflight failed - refusing to deploy a configuration that is known to break at runtime."; exit 1; }
           echo "Preflight passed."
 
+      - name: Assert every enabled image exists in ACR
+        # A per-service deploy flag tells Bicep to roll that revision. If the
+        # matching build was skipped (or its push failed), the app is pointed at
+        # a tag that is not in the registry and the failure surfaces later as a
+        # ContainerApp image-pull error that names neither the build nor the
+        # flag. Fail here with the repository and tag instead.
+        run: |
+          set -euo pipefail
+          registry="${{ needs.provision-infra.outputs.login_server }}"
+
+          check() {
+            repo="$1"
+            enabled="$2"
+            [ "$enabled" = "true" ] || return 0
+            # `az acr repository show --image repo:tag` is an exact lookup.
+            # `repository show-tags` is paginated, so an older tag on a busy
+            # repository can be outside the first page and produce a false
+            # failure on a re-run.
+            if ! az acr repository show \
+              --name "${registry%%.*}" \
+              --image "$repo:${{ env.IMAGE_TAG }}" \
+              >/dev/null 2>&1; then
+              echo "::error::$repo:${{ env.IMAGE_TAG }} is not in $registry, but this deploy enables $repo. Its build step was skipped or failed to push."
+              exit 1
+            fi
+            echo "$repo:${{ env.IMAGE_TAG }} present"
+          }
+
+          check identity "${{ needs.changes.outputs.identity }}"
+          check core "${{ needs.changes.outputs.core }}"
+          check ai-agent "${{ needs.changes.outputs.ai }}"
+          check gateway "${{ needs.changes.outputs.gateway }}"
 
       - name: Validate (phase 2a (jobs))
         run: |
@@ -816,9 +848,11 @@ jobs:
         #
         # Order within the step: db-init alone first, because it creates the
         # database and the extensions and alembic cannot connect until it has.
-        # Then the three services in identity -> core -> ai-agent order, because
-        # identity owns the tenants table and current_tenant_id() that the other
-        # two reference.
+        # Then the services this push rolled, in identity -> core -> ai-agent
+        # order, because identity owns the tenants table and
+        # current_tenant_id() that the other two reference. A service Bicep did
+        # not redeploy still points at the image it already ran, so starting its
+        # job would only re-apply migrations that are already applied.
         run: |
           set -euo pipefail
 
@@ -906,10 +940,25 @@ jobs:
             fi
           }
 
-          run_job "${{ needs.provision-infra.outputs.db_init_job }}" db-init
-          run_job "${{ needs.provision-infra.outputs.identity_job }}" migrate
-          run_job "${{ needs.provision-infra.outputs.core_job }}" migrate
-          run_job "${{ needs.provision-infra.outputs.ai_job }}" migrate
+          identity_changed="${{ needs.changes.outputs.identity }}"
+          core_changed="${{ needs.changes.outputs.core }}"
+          ai_changed="${{ needs.changes.outputs.ai }}"
+
+          if [ "$identity_changed" = "true" ] || [ "$core_changed" = "true" ] || [ "$ai_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.db_init_job }}" db-init
+          else
+            echo "No backend service changed - skipping db-init."
+          fi
+
+          if [ "$identity_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.identity_job }}" migrate
+          fi
+          if [ "$core_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.core_job }}" migrate
+          fi
+          if [ "$ai_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.ai_job }}" migrate
+          fi
 
 
       - name: Validate (phase 2b (apps))
