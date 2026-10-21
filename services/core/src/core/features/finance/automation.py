@@ -43,7 +43,7 @@ from core.core.constants import INVOICE_PREFIX
 from core.core.exceptions import AiServiceUnavailableError
 from core.core.logging import get_logger
 from core.core.permissions import ERP_FINANCE_READ
-from core.db.session import get_db
+from core.db.session import commit_writes, get_db
 from core.domain.entities import (
     AccountCodeSuggestion,
     AiFinanceAnomaly,
@@ -1003,10 +1003,12 @@ async def reverse_journal_entry(
     entry_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_approve),
     svc: FinanceAutomationService = Depends(get_finance_automation_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[JournalEntryResponse]:
     entry = await svc.reverse_journal_entry(
         _tenant_id(current_user), _user_id(current_user), entry_id
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=JournalEntryResponse.model_validate(entry))
 
 
@@ -1023,12 +1025,14 @@ async def put_settings(
     body: WorkingCapitalSettingsRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceAutomationService = Depends(get_finance_automation_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[TenantSettingsResponse]:
     settings = await svc.put_settings(
         _tenant_id(current_user),
         body.threshold,
         invoice_numbering_scheme=body.invoice_numbering_scheme,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=settings)
 
 
@@ -1158,8 +1162,10 @@ async def accept_suggestion(
     suggestion_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_ai_write),
     svc: FinanceAutomationService = Depends(get_finance_automation_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[AccountCodeSuggestionResponse]:
     suggestion = await svc.accept_suggestion(_tenant_id(current_user), suggestion_id)
+    await commit_writes(db)
     return ResponseEnvelope(
         data=AccountCodeSuggestionResponse(
             description=suggestion.description,
@@ -1181,8 +1187,10 @@ async def dismiss_suggestion(
     suggestion_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_ai_write),
     svc: FinanceAutomationService = Depends(get_finance_automation_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[AccountCodeSuggestionResponse]:
     suggestion = await svc.dismiss_suggestion(_tenant_id(current_user), suggestion_id)
+    await commit_writes(db)
     return ResponseEnvelope(
         data=AccountCodeSuggestionResponse(
             description=suggestion.description,
