@@ -400,6 +400,27 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Tenant default pack reconciler ---
+    TENANT_PROVISIONING_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "run the in-process tenant-defaults reconciler (a background "
+            "asyncio loop that applies every non-RBAC per-tenant pack - report "
+            "definitions, HR defaults, the chart of accounts and approval "
+            "definitions - to active tenants that are missing any of them). "
+            "Without it, a tenant created after core migration 0039 has no "
+            "report definitions, so every report endpoint returns 404 "
+            "'Report <slug> was not found' for that tenant. RBAC is excluded: "
+            "core_roles/core_user_roles stay a projection of identity's grants "
+            "(RBAC_PROJECTION_ENABLED). Kill switch: set to false to stop the "
+            "loop; existing tenants keep the packs they already have. Declared "
+            "in infra/azure/modules/apps.bicep as "
+            "CORE_TENANT_PROVISIONING_ENABLED - change it there and let CD "
+            "deploy, do not hand-edit the live app. Disabled under the test "
+            "environment so integration tests drive run_once() directly."
+        ),
+    )
+
     # --- Budget overrun notification worker (SKY-85) ---
     FINANCE_BUDGET_OVERRUN_WORKER_ENABLED: bool = Field(
         default=True,
