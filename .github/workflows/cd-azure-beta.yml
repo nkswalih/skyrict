@@ -420,7 +420,7 @@ jobs:
 
   build-push-images:
     name: Build and push service images
-    needs: provision-infra
+    needs: [changes, provision-infra]
     runs-on: ubuntu-latest
     environment: azure-beta
     steps:
@@ -453,6 +453,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push identity image
+        if: needs.changes.outputs.identity == 'true'
         uses: docker/build-push-action@v6
         with:
           # The Dockerfile copies pyproject.toml/uv.lock and libs/* from the
@@ -465,6 +466,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push core image
+        if: needs.changes.outputs.core == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -475,6 +477,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push ai-agent image
+        if: needs.changes.outputs.ai == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -485,6 +488,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push gateway image
+        if: needs.changes.outputs.gateway == 'true'
         uses: docker/build-push-action@v6
         with:
           # Small and dependency-free (nginx:alpine plus two files), but it MUST
