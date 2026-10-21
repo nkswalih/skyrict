@@ -7,10 +7,11 @@
 #
 #   0. changes: maps the pushed file set to the components that need work.
 #      A service change fans out to that service plus the shared libs it
-#      imports; a change to anything under infra/azure, scripts/azure or this
-#      workflow fans out to all four. workflow_dispatch always fans out. The resulting flags gate the
-#      image builds, the migration jobs and the Bicep resources, so an
-#      unchanged app is neither rebuilt nor restarted.
+#      imports; a change to anything under infra/azure, scripts/azure, this
+#      workflow or the root .dockerignore fans out to all four.
+#      workflow_dispatch always fans out. The resulting flags gate the image
+#      builds, the migration jobs and the Bicep resources, so an unchanged app
+#      is neither rebuilt nor restarted.
 #   1. provision-infra (phase 1, deployWorkloads=false): validate + what-if
 #      + apply environment/security/registry/data + budgets, then set
 #      postgres azure.extensions=vector,pg_trgm,pgcrypto and seed the Key
@@ -39,8 +40,8 @@
 #      deployed before db-init is a crash-looping app, not a slow-starting one.
 #   4. verify: HTTP 200 + "healthy" through the gateway on its generated FQDN
 #      (a per-backend curl against an internal FQDN cannot resolve from a
-#      runner); plus revision provisioning state and a running replica for the
-#      three internal backends.
+#      runner); plus revision provisioning state for the three internal
+#      backends, and a running replica for each backend this run rolled.
 #
 # The rollout is inert until the beta environment is bootstrapped: secrets
 # on the `azure-beta` environment + repository variable
