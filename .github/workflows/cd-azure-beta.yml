@@ -7,9 +7,8 @@
 #
 #   0. changes: maps the pushed file set to the components that need work.
 #      A service change fans out to that service plus the shared libs it
-#      imports; a change to the shared deployment description (main.bicep,
-#      apps.bicep, parameters, scripts/azure, this workflow) fans out to all
-#      four. workflow_dispatch always fans out. The resulting flags gate the
+#      imports; a change to anything under infra/azure, scripts/azure or this
+#      workflow fans out to all four. workflow_dispatch always fans out. The resulting flags gate the
 #      image builds, the migration jobs and the Bicep resources, so an
 #      unchanged app is neither rebuilt nor restarted.
 #   1. provision-infra (phase 1, deployWorkloads=false): validate + what-if
@@ -130,7 +129,13 @@ jobs:
           #   core      <- services/core, skyrict-common, skyrict-events
           #   ai-agent  <- services/ai-agent, skyrict-common
           #   gateway   <- infra/docker/gateway
-          #   all four  <- the shared deployment description (appdef)
+          #   all four  <- anything under infra/azure, scripts/azure, or this
+          #                workflow (appdef). Broad on purpose: data,
+          #                environment and security modules feed the apps'
+          #                environment (redisName, the CAE default domain, the
+          #                Key Vault URI), so an "infra-only" change can still
+          #                need a new revision. A stale env var is worse than
+          #                an extra image build.
           #
           # skyrict-testing is not a runtime dependency of any image and
           # skyrict-fabric has no consumer in this workspace, so neither
@@ -165,7 +170,7 @@ jobs:
           while IFS= read -r file; do
             [ -n "$file" ] || continue
             case "$file" in
-              infra/azure/main.bicep|infra/azure/modules/apps.bicep|infra/azure/parameters/*|scripts/azure/*|.github/workflows/cd-azure-beta.yml)
+              infra/azure/*|scripts/azure/*|.github/workflows/cd-azure-beta.yml)
                 appdef=true ;;
               services/identity/*) identity_src=true ;;
               services/core/*) core_src=true ;;
