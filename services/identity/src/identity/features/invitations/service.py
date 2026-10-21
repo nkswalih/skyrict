@@ -82,6 +82,14 @@ class InvitationService:
         if existing_user is not None:
             raise ValidationError("A user with this email already exists in this organization")
 
+        # A Skyrict account is global per email (``uq_users_email``): an email
+        # that already belongs to an account in ANY tenant cannot be invited
+        # into a second one - accepting would violate that index. Reject it
+        # here, as a conflict the admin can act on, instead of letting the
+        # invitee discover it as an IntegrityError 500 at accept time.
+        if await self.user_repo.email_exists_global(email):
+            raise UserAlreadyExistsError("This email is unavailable.")
+
         # The INVITED membership reserves the email within the tenant; it is
         # the canonical pending relationship (no placeholder user). When that
         # reservation belongs to a DEAD invite (time-expired or admin-expired)
@@ -210,6 +218,15 @@ class InvitationService:
         if existing is not None:
             raise UserAlreadyExistsError(
                 "A user with this email already exists in this organization"
+            )
+
+        # Invitations created before the create-time global guard (or sent by a
+        # stale client) can point at an email that registered elsewhere since.
+        # Fail with a conflict the invitee can act on - never an IntegrityError.
+        if await self.user_repo.email_exists_global(email):
+            raise UserAlreadyExistsError(
+                "This email already has a Skyrict account; "
+                "sign in instead of accepting the invitation"
             )
 
         user = await self.user_repo.create(

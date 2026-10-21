@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.deps import (
     get_finance_service,
@@ -21,6 +22,7 @@ from core.api.deps import (
     require_ingest_m2m_or_permission,
     require_permission,
 )
+from core.db.session import commit_writes, get_db
 from core.domain.value_objects import SUPPORTED_CURRENCIES
 from core.features.finance.schemas import (
     AccountCreateRequest,
@@ -82,6 +84,7 @@ async def create_account(
     body: AccountCreateRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[AccountResponse]:
     account = await svc.create_account(
         tenant_id=_tenant_id(current_user),
@@ -89,6 +92,7 @@ async def create_account(
         name=body.name,
         account_type=body.account_type,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=AccountResponse.model_validate(account))
 
 
@@ -107,8 +111,10 @@ async def deactivate_account(
     account_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[AccountResponse]:
     account = await svc.deactivate_account(_tenant_id(current_user), account_id)
+    await commit_writes(db)
     return ResponseEnvelope(data=AccountResponse.model_validate(account))
 
 
@@ -124,6 +130,7 @@ async def create_journal_entry(
     body: JournalEntryCreateRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[JournalEntryResponse]:
     entry = await svc.create_manual_entry(
         tenant_id=_tenant_id(current_user),
@@ -134,6 +141,7 @@ async def create_journal_entry(
             for line in body.lines
         ],
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=JournalEntryResponse.model_validate(entry))
 
 
@@ -187,12 +195,14 @@ async def post_journal_entry(
     entry_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_approve),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[JournalEntryResponse]:
     entry = await svc.post_journal_entry(
         tenant_id=_tenant_id(current_user),
         user_id=_user_id(current_user),
         entry_id=entry_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=JournalEntryResponse.model_validate(entry))
 
 
@@ -204,12 +214,14 @@ async def void_journal_entry(
     entry_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[JournalEntryResponse]:
     entry = await svc.void_journal_entry(
         tenant_id=_tenant_id(current_user),
         user_id=_user_id(current_user),
         entry_id=entry_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=JournalEntryResponse.model_validate(entry))
 
 
@@ -225,6 +237,7 @@ async def create_fiscal_period(
     body: FiscalPeriodCreateRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[FiscalPeriodResponse]:
     period = await svc.create_fiscal_period(
         tenant_id=_tenant_id(current_user),
@@ -232,6 +245,7 @@ async def create_fiscal_period(
         start_date=body.start_date,
         end_date=body.end_date,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=FiscalPeriodResponse.model_validate(period))
 
 
@@ -252,8 +266,10 @@ async def close_fiscal_period(
     period_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_approve),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[FiscalPeriodResponse]:
     period = await svc.close_fiscal_period(_tenant_id(current_user), period_id)
+    await commit_writes(db)
     return ResponseEnvelope(data=FiscalPeriodResponse.model_validate(period))
 
 
@@ -267,6 +283,7 @@ async def create_invoice(
     body: InvoiceCreateRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[InvoiceResponse]:
     invoice = await svc.create_manual_invoice(
         tenant_id=_tenant_id(current_user),
@@ -285,6 +302,7 @@ async def create_invoice(
             for line in body.lines
         ],
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=InvoiceResponse.model_validate(invoice))
 
 
@@ -339,12 +357,14 @@ async def issue_invoice(
     invoice_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[InvoiceResponse]:
     invoice = await svc.issue_invoice(
         tenant_id=_tenant_id(current_user),
         user_id=_user_id(current_user),
         invoice_id=invoice_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=InvoiceResponse.model_validate(invoice))
 
 
@@ -356,12 +376,14 @@ async def approve_invoice(
     invoice_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_approve),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[InvoiceResponse]:
     invoice = await svc.approve_invoice(
         tenant_id=_tenant_id(current_user),
         user_id=_user_id(current_user),
         invoice_id=invoice_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=InvoiceResponse.model_validate(invoice))
 
 
@@ -370,12 +392,14 @@ async def void_invoice(
     invoice_id: uuid.UUID,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[InvoiceResponse]:
     invoice = await svc.void_invoice(
         tenant_id=_tenant_id(current_user),
         user_id=_user_id(current_user),
         invoice_id=invoice_id,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=InvoiceResponse.model_validate(invoice))
 
 
@@ -389,6 +413,7 @@ async def apply_payment(
     body: PaymentApplyRequest,
     current_user: dict[str, Any] = Depends(require_finance_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[PaymentResponse]:
     payment = await svc.apply_payment(
         tenant_id=_tenant_id(current_user),
@@ -398,6 +423,7 @@ async def apply_payment(
         method=body.method,
         paid_at=body.paid_at,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=PaymentResponse.model_validate(payment))
 
 
@@ -515,6 +541,7 @@ async def put_fx_rate(
     body: ExchangeRateWriteRequest,
     current_user: dict[str, Any] = Depends(require_fx_write),
     svc: FinanceService = Depends(get_finance_service),
+    db: AsyncSession = Depends(get_db),
 ) -> ResponseEnvelope[ExchangeRateResponse]:
     rate = await svc.set_exchange_rate(
         _tenant_id(current_user),
@@ -523,6 +550,7 @@ async def put_fx_rate(
         effective_date=body.effective_date,
         rate=body.rate,
     )
+    await commit_writes(db)
     return ResponseEnvelope(data=ExchangeRateResponse.model_validate(rate))
 
 

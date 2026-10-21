@@ -86,6 +86,9 @@ class FakeUserRepo:
     async def email_exists(self, tenant_id: str | uuid.UUID, email: str) -> bool:
         return await self.get_by_email(tenant_id, email) is not None
 
+    async def email_exists_global(self, email: str) -> bool:
+        return any(user.email == email for user in self.users.values())
+
     async def create(self, user: User) -> User:
         if user.id is None:
             user.id = uuid.uuid4()
@@ -410,6 +413,40 @@ class TestCreateInvitation:
                 created_by_user_id=uuid.uuid4(),
             )
 
+    async def test_create_rejects_email_registered_in_another_tenant(
+        self,
+        service: InvitationService,
+        repos: tuple,
+        tenant_id: uuid.UUID,
+    ) -> None:
+        _, user_repo, _, role_repo, email, membership_service = repos
+        await role_repo.create(
+            Role(tenant_id=tenant_id, name=DEFAULT_INVITE_ROLE, permissions=["users:read"])
+        )
+        # The account is global: the same email already owns a user row in a
+        # DIFFERENT tenant, so it must not be invited into this one.
+        await user_repo.create(
+            User(
+                tenant_id=uuid.uuid4(),
+                email="taken@test.com",
+                password_hash="hash",
+                full_name="Existing Account",
+                is_active=True,
+                is_verified=True,
+            )
+        )
+
+        with pytest.raises(UserAlreadyExistsError, match="This email is unavailable"):
+            await service.create_invitation(
+                tenant_id=tenant_id,
+                email="taken@test.com",
+                role_name=DEFAULT_INVITE_ROLE,
+                created_by_user_id=uuid.uuid4(),
+            )
+
+        assert email.sent == []
+        assert membership_service.invited == []
+
     async def test_reinvite_allowed_after_time_expiry_renews_reservation(
         self,
         service: InvitationService,
@@ -580,6 +617,48 @@ class TestAcceptInvitation:
         assert audit.entries[0]["target"] == f"invitation:{invitation.id}"
         assert audit.entries[0]["tenant_id"] == str(tenant_id)
         assert audit.entries[0]["user_id"] == str(user.id)
+
+    async def test_accept_rejects_email_registered_in_another_tenant(
+        self,
+        service: InvitationService,
+        repos: tuple,
+        tenant_id: uuid.UUID,
+    ) -> None:
+        inv_repo, user_repo, _, role_repo, _, _ = repos
+        await role_repo.create(
+            Role(tenant_id=tenant_id, name=DEFAULT_INVITE_ROLE, permissions=["users:read"])
+        )
+        await user_repo.create(
+            User(
+                tenant_id=uuid.uuid4(),
+                email="cross@test.com",
+                password_hash="hash",
+                full_name="Cross Tenant Account",
+                is_active=True,
+                is_verified=True,
+            )
+        )
+        invitation = await inv_repo.create(
+            Invitation(
+                tenant_id=tenant_id,
+                email="cross@test.com",
+                token_hash=hash_invitation_token("cross-tenant-token"),
+                role_name=DEFAULT_INVITE_ROLE,
+                created_by_user_id=uuid.uuid4(),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+
+        with pytest.raises(UserAlreadyExistsError, match="already has a Skyrict account"):
+            await service.accept_invitation(
+                token="cross-tenant-token",
+                email="cross@test.com",
+                password="SecurePass123!",
+                full_name="Cross Tenant Account",
+            )
+
+        # The invitation stays usable: the conflict is reported, not consumed.
+        assert inv_repo.invitations[invitation.id].used_at is None
 
     async def test_accept_activates_linked_membership(
         self,

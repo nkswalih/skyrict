@@ -14,12 +14,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from identity.core.tenant_context import TenantContext
 from identity.db.repository import SqlRepository
 from identity.domain.entities import User
 from identity.models.user import UserModel
-from skyrict_common.exceptions import UserNotFoundError
+from skyrict_common.exceptions import UserAlreadyExistsError, UserNotFoundError
 
 
 def _to_orm(user: User) -> UserModel:
@@ -126,10 +127,23 @@ class UserRepository(SqlRepository):
         return result.scalar_one_or_none() is not None
 
     async def create(self, user: User) -> User:
-        """Persist a new user and return it with its DB-generated id."""
+        """Persist a new user and return it with its DB-generated id.
+
+        A duplicate email is a domain conflict, not a server fault: the global
+        ``uq_users_email`` index (or, for two concurrent accepts in one tenant,
+        ``uq_users_tenant_email``) raises an ``IntegrityError`` that the HTTP
+        layer would otherwise report as a 500. Translate it to the domain error
+        so every caller - signup, invite creation, invite acceptance - returns
+        a 409 with a message instead.
+        """
         model = _to_orm(user)
         self.session.add(model)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError as exc:
+            if "uq_users_email" in str(exc) or "uq_users_tenant_email" in str(exc):
+                raise UserAlreadyExistsError("A user with this email already exists") from exc
+            raise
         await self.session.refresh(model)
         return _from_orm(model)
 
