@@ -60,6 +60,10 @@ on:
       # The gateway image is built from here. Without this line a gateway
       # change would not trigger a deploy at all.
       - "infra/docker/gateway/**"
+      # The gateway image bakes this template in.
+      - "infra/nginx/gateway.conf.template"
+      # The build context is the repo root for every image.
+      - ".dockerignore"
       # build-params.sh shapes every deployment argument, so a change to it
       # must trigger a deploy.
       - "scripts/azure/**"
@@ -128,9 +132,10 @@ jobs:
           #   identity  <- services/identity, skyrict-common, skyrict-events
           #   core      <- services/core, skyrict-common, skyrict-events
           #   ai-agent  <- services/ai-agent, skyrict-common
-          #   gateway   <- infra/docker/gateway
-          #   all four  <- anything under infra/azure, scripts/azure, or this
-          #                workflow (all_components). Broad on purpose: data,
+          #   gateway   <- infra/docker/gateway, infra/nginx/gateway.conf.template
+          #   all four  <- anything under infra/azure, scripts/azure, this
+          #                workflow, or the root .dockerignore
+          #                (all_components). Broad on purpose: data,
           #                environment and security modules feed the apps'
           #                environment (redisName, the CAE default domain, the
           #                Key Vault URI), so an "infra-only" change can still
@@ -175,7 +180,10 @@ jobs:
               services/identity/*) identity_src=true ;;
               services/core/*) core_src=true ;;
               services/ai-agent/*) ai_src=true ;;
-              infra/docker/gateway/*) gateway_src=true ;;
+              infra/docker/gateway/*|infra/nginx/gateway.conf.template) gateway_src=true ;;
+              # The build context is the repo root for all four images, so a
+              # change to the root dockerignore can change any of them.
+              .dockerignore) all_components=true ;;
               libs/skyrict-common/*) common=true ;;
               libs/skyrict-events/*) events=true ;;
               uv.lock|pyproject.toml) lock=true ;;

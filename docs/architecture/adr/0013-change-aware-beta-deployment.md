@@ -37,7 +37,7 @@ The four images do not share one dependency set. From the service
 | identity | `services/identity/**`, `libs/skyrict-common/**`, `libs/skyrict-events/**`, `uv.lock`, root `pyproject.toml` |
 | core | `services/core/**`, `libs/skyrict-common/**`, `libs/skyrict-events/**`, `uv.lock`, root `pyproject.toml` |
 | ai-agent | `services/ai-agent/**`, `libs/skyrict-common/**`, `uv.lock`, root `pyproject.toml` |
-| gateway | `infra/docker/gateway/**` |
+| gateway | `infra/docker/gateway/**`, `infra/nginx/gateway.conf.template` |
 
 `libs/skyrict-testing` and `libs/skyrict-fabric` are not runtime dependencies
 of any deployed image, and `services/_template` is not in the workspace.
@@ -65,11 +65,12 @@ independent decisions:
 
 Fan-out rules:
 
-- **Any path under `infra/azure/**`, `scripts/azure/**`, or this workflow**
-  maps to all four components. Broad on purpose: a data/environment/security
-  module can change an app's environment, and a stale env var is worse than
-  an extra image build. Infra and deploy-policy changes are rare, so they
-  keep the previous full-rollout behaviour.
+- **Any path under `infra/azure/**`, `scripts/azure/**`, or this workflow,
+  or the root `.dockerignore`**, maps to all four components. Broad on
+  purpose: a data/environment/security module can change an app's
+  environment, and the build context for every image is the repo root, so a
+  dockerignore change can alter any image. Infra and deploy-policy changes
+  are rare, so they keep the previous full-rollout behaviour.
 - **`workflow_dispatch`** maps to all four. A manual run is the operator
   asking for a full rollout.
 - **No usable base commit** (first push on a branch, or a force-push whose
