@@ -32,10 +32,18 @@ on:
   push:
     branches: [main]
     paths:
-      - "services/**"
-      - "apps/**"
-      - "libs/**"
-      - "infra/**"
+      # Staging deploys identity only. These are the inputs that can change
+      # its image or its runtime: the service, the two workspace libs its
+      # Dockerfile copies, the workspace lock, and the k8s/Terraform it
+      # applies. A web-only change or another service's change cannot affect
+      # it and used to rebuild and redeploy staging for nothing.
+      - "services/identity/**"
+      - "libs/skyrict-common/**"
+      - "libs/skyrict-events/**"
+      - "uv.lock"
+      - "pyproject.toml"
+      - "infra/k8s/**"
+      - "infra/terraform/**"
       - ".github/workflows/cd-staging.yml"
   workflow_dispatch:
 
