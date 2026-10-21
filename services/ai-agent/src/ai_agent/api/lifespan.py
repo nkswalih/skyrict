@@ -27,6 +27,7 @@ import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
@@ -65,6 +66,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "service.started",
         environment=settings.ENVIRONMENT.value,
         providers_configured=llm_router.provider_count,
+        # Host only, never the full URL: a userinfo component would leak
+        # credentials into logs. This is the value every narrate read depends
+        # on, so a misconfigured deployment must be visible at startup.
+        core_host=urlsplit(settings.INVENTORY_SERVICE_URL).hostname,
     )
 
     # Cross-module narrator (SKY-63): optional daily cron + system agent row.
