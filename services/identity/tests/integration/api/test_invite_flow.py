@@ -82,6 +82,75 @@ class TestInvitationFlow:
         with contextlib.suppress(Exception):
             await _cleanup_tenant(tenant["slug"])
 
+    async def test_invite_rejects_email_registered_in_another_tenant(
+        self, client: AsyncClient
+    ) -> None:
+        """A global account is reported as unavailable, not invited twice."""
+        owner_tenant = await _register_tenant(client)
+        inviter_tenant = await _register_tenant(client)
+        headers = {
+            "X-Tenant-Slug": inviter_tenant["slug"],
+            "Authorization": f"Bearer {inviter_tenant['token']}",
+        }
+
+        resp = await client.post(
+            "/api/v1/invitations",
+            headers=headers,
+            json={"email": owner_tenant["email"], "role_name": "standard_user"},
+        )
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["type"].endswith("/user-already-exists")
+        assert body["detail"] == "This email is unavailable."
+
+        with contextlib.suppress(Exception):
+            await _cleanup_tenant(owner_tenant["slug"])
+        with contextlib.suppress(Exception):
+            await _cleanup_tenant(inviter_tenant["slug"])
+
+    async def test_accept_rejects_email_registered_after_the_invite(
+        self, client: AsyncClient
+    ) -> None:
+        """A stale invite for an email that registered elsewhere conflicts, not 500."""
+        invitee_email = f"late-{uuid.uuid4().hex[:8]}@test.com"
+        inviter_tenant = await _register_tenant(client)
+        headers = {
+            "X-Tenant-Slug": inviter_tenant["slug"],
+            "Authorization": f"Bearer {inviter_tenant['token']}",
+        }
+
+        create_resp = await client.post(
+            "/api/v1/invitations",
+            headers=headers,
+            json={"email": invitee_email},
+        )
+        assert create_resp.status_code == 200
+        invite_token = create_resp.json()["data"]["token"]
+
+        # The invitee registers their own workspace AFTER the invite went out,
+        # so the create-time guard could not have seen the account yet.
+        registrant_tenant = await provision_tenant(client, email=invitee_email)
+
+        accept_resp = await client.post(
+            "/api/v1/invitations/accept",
+            headers={"X-Tenant-Slug": inviter_tenant["slug"]},
+            data={
+                "token": invite_token,
+                "email": invitee_email,
+                "password": "InviteePass123!",
+                "full_name": "Late Registrant",
+            },
+        )
+
+        assert accept_resp.status_code == 409
+        assert accept_resp.json()["type"].endswith("/user-already-exists")
+
+        with contextlib.suppress(Exception):
+            await _cleanup_tenant(inviter_tenant["slug"])
+        with contextlib.suppress(Exception):
+            await _cleanup_tenant(registrant_tenant["slug"])
+
     async def test_expired_token_rejected(self, client: AsyncClient) -> None:
         tenant = await _register_tenant(client)
         headers = {"X-Tenant-Slug": tenant["slug"], "Authorization": f"Bearer {tenant['token']}"}
