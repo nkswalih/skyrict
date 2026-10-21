@@ -8,7 +8,7 @@ the owner's role grants but never calls core, and ``identity.tenant.provisioned`
 is published to a logging-only stub with no consumer (see
 ``core/events/consumers/__init__.py``).
 
-Consequence, observed on production ``fourstoats``: a tenant created after core
+Consequence, observed on a production tenant: a tenant created after core
 migration 0039 had zero rows in ``erp_report_definitions``, so
 ``ReportService.get_report`` raised ``Report '<slug>' was not found`` for every
 one of the twelve Phase-1 reports. ``seed_reporting_defaults`` and its siblings

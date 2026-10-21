@@ -14,7 +14,7 @@ A tenant created by self-service signup had a row in `tenants`, a role catalog a
 the owner's grant in identity, and **no core packs at all**. Every
 `/api/v1/reports/{slug}/run` call for it returned 404 `Report '<slug>' was not
 found`, and its HR, finance-chart and approval surfaces were empty. Observed on
-production `fourstoats`.
+a production tenant.
 
 The packs are the per-tenant reference data every tenant is supposed to start
 with:
@@ -144,8 +144,8 @@ Neither is justified yet.
 Positive:
 
 - A tenant created by signup gets every non-RBAC default pack within the idle
-  interval, with no operator action. Existing gaps, including `fourstoats`, are
-  repaired by the first pass after deploy.
+  interval, with no operator action. Existing gaps are repaired by the first
+  pass after deploy.
 - No new infrastructure, no new service-to-service contract, no second
   provisioning implementation to drift from the CLI.
 - RBAC is untouched: `core_roles`/`core_user_roles` still contain only what

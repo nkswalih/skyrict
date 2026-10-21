@@ -21,8 +21,8 @@ The invitation flow was written against the older per-tenant model. Its only
 duplicate check was `user_repo.get_by_email(tenant_id, email)`, so an email
 that already had an account in another tenant passed the check and then hit
 the global index on `INSERT`. The resulting `IntegrityError` was unhandled and
-became a 500. Production hit this on 2026-10-21
-(`POST /api/v1/invitations/accept` on `fourstoats`): `duplicate key value
+became a 500. A production tenant hit this on 2026-10-21
+(`POST /api/v1/invitations/accept`): `duplicate key value
 violates unique constraint "uq_users_email"`.
 
 ## Decision
