@@ -2,13 +2,15 @@
 # CI - Infrastructure
 #
 # Validates Terraform configuration, Kubernetes manifests, and the Azure
-# Bicep templates on every PR that touches infra/. No cloud credentials or
-# cluster access are required - the terraform steps init without a backend,
-# kubeconform validates the rendered overlay against Kubernetes + CRD
-# schemas offline, and the bicep job pins the v0.47.16 CLI to enforce
-# formatting + a clean build/compile of every module in the dependency
-# graph (main.bicep composes them all). Real validate/what-if for Azure
-# runs in cd-azure-beta.yml with OIDC.
+# Bicep templates on every PR that touches infra/ or the beta CD workflow. No
+# cloud credentials or cluster access are required - the terraform steps init
+# without a backend, kubeconform validates the rendered overlay against
+# Kubernetes + CRD schemas offline, and the bicep job pins the v0.47.16 CLI to
+# enforce formatting + a clean build/compile of every module in the dependency
+# graph (main.bicep composes them all). The bicep job also checks the
+# deployment outputs cd-azure-beta.yml consumes against main.bicep, so it has
+# to run when that workflow changes. Real validate/what-if for Azure runs in
+# cd-azure-beta.yml with OIDC.
 # =============================================================================
 
 name: CI - Infrastructure
@@ -20,6 +22,7 @@ on:
       - "infra/terraform/**"
       - "infra/k8s/**"
       - "infra/azure/**"
+      - ".github/workflows/cd-azure-beta.yml"
       - ".github/workflows/ci-infra.yml"
   push:
     branches: [main, dev]
@@ -27,6 +30,7 @@ on:
       - "infra/terraform/**"
       - "infra/k8s/**"
       - "infra/azure/**"
+      - ".github/workflows/cd-azure-beta.yml"
       - ".github/workflows/ci-infra.yml"
 
 concurrency:
