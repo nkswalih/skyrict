@@ -5,6 +5,13 @@
 # rollout driven entirely by OIDC - no Azure credentials ever live in the
 # repository:
 #
+#   0. changes: maps the pushed file set to the components that need work.
+#      A service change fans out to that service plus the shared libs it
+#      imports; a change to anything under infra/azure, scripts/azure, this
+#      workflow or the root .dockerignore fans out to all four.
+#      workflow_dispatch always fans out. The resulting flags gate the image
+#      builds, the migration jobs and the Bicep resources, so an unchanged app
+#      is neither rebuilt nor restarted.
 #   1. provision-infra (phase 1, deployWorkloads=false): validate + what-if
 #      + apply environment/security/registry/data + budgets, then set
 #      postgres azure.extensions=vector,pg_trgm,pgcrypto and seed the Key
@@ -13,7 +20,8 @@
 #      Key Vault secret references need before their revisions are created.
 #   2. build-push-images: docker-login with the OIDC token (AcrPush was
 #      granted to the deploy principal by the phase-1 Bicep) and push the
-#      identity/core/ai-agent images tagged with the immutable git SHA.
+#      images of the components that changed, tagged with the immutable git
+#      SHA.
 #   3. deploy-workloads (phase 2) is two applies with the migrations between
 #      them, and the order is not negotiable:
 #      3a. apply the JOBS only (deployWorkloads=true, deployApps=false) -
@@ -32,8 +40,8 @@
 #      deployed before db-init is a crash-looping app, not a slow-starting one.
 #   4. verify: HTTP 200 + "healthy" through the gateway on its generated FQDN
 #      (a per-backend curl against an internal FQDN cannot resolve from a
-#      runner); plus revision provisioning state and a running replica for the
-#      three internal backends.
+#      runner); plus revision provisioning state for the three internal
+#      backends, and a running replica for each backend this run rolled.
 #
 # The rollout is inert until the beta environment is bootstrapped: secrets
 # on the `azure-beta` environment + repository variable
@@ -50,8 +58,20 @@ on:
       - "services/**"
       - "libs/**"
       - "infra/azure/**"
+      # The gateway image is built from here. Without this line a gateway
+      # change would not trigger a deploy at all.
+      - "infra/docker/gateway/**"
+      # The gateway image bakes this template in.
+      - "infra/nginx/gateway.conf.template"
+      # The build context is the repo root for every image.
+      - ".dockerignore"
+      # build-params.sh shapes every deployment argument, so a change to it
+      # must trigger a deploy.
+      - "scripts/azure/**"
+      # Workspace dependency resolution for all three Python images.
+      - "uv.lock"
+      - "pyproject.toml"
       - ".github/workflows/cd-azure-beta.yml"
-      - ".github/workflows/ci-infra.yml"
   workflow_dispatch:
 
 concurrency:
@@ -79,6 +99,128 @@ permissions:
   id-token: write
 
 jobs:
+  changes:
+    name: Detect changed components
+    # Stay inert with the rest of the workflow until beta CD is enabled; a
+    # manual dispatch is always allowed through.
+    if: github.event_name == 'workflow_dispatch' || vars.CD_AZURE_BETA_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      identity: ${{ steps.detect.outputs.identity }}
+      core: ${{ steps.detect.outputs.core }}
+      ai: ${{ steps.detect.outputs.ai }}
+      gateway: ${{ steps.detect.outputs.gateway }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The map diffs the pushed range (github.event.before..github.sha),
+          # so the base commit has to be in the clone. The repository is small
+          # enough that a full history is cheaper than a wrong answer.
+          fetch-depth: 0
+
+      - name: Map changed paths to deployable components
+        id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # The dependency map is a policy, not a glob list, so it is spelled
+          # out here instead of hidden in an action's configuration:
+          #
+          #   identity  <- services/identity, skyrict-common, skyrict-events
+          #   core      <- services/core, skyrict-common, skyrict-events
+          #   ai-agent  <- services/ai-agent, skyrict-common
+          #   gateway   <- infra/docker/gateway, infra/nginx/gateway.conf.template
+          #   all four  <- anything under infra/azure, scripts/azure, this
+          #                workflow, or the root .dockerignore
+          #                (all_components). Broad on purpose: data,
+          #                environment and security modules feed the apps'
+          #                environment (redisName, the CAE default domain, the
+          #                Key Vault URI), so an "infra-only" change can still
+          #                need a new revision. A stale env var is worse than
+          #                an extra image build.
+          #
+          # skyrict-testing is not a runtime dependency of any image and
+          # skyrict-fabric has no consumer in this workspace, so neither
+          # rebuilds anything.
+          all_components=false
+          identity_src=false
+          core_src=false
+          ai_src=false
+          gateway_src=false
+          common=false
+          events=false
+          lock=false
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # A manual run means "redeploy everything". all_components fans out to all
+            # four components below, so this is the only flag to set.
+            echo "::notice::manual dispatch - rolling all four components"
+            all_components=true
+            changed=""
+          elif [ -n "${BEFORE:-}" ] \
+               && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" "$HEAD_SHA")
+          else
+            # First push, or a force-push whose base commit is no longer in
+            # the clone. "Everything changed" is the only safe answer: a
+            # filter that silently matches nothing would skip the deploy.
+            echo "::notice::no usable base commit ($BEFORE) - treating all components as changed"
+            changed=$(git ls-tree -r --name-only "$HEAD_SHA")
+          fi
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            case "$file" in
+              infra/azure/*|scripts/azure/*|.github/workflows/cd-azure-beta.yml)
+                all_components=true ;;
+              services/identity/*) identity_src=true ;;
+              services/core/*) core_src=true ;;
+              services/ai-agent/*) ai_src=true ;;
+              infra/docker/gateway/*|infra/nginx/gateway.conf.template) gateway_src=true ;;
+              # The build context is the repo root for all four images, so a
+              # change to the root dockerignore can change any of them.
+              .dockerignore) all_components=true ;;
+              libs/skyrict-common/*) common=true ;;
+              libs/skyrict-events/*) events=true ;;
+              uv.lock|pyproject.toml) lock=true ;;
+            esac
+          done <<< "$changed"
+
+          any() { local v; for v in "$@"; do [ "$v" = "true" ] && return 0; done; return 1; }
+          decide() { if any "$@"; then echo true; else echo false; fi; }
+
+          identity=$(decide "$all_components" "$identity_src" "$common" "$events" "$lock")
+          core=$(decide "$all_components" "$core_src" "$common" "$events" "$lock")
+          ai=$(decide "$all_components" "$ai_src" "$common" "$lock")
+          gateway=$(decide "$all_components" "$gateway_src")
+
+          {
+            echo "identity=$identity"
+            echo "core=$core"
+            echo "ai=$ai"
+            echo "gateway=$gateway"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Deploy matrix"
+            echo
+            echo "| component | deploy |"
+            echo "| --- | --- |"
+            echo "| identity | $identity |"
+            echo "| core | $core |"
+            echo "| ai-agent | $ai |"
+            echo "| gateway | $gateway |"
+            echo
+            echo "all_components=$all_components common=$common events=$events lock=$lock"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "deploy identity=$identity core=$core ai=$ai gateway=$gateway"
+
   provision-infra:
     name: Provision Azure infrastructure (phase 1)
     if: github.event_name == 'workflow_dispatch' || vars.CD_AZURE_BETA_ENABLED == 'true'
@@ -292,7 +434,7 @@ jobs:
 
   build-push-images:
     name: Build and push service images
-    needs: provision-infra
+    needs: [changes, provision-infra]
     runs-on: ubuntu-latest
     environment: azure-beta
     steps:
@@ -325,6 +467,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push identity image
+        if: needs.changes.outputs.identity == 'true'
         uses: docker/build-push-action@v6
         with:
           # The Dockerfile copies pyproject.toml/uv.lock and libs/* from the
@@ -337,6 +480,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push core image
+        if: needs.changes.outputs.core == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -347,6 +491,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push ai-agent image
+        if: needs.changes.outputs.ai == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -357,6 +502,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push gateway image
+        if: needs.changes.outputs.gateway == 'true'
         uses: docker/build-push-action@v6
         with:
           # Small and dependency-free (nginx:alpine plus two files), but it MUST
@@ -374,7 +520,7 @@ jobs:
 
   deploy-workloads:
     name: Deploy jobs, migrate, then apps (phase 2)
-    needs: [provision-infra, build-push-images]
+    needs: [changes, provision-infra, build-push-images]
     runs-on: ubuntu-latest
     environment: azure-beta
     outputs:
@@ -573,6 +719,38 @@ jobs:
           [ "$failed" -eq 0 ] || { echo "::error::Preflight failed - refusing to deploy a configuration that is known to break at runtime."; exit 1; }
           echo "Preflight passed."
 
+      - name: Assert every enabled image exists in ACR
+        # A per-service deploy flag tells Bicep to roll that revision. If the
+        # matching build was skipped (or its push failed), the app is pointed at
+        # a tag that is not in the registry and the failure surfaces later as a
+        # ContainerApp image-pull error that names neither the build nor the
+        # flag. Fail here with the repository and tag instead.
+        run: |
+          set -euo pipefail
+          registry="${{ needs.provision-infra.outputs.login_server }}"
+
+          check() {
+            repo="$1"
+            enabled="$2"
+            [ "$enabled" = "true" ] || return 0
+            # `az acr repository show --image repo:tag` is an exact lookup.
+            # `repository show-tags` is paginated, so an older tag on a busy
+            # repository can be outside the first page and produce a false
+            # failure on a re-run.
+            if ! az acr repository show \
+              --name "${registry%%.*}" \
+              --image "$repo:${{ env.IMAGE_TAG }}" \
+              >/dev/null 2>&1; then
+              echo "::error::$repo:${{ env.IMAGE_TAG }} is not in $registry, but this deploy enables $repo. Its build step was skipped or failed to push."
+              exit 1
+            fi
+            echo "$repo:${{ env.IMAGE_TAG }} present"
+          }
+
+          check identity "${{ needs.changes.outputs.identity }}"
+          check core "${{ needs.changes.outputs.core }}"
+          check ai-agent "${{ needs.changes.outputs.ai }}"
+          check gateway "${{ needs.changes.outputs.gateway }}"
 
       - name: Validate (phase 2a (jobs))
         run: |
@@ -583,6 +761,14 @@ jobs:
             deployWorkloads=true \
             deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -600,6 +786,14 @@ jobs:
             deployWorkloads=true \
             deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -619,6 +813,14 @@ jobs:
             deployWorkloads=true \
             deployApps=false \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -660,9 +862,11 @@ jobs:
         #
         # Order within the step: db-init alone first, because it creates the
         # database and the extensions and alembic cannot connect until it has.
-        # Then the three services in identity -> core -> ai-agent order, because
-        # identity owns the tenants table and current_tenant_id() that the other
-        # two reference.
+        # Then the services this push rolled, in identity -> core -> ai-agent
+        # order, because identity owns the tenants table and
+        # current_tenant_id() that the other two reference. A service Bicep did
+        # not redeploy still points at the image it already ran, so starting its
+        # job would only re-apply migrations that are already applied.
         run: |
           set -euo pipefail
 
@@ -750,10 +954,25 @@ jobs:
             fi
           }
 
-          run_job "${{ needs.provision-infra.outputs.db_init_job }}" db-init
-          run_job "${{ needs.provision-infra.outputs.identity_job }}" migrate
-          run_job "${{ needs.provision-infra.outputs.core_job }}" migrate
-          run_job "${{ needs.provision-infra.outputs.ai_job }}" migrate
+          identity_changed="${{ needs.changes.outputs.identity }}"
+          core_changed="${{ needs.changes.outputs.core }}"
+          ai_changed="${{ needs.changes.outputs.ai }}"
+
+          if [ "$identity_changed" = "true" ] || [ "$core_changed" = "true" ] || [ "$ai_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.db_init_job }}" db-init
+          else
+            echo "No backend service changed - skipping db-init."
+          fi
+
+          if [ "$identity_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.identity_job }}" migrate
+          fi
+          if [ "$core_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.core_job }}" migrate
+          fi
+          if [ "$ai_changed" = "true" ]; then
+            run_job "${{ needs.provision-infra.outputs.ai_job }}" migrate
+          fi
 
 
       - name: Validate (phase 2b (apps))
@@ -765,6 +984,14 @@ jobs:
             deployWorkloads=true \
             deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -782,6 +1009,14 @@ jobs:
             deployWorkloads=true \
             deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -801,6 +1036,14 @@ jobs:
             deployWorkloads=true \
             deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -820,13 +1063,28 @@ jobs:
           fi
           jq '.properties.outputs' /tmp/phase2b-deployment.json > /tmp/phase2b-outputs.json
 
-          for key in apiFqdn gatewayAppName identityAppName coreAppName aiAgentAppName; do
+          # apiFqdn is only emitted when the gateway app is evaluated. A
+          # core-only rollout sets deployGateway=false, so the output is
+          # legitimately empty and the gateway's existing FQDN has to be read
+          # from Azure instead. gatewayAppName is always emitted (it is a
+          # string interpolation, not a resource property), so it is safe.
+          for key in gatewayAppName identityAppName coreAppName aiAgentAppName; do
             value=$(jq -r --arg k "$key" '.[$k].value // empty' /tmp/phase2b-outputs.json)
             [ -n "$value" ] || { echo "::error::phase 2b (apps) output '$key' is missing or empty"; exit 1; }
           done
 
-          echo "api_fqdn=$(jq -r '.apiFqdn.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
-          echo "gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
+          gateway_app_name=$(jq -r '.gatewayAppName.value' /tmp/phase2b-outputs.json)
+          api_fqdn=$(jq -r '.apiFqdn.value // empty' /tmp/phase2b-outputs.json)
+          if [ -z "$api_fqdn" ]; then
+            api_fqdn=$(az containerapp show \
+              --name "$gateway_app_name" \
+              --resource-group "${{ env.RG }}" \
+              --query properties.configuration.ingress.fqdn -o tsv) || api_fqdn=""
+          fi
+          [ -n "$api_fqdn" ] || { echo "::error::could not resolve the gateway FQDN; the app '$gateway_app_name' may not exist yet"; exit 1; }
+
+          echo "api_fqdn=$api_fqdn" >> "$GITHUB_OUTPUT"
+          echo "gateway_app_name=$gateway_app_name" >> "$GITHUB_OUTPUT"
           echo "identity_app_name=$(jq -r '.identityAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "core_app_name=$(jq -r '.coreAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "ai_app_name=$(jq -r '.aiAgentAppName.value' /tmp/phase2b-outputs.json)" >> "$GITHUB_OUTPUT"
@@ -905,6 +1163,14 @@ jobs:
             deployWorkloads=true \
             deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -919,6 +1185,14 @@ jobs:
             deployWorkloads=true \
             deployApps=true \
             imageTag="${{ env.IMAGE_TAG }}" \
+            deployIdentity=${{ needs.changes.outputs.identity }} \
+            deployCore=${{ needs.changes.outputs.core }} \
+            deployAiAgent=${{ needs.changes.outputs.ai }} \
+            deployGateway=${{ needs.changes.outputs.gateway }} \
+            identityImageTag="${{ env.IMAGE_TAG }}" \
+            coreImageTag="${{ env.IMAGE_TAG }}" \
+            aiAgentImageTag="${{ env.IMAGE_TAG }}" \
+            gatewayImageTag="${{ env.IMAGE_TAG }}" \
             deployPrincipalId="${{ secrets.AZURE_DEPLOY_PRINCIPAL_ID }}" \
             postgresPassword="${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}" \
             redisUrlOverride="${{ secrets.AZURE_REDIS_URL_OVERRIDE }}" \
@@ -969,7 +1243,7 @@ jobs:
 
   verify:
     name: Verify deployed services
-    needs: deploy-workloads
+    needs: [changes, deploy-workloads]
     runs-on: ubuntu-latest
     environment: azure-beta
     steps:
@@ -1058,7 +1332,10 @@ jobs:
         # identity and core are internal-only, so they have no externally
         # resolvable FQDN and cannot be HTTP-probed from a runner. Verify
         # liveness the same way ai-agent already is: revision provisioning state
-        # plus at least one running replica.
+        # plus at least one running replica for each component this run rolled.
+        # An unchanged app is only required to have a Provisioned revision: with
+        # keepBackendsWarm=false it legitimately scales to zero, and requiring a
+        # replica there would fail a healthy no-op rollout.
         #
         # Two field names here are NOT the deployment-state idiom, and both were
         # wrong on the first run. Read live from the ACA API on 2026-09-30:
@@ -1093,48 +1370,70 @@ jobs:
         #   failing and the rest of the job finally runs.
         run: |
           failed=0
-          for app in \
-            "${{ needs.deploy-workloads.outputs.identity_app_name }}" \
-            "${{ needs.deploy-workloads.outputs.core_app_name }}"; do
+          check_app() {
+            app="$1"
+            rolled="$2"
             rev=$(az containerapp show --name "$app" --resource-group "${{ env.RG }}" \
               --query properties.latestRevisionName -o tsv)
             state=$(az containerapp revision show --resource-group "${{ env.RG }}" \
               --name "$app" --revision "$rev" --query properties.provisioningState -o tsv)
-            replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
-              --name "$app" --revision "$rev" \
-              --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
-            echo "$app: revision=$rev state=$state running_replicas=$replicas"
-            if [ "$state" != "Provisioned" ] || [ "${replicas:-0}" -lt 1 ]; then
-              echo "::error::$app is not serving (state=$state running=$replicas)"
+            echo "$app: revision=$rev state=$state rolled=$rolled"
+            if [ "$state" != "Provisioned" ]; then
+              echo "::error::$app latest revision is not Provisioned (state=$state)"
               failed=1
+              return
             fi
-          done
+            # A replica is required only for an app this run rolled: that is
+            # what proves the new revision actually started. An unchanged app
+            # is allowed to sit at zero replicas when keepBackendsWarm is
+            # false, which is a supported cost lever.
+            if [ "$rolled" = "true" ]; then
+              replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
+                --name "$app" --revision "$rev" \
+                --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
+              echo "$app: running_replicas=$replicas"
+              if [ "${replicas:-0}" -lt 1 ]; then
+                echo "::error::$app was rolled but has no running replica"
+                failed=1
+              fi
+            else
+              echo "$app: not rolled in this run - replica count not asserted"
+            fi
+          }
+          check_app "${{ needs.deploy-workloads.outputs.identity_app_name }}" "${{ needs.changes.outputs.identity }}"
+          check_app "${{ needs.deploy-workloads.outputs.core_app_name }}" "${{ needs.changes.outputs.core }}"
           [ "$failed" -eq 0 ]
 
       - name: Verify ai-agent revision (internal-only app)
         # ai-agent has ingress internal-only, so it has no externally
-        # resolvable FQDN; verify liveness via revision provisioning state
-        # and at least one running replica instead of an HTTP probe.
+        # resolvable FQDN; verify liveness via revision provisioning state,
+        # and require a running replica only when this run rolled it (an
+        # unchanged app may be scaled to zero when keepBackendsWarm is false).
         # "Provisioned" and properties.runningState are the ACA revision/replica
         # values, and length(@) is the JMESPath call - see the note on the
         # previous step for the live evidence on all three.
         run: |
           app_name="${{ needs.deploy-workloads.outputs.ai_app_name }}"
+          rolled="${{ needs.changes.outputs.ai }}"
           rev=$(az containerapp show \
             --name "$app_name" \
             --resource-group "${{ env.RG }}" \
             --query properties.latestRevisionName -o tsv)
-          echo "ai-agent revision: $rev"
+          echo "ai-agent revision: $rev (rolled=$rolled)"
           state=$(az containerapp revision show \
             --resource-group "${{ env.RG }}" \
             --name "$app_name" \
             --revision "$rev" \
             --query properties.provisioningState -o tsv)
           [ "$state" = "Provisioned" ] || { echo "::error::ai-agent revision not ready ($state)"; exit 1; }
-          replicas=$(az containerapp replica list \
-            --resource-group "${{ env.RG }}" \
-            --name "$app_name" \
-            --revision "$rev" \
-            --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
-          [ "$replicas" -ge 1 ] || { echo "::error::ai-agent has no running replica"; exit 1; }
-          echo "ai-agent running replicas: $replicas"
+          if [ "$rolled" = "true" ]; then
+            replicas=$(az containerapp replica list \
+              --resource-group "${{ env.RG }}" \
+              --name "$app_name" \
+              --revision "$rev" \
+              --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
+            [ "${replicas:-0}" -ge 1 ] || { echo "::error::ai-agent was rolled but has no running replica"; exit 1; }
+            echo "ai-agent running replicas: $replicas"
+          else
+            echo "ai-agent not rolled in this run - replica count not asserted"
+          fi

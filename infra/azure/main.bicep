@@ -158,8 +158,32 @@ param deployWorkloads bool = false
 @description('Deploy the four container apps. False in phase 2 until db-init and the alembic migrations have run: the services exit at startup when the database does not exist, so an app deployed before db-init crash-loops instead of starting slowly. The jobs deploy on deployWorkloads; the apps additionally require this.')
 param deployApps bool = true
 
-@description('Image tag for all three services (git SHA from CD).')
+@description('Fallback image tag (git SHA from CD). The per-service tags default to it, so an invocation that sets only imageTag still deploys every app.')
 param imageTag string = ''
+
+@description('Image tag for the identity app and migration job. Defaults to imageTag.')
+param identityImageTag string = imageTag
+
+@description('Image tag for the core app and migration job. Defaults to imageTag.')
+param coreImageTag string = imageTag
+
+@description('Image tag for the ai-agent app and migration job. Defaults to imageTag.')
+param aiAgentImageTag string = imageTag
+
+@description('Image tag for the gateway app. Defaults to imageTag.')
+param gatewayImageTag string = imageTag
+
+@description('Deploy the identity app and its migration job. False when identity did not change, so its running revision is left untouched. Set by the change detection in cd-azure-beta.yml.')
+param deployIdentity bool = true
+
+@description('Deploy the core app and its migration job. False when core did not change.')
+param deployCore bool = true
+
+@description('Deploy the ai-agent app and its migration job. False when ai-agent did not change.')
+param deployAiAgent bool = true
+
+@description('Deploy the gateway app. False when the gateway did not change.')
+param deployGateway bool = true
 
 @description('Application ENVIRONMENT value - one of the four app enum values, staging for beta.')
 @allowed([
@@ -340,6 +364,14 @@ module apps 'modules/apps.bicep' = {
     uamiId: security.outputs.uamiId
     kvUri: security.outputs.kvUri
     imageTag: imageTag
+    identityImageTag: identityImageTag
+    coreImageTag: coreImageTag
+    aiAgentImageTag: aiAgentImageTag
+    gatewayImageTag: gatewayImageTag
+    deployIdentity: deployIdentity
+    deployCore: deployCore
+    deployAiAgent: deployAiAgent
+    deployGateway: deployGateway
     appEnvironment: appEnvironment
     postgresFqdn: data.outputs.postgresFqdn
     postgresLogin: data.outputs.postgresLogin

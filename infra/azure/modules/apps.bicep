@@ -84,8 +84,32 @@ param uamiId string
 @description('Key Vault URI used to build secret references (e.g. https://kv-skyrict-beta.vault.azure.net/).')
 param kvUri string
 
-@description('Image tag for all three services (git SHA from CD).')
+@description('Fallback image tag (git SHA from CD). The per-service tags default to it.')
 param imageTag string
+
+@description('Image tag for the identity app and migration job. Defaults to imageTag.')
+param identityImageTag string = imageTag
+
+@description('Image tag for the core app and migration job. Defaults to imageTag.')
+param coreImageTag string = imageTag
+
+@description('Image tag for the ai-agent app and migration job. Defaults to imageTag.')
+param aiAgentImageTag string = imageTag
+
+@description('Image tag for the gateway app. Defaults to imageTag.')
+param gatewayImageTag string = imageTag
+
+@description('Deploy the identity app and its migration job. False when identity did not change.')
+param deployIdentity bool = true
+
+@description('Deploy the core app and its migration job. False when core did not change.')
+param deployCore bool = true
+
+@description('Deploy the ai-agent app and its migration job. False when ai-agent did not change.')
+param deployAiAgent bool = true
+
+@description('Deploy the gateway app. False when the gateway did not change.')
+param deployGateway bool = true
 
 @description('Application ENVIRONMENT value - one of the four app enum values, staging for beta.')
 @allowed([
@@ -431,7 +455,7 @@ var jwtVolumePublic = {
 // identity - external, :8000
 // ---------------------------------------------------------------------------
 
-resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
+resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps && deployIdentity) {
   name: identityAppName
   location: location
   tags: allTags
@@ -482,7 +506,7 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) 
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/identity:${imageTag}'
+          image: '${acrLoginServer}/identity:${identityImageTag}'
           name: 'identity'
           volumeMounts: [
             {
@@ -694,7 +718,7 @@ resource identityApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) 
 // core - internal only, :8001. Reached exclusively through the gateway.
 // ---------------------------------------------------------------------------
 
-resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
+resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps && deployCore) {
   name: coreAppName
   location: location
   tags: allTags
@@ -736,7 +760,7 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/core:${imageTag}'
+          image: '${acrLoginServer}/core:${coreImageTag}'
           name: 'core'
           volumeMounts: [
             {
@@ -883,7 +907,7 @@ resource coreApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
 // ai-agent - INTERNAL only, :8000
 // ---------------------------------------------------------------------------
 
-resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
+resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps && deployAiAgent) {
   name: aiAgentAppName
   location: location
   tags: allTags
@@ -925,7 +949,7 @@ resource aiAgentApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/ai-agent:${imageTag}'
+          image: '${acrLoginServer}/ai-agent:${aiAgentImageTag}'
           name: 'ai-agent'
           volumeMounts: [
             {
@@ -1149,7 +1173,7 @@ resource gatewayCert 'Microsoft.App/managedEnvironments/managedCertificates@2026
   }
 }
 
-resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
+resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps && deployGateway) {
   name: gatewayAppName
   location: location
   tags: allTags
@@ -1226,7 +1250,7 @@ resource gatewayApp 'Microsoft.App/containerApps@2026-01-01' = if (deployApps) {
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/gateway:${imageTag}'
+          image: '${acrLoginServer}/gateway:${gatewayImageTag}'
           name: 'gateway'
           resources: {
             cpu: json(containerCpu)
@@ -1410,7 +1434,7 @@ resource dbInitJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
 // Migration jobs - one-shot, run by CD in this order: identity -> core -> ai
 // ---------------------------------------------------------------------------
 
-resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
+resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads && deployIdentity) {
   name: 'job-identity-${resourceName}'
   location: location
   tags: allTags
@@ -1437,7 +1461,7 @@ resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkload
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/identity:${imageTag}'
+          image: '${acrLoginServer}/identity:${identityImageTag}'
           name: 'migrate'
           // The `cd` is load-bearing. alembic resolves a RELATIVE
           // script_location against the process working directory, not against
@@ -1512,7 +1536,7 @@ resource identityMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkload
   }
 }
 
-resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
+resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads && deployCore) {
   name: 'job-core-${resourceName}'
   location: location
   tags: allTags
@@ -1539,7 +1563,7 @@ resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/core:${imageTag}'
+          image: '${acrLoginServer}/core:${coreImageTag}'
           name: 'migrate'
           // See the identity job above: relative script_location resolves
           // against the working directory, not against the -c config file.
@@ -1591,7 +1615,7 @@ resource coreMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
   }
 }
 
-resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads) {
+resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads && deployAiAgent) {
   name: 'job-ai-agent-${resourceName}'
   location: location
   tags: allTags
@@ -1618,7 +1642,7 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
     template: {
       containers: [
         {
-          image: '${acrLoginServer}/ai-agent:${imageTag}'
+          image: '${acrLoginServer}/ai-agent:${aiAgentImageTag}'
           name: 'migrate'
           // See the identity job above: relative script_location resolves
           // against the working directory, not against the -c config file.
@@ -1678,18 +1702,18 @@ resource aiAgentMigrateJob 'Microsoft.App/jobs@2026-01-01' = if (deployWorkloads
 // Outputs (for main.bicep / CD / runbook)
 // ---------------------------------------------------------------------------
 
-// The FQDNs are guarded on deployApps, not deployWorkloads, because they are
-// read off the app resources: with deployApps=false the apps do not exist, and
-// the `!` null-assert on a resource that was never created fails the deployment
-// rather than yielding ''.
+// The FQDNs are guarded on deployApps AND the per-app deploy flag, not on
+// deployWorkloads, because they are read off the app resources: with either
+// flag false that app does not exist, and the `!` null-assert on a resource
+// that was never created fails the deployment rather than yielding ''.
 //
 // The NAMES below are deliberately NOT guarded. They are string
 // interpolations, not resource properties, so they are correct in every phase -
 // which is why phase 1 can publish all four job names and the migrate steps
 // never hardcode one.
-output identityFqdn string = deployApps ? identityApp!.properties.configuration.ingress.fqdn : ''
-output coreFqdn string = deployApps ? coreApp!.properties.configuration.ingress.fqdn : ''
-output aiAgentFqdn string = deployApps ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
+output identityFqdn string = (deployApps && deployIdentity) ? identityApp!.properties.configuration.ingress.fqdn : ''
+output coreFqdn string = (deployApps && deployCore) ? coreApp!.properties.configuration.ingress.fqdn : ''
+output aiAgentFqdn string = (deployApps && deployAiAgent) ? aiAgentApp!.properties.configuration.ingress.fqdn : ''
 output identityAppName string = identityAppName
 output coreAppName string = coreAppName
 output aiAgentAppName string = aiAgentAppName
@@ -1707,7 +1731,7 @@ output aiAgentMigrateJobName string = 'job-ai-agent-${resourceName}'
 // validated the domain against, so the CNAME has to point at THIS, not at
 // api.skyrict.in - the custom domain is an alias of this hostname, not a
 // replacement for it.
-output apiFqdn string = deployApps ? gatewayApp!.properties.configuration.ingress.fqdn : ''
+output apiFqdn string = (deployApps && deployGateway) ? gatewayApp!.properties.configuration.ingress.fqdn : ''
 output gatewayAppName string = gatewayAppName
 
 // The value for the `TXT asuid.api` record that proves domain ownership before
