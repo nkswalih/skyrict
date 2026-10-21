@@ -140,8 +140,9 @@ removed from it; the web app deploys through Vercel.
 
 - The mapping was exercised against real commit ranges: a core-only commit, a
   `skyrict-common`-only commit, a `skyrict-events`-only commit, an
-  ai-agent-only commit, a Bicep commit, a no-change range, a manual dispatch
-  and a zero `before`. Each produced the expected four flags.
+  ai-agent-only commit, a gateway-template-only commit, a dockerignore-only
+  commit, a Bicep commit, a no-change range, a manual dispatch and a zero
+  `before`. Each produced the expected four flags.
 - `actionlint` passes on `cd-azure-beta.yml` and `cd-staging.yml`; every
   `run:` block passes `bash -n` after masking GitHub expressions.
 - The `ci-infra` guard that checks every deployment output the workflow reads
