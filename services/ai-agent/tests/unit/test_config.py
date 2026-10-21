@@ -33,6 +33,9 @@ def test_settings_load_with_minimal_env(monkeypatch, tmp_path) -> None:
     assert settings.CONFIDENCE_THRESHOLD == 0.75
     assert settings.RATE_LIMIT_NL_QUERY_PER_MIN == 30
     assert settings.RATE_LIMIT_TENANT_PER_MIN == 100
+    # The Azure deployment sets both; they must be fields, not dead env vars.
+    assert settings.DB_POOL_SIZE == 10
+    assert settings.DB_MAX_OVERFLOW == 5
 
 
 def test_inventory_service_url_accepted_without_prefix(monkeypatch, tmp_path) -> None:
@@ -62,6 +65,70 @@ def test_report_service_url_accepted_without_prefix(monkeypatch, tmp_path) -> No
 
     assert settings.REPORT_SERVICE_URL == "http://skyrict-core:8001"
     assert settings.REPORT_SERVICE_TIMEOUT_SECONDS == 10.0
+
+
+def test_inventory_service_url_accepts_ai_prefixed_name(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "public.pem"
+    key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+    for key, value in _base_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+    # The Azure deployment sets the prefixed name. A plain validation_alias
+    # used to ignore it (a validation_alias disables env_prefix), leaving the
+    # gateway on localhost:8001 in production.
+    monkeypatch.delenv("INVENTORY_SERVICE_URL", raising=False)
+    monkeypatch.setenv("AI_INVENTORY_SERVICE_URL", "http://core.internal:8000")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.INVENTORY_SERVICE_URL == "http://core.internal:8000"
+
+
+def test_report_service_url_accepts_ai_prefixed_name(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "public.pem"
+    key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+    for key, value in _base_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+    monkeypatch.delenv("REPORT_SERVICE_URL", raising=False)
+    monkeypatch.setenv("AI_REPORT_SERVICE_URL", "http://core.internal:8000")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.REPORT_SERVICE_URL == "http://core.internal:8000"
+
+
+def test_prefixed_service_url_wins_when_both_forms_are_set(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "public.pem"
+    key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+    for key, value in _base_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+    # The prefixed name is the deployment contract; the unprefixed one is the
+    # compose fallback. When both exist the explicit deployment value wins.
+    monkeypatch.setenv("AI_INVENTORY_SERVICE_URL", "http://prefixed.internal:8000")
+    monkeypatch.setenv("INVENTORY_SERVICE_URL", "http://unprefixed.internal:8001")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.INVENTORY_SERVICE_URL == "http://prefixed.internal:8000"
+
+
+def test_db_pool_settings_are_read_from_the_prefixed_names(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "public.pem"
+    key_file.write_text("-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----")
+    for key, value in _base_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_JWT_PUBLIC_KEY_PATH", str(key_file))
+    # Both are declared in apps.bicep; before these fields existed the values
+    # were hardcoded in db/session.py and the env vars had no effect.
+    monkeypatch.setenv("AI_DB_POOL_SIZE", "25")
+    monkeypatch.setenv("AI_DB_MAX_OVERFLOW", "7")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.DB_POOL_SIZE == 25
+    assert settings.DB_MAX_OVERFLOW == 7
 
 
 def test_provider_without_model_rejected(monkeypatch, tmp_path) -> None:
