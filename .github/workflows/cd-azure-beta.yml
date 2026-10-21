@@ -130,7 +130,7 @@ jobs:
           #   ai-agent  <- services/ai-agent, skyrict-common
           #   gateway   <- infra/docker/gateway
           #   all four  <- anything under infra/azure, scripts/azure, or this
-          #                workflow (appdef). Broad on purpose: data,
+          #                workflow (all_components). Broad on purpose: data,
           #                environment and security modules feed the apps'
           #                environment (redisName, the CAE default domain, the
           #                Key Vault URI), so an "infra-only" change can still
@@ -140,7 +140,7 @@ jobs:
           # skyrict-testing is not a runtime dependency of any image and
           # skyrict-fabric has no consumer in this workspace, so neither
           # rebuilds anything.
-          appdef=false
+          all_components=false
           identity_src=false
           core_src=false
           ai_src=false
@@ -150,10 +150,10 @@ jobs:
           lock=false
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            # A manual run means "redeploy everything". appdef fans out to all
+            # A manual run means "redeploy everything". all_components fans out to all
             # four components below, so this is the only flag to set.
             echo "::notice::manual dispatch - rolling all four components"
-            appdef=true
+            all_components=true
             changed=""
           elif [ -n "${BEFORE:-}" ] \
                && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
@@ -171,7 +171,7 @@ jobs:
             [ -n "$file" ] || continue
             case "$file" in
               infra/azure/*|scripts/azure/*|.github/workflows/cd-azure-beta.yml)
-                appdef=true ;;
+                all_components=true ;;
               services/identity/*) identity_src=true ;;
               services/core/*) core_src=true ;;
               services/ai-agent/*) ai_src=true ;;
@@ -185,10 +185,10 @@ jobs:
           any() { local v; for v in "$@"; do [ "$v" = "true" ] && return 0; done; return 1; }
           decide() { if any "$@"; then echo true; else echo false; fi; }
 
-          identity=$(decide "$appdef" "$identity_src" "$common" "$events" "$lock")
-          core=$(decide "$appdef" "$core_src" "$common" "$events" "$lock")
-          ai=$(decide "$appdef" "$ai_src" "$common" "$lock")
-          gateway=$(decide "$appdef" "$gateway_src")
+          identity=$(decide "$all_components" "$identity_src" "$common" "$events" "$lock")
+          core=$(decide "$all_components" "$core_src" "$common" "$events" "$lock")
+          ai=$(decide "$all_components" "$ai_src" "$common" "$lock")
+          gateway=$(decide "$all_components" "$gateway_src")
 
           {
             echo "identity=$identity"
@@ -207,7 +207,7 @@ jobs:
             echo "| ai-agent | $ai |"
             echo "| gateway | $gateway |"
             echo
-            echo "appdef=$appdef common=$common events=$events lock=$lock"
+            echo "all_components=$all_components common=$common events=$events lock=$lock"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "deploy identity=$identity core=$core ai=$ai gateway=$gateway"
