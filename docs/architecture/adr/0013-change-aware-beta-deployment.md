@@ -93,6 +93,11 @@ Safety rails that make a partial rollout safe:
 - **FQDN fallback.** `apiFqdn` is only emitted when the gateway is evaluated.
   When the gateway is not rolled, the existing FQDN is read from the live app
   with `az containerapp show`; the gateway's name is emitted unconditionally.
+- **Rollout-aware verification.** The revision checks always assert a
+  Provisioned revision; a running replica is required only for components
+  this run rolled. An unchanged app may legitimately sit at zero replicas when
+  `keepBackendsWarm` is false, and requiring one there would fail a healthy
+  no-op rollout.
 - **Defaults preserve the old contract.** Every new Bicep parameter defaults
   to the previous behaviour (`imageTag`, `true`), so an invocation that sets
   only `imageTag` still deploys all four.

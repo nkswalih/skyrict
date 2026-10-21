@@ -1234,7 +1234,7 @@ jobs:
 
   verify:
     name: Verify deployed services
-    needs: deploy-workloads
+    needs: [changes, deploy-workloads]
     runs-on: ubuntu-latest
     environment: azure-beta
     steps:
@@ -1323,7 +1323,10 @@ jobs:
         # identity and core are internal-only, so they have no externally
         # resolvable FQDN and cannot be HTTP-probed from a runner. Verify
         # liveness the same way ai-agent already is: revision provisioning state
-        # plus at least one running replica.
+        # plus at least one running replica for each component this run rolled.
+        # An unchanged app is only required to have a Provisioned revision: with
+        # keepBackendsWarm=false it legitimately scales to zero, and requiring a
+        # replica there would fail a healthy no-op rollout.
         #
         # Two field names here are NOT the deployment-state idiom, and both were
         # wrong on the first run. Read live from the ACA API on 2026-09-30:
@@ -1358,48 +1361,70 @@ jobs:
         #   failing and the rest of the job finally runs.
         run: |
           failed=0
-          for app in \
-            "${{ needs.deploy-workloads.outputs.identity_app_name }}" \
-            "${{ needs.deploy-workloads.outputs.core_app_name }}"; do
+          check_app() {
+            app="$1"
+            rolled="$2"
             rev=$(az containerapp show --name "$app" --resource-group "${{ env.RG }}" \
               --query properties.latestRevisionName -o tsv)
             state=$(az containerapp revision show --resource-group "${{ env.RG }}" \
               --name "$app" --revision "$rev" --query properties.provisioningState -o tsv)
-            replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
-              --name "$app" --revision "$rev" \
-              --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
-            echo "$app: revision=$rev state=$state running_replicas=$replicas"
-            if [ "$state" != "Provisioned" ] || [ "${replicas:-0}" -lt 1 ]; then
-              echo "::error::$app is not serving (state=$state running=$replicas)"
+            echo "$app: revision=$rev state=$state rolled=$rolled"
+            if [ "$state" != "Provisioned" ]; then
+              echo "::error::$app latest revision is not Provisioned (state=$state)"
               failed=1
+              return
             fi
-          done
+            # A replica is required only for an app this run rolled: that is
+            # what proves the new revision actually started. An unchanged app
+            # is allowed to sit at zero replicas when keepBackendsWarm is
+            # false, which is a supported cost lever.
+            if [ "$rolled" = "true" ]; then
+              replicas=$(az containerapp replica list --resource-group "${{ env.RG }}" \
+                --name "$app" --revision "$rev" \
+                --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
+              echo "$app: running_replicas=$replicas"
+              if [ "${replicas:-0}" -lt 1 ]; then
+                echo "::error::$app was rolled but has no running replica"
+                failed=1
+              fi
+            else
+              echo "$app: not rolled in this run - replica count not asserted"
+            fi
+          }
+          check_app "${{ needs.deploy-workloads.outputs.identity_app_name }}" "${{ needs.changes.outputs.identity }}"
+          check_app "${{ needs.deploy-workloads.outputs.core_app_name }}" "${{ needs.changes.outputs.core }}"
           [ "$failed" -eq 0 ]
 
       - name: Verify ai-agent revision (internal-only app)
         # ai-agent has ingress internal-only, so it has no externally
-        # resolvable FQDN; verify liveness via revision provisioning state
-        # and at least one running replica instead of an HTTP probe.
+        # resolvable FQDN; verify liveness via revision provisioning state,
+        # and require a running replica only when this run rolled it (an
+        # unchanged app may be scaled to zero when keepBackendsWarm is false).
         # "Provisioned" and properties.runningState are the ACA revision/replica
         # values, and length(@) is the JMESPath call - see the note on the
         # previous step for the live evidence on all three.
         run: |
           app_name="${{ needs.deploy-workloads.outputs.ai_app_name }}"
+          rolled="${{ needs.changes.outputs.ai }}"
           rev=$(az containerapp show \
             --name "$app_name" \
             --resource-group "${{ env.RG }}" \
             --query properties.latestRevisionName -o tsv)
-          echo "ai-agent revision: $rev"
+          echo "ai-agent revision: $rev (rolled=$rolled)"
           state=$(az containerapp revision show \
             --resource-group "${{ env.RG }}" \
             --name "$app_name" \
             --revision "$rev" \
             --query properties.provisioningState -o tsv)
           [ "$state" = "Provisioned" ] || { echo "::error::ai-agent revision not ready ($state)"; exit 1; }
-          replicas=$(az containerapp replica list \
-            --resource-group "${{ env.RG }}" \
-            --name "$app_name" \
-            --revision "$rev" \
-            --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
-          [ "$replicas" -ge 1 ] || { echo "::error::ai-agent has no running replica"; exit 1; }
-          echo "ai-agent running replicas: $replicas"
+          if [ "$rolled" = "true" ]; then
+            replicas=$(az containerapp replica list \
+              --resource-group "${{ env.RG }}" \
+              --name "$app_name" \
+              --revision "$rev" \
+              --query "[?properties.runningState=='Running'] | length(@)" -o tsv)
+            [ "${replicas:-0}" -ge 1 ] || { echo "::error::ai-agent was rolled but has no running replica"; exit 1; }
+            echo "ai-agent running replicas: $replicas"
+          else
+            echo "ai-agent not rolled in this run - replica count not asserted"
+          fi
