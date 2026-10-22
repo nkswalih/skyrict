@@ -32,28 +32,33 @@ export const footerColumns: FooterColumn[] = [
         title: "Product",
         links: [
             { label: "Pricing", href: "/pricing" },
-            { label: "Docs", href: "/docs" },
             { label: "Product", href: "/product" },
         ],
     },
     {
         title: "Resources",
         links: [
+            { label: "Docs", href: "/docs" },
             {
                 label: "Security",
                 href: "/docs/security/multi-factor-authentication",
             },
-            { label: "Source code", href: "https://github.com/nkswalih/skyrict" },
         ],
     },
     {
         title: "Company",
         links: [
-            { label: "Create account", href: "/signup" },
             { label: "About", href: "/about" },
             { label: "Contact", href: "/contact" },
+            { label: "Get started", href: "/signup" },
+            { label: "Book a demo", href: "/contact" },
         ],
     },
+];
+
+export const footerLegalLinks: FooterLink[] = [
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
 ];
 
 export const signalSources = [
