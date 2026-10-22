@@ -968,3 +968,131 @@
     transform: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Marketing hero / product surfaces
+ *
+ * The launch hero is a quiet painted field rather than a hard gradient: a
+ * warm paper base, a pale peach wash, and a cool sky edge. The product
+ * screenshot sits in a translucent glass bezel with a single specular edge,
+ * so the artwork stays secondary to the interface.
+ * ------------------------------------------------------------------------- */
+
+.marketing-hero-art {
+  background-color: #f7fbfd;
+  background-image:
+    radial-gradient(
+      ellipse 58% 62% at 8% 6%,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0) 62%
+    ),
+    radial-gradient(
+      ellipse 48% 44% at 92% 10%,
+      rgba(255, 219, 204, 0.5) 0%,
+      rgba(255, 219, 204, 0) 68%
+    ),
+    radial-gradient(
+      ellipse 62% 58% at 82% 52%,
+      rgba(135, 206, 235, 0.3) 0%,
+      rgba(135, 206, 235, 0) 70%
+    ),
+    radial-gradient(
+      ellipse 82% 62% at 16% 88%,
+      rgba(174, 222, 241, 0.42) 0%,
+      rgba(174, 222, 241, 0) 72%
+    ),
+    linear-gradient(180deg, #fbf8f3 0%, #f4fafd 54%, #f4fafd 100%);
+}
+
+.marketing-hero-art-grain {
+  opacity: 0.12;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+.marketing-glass-frame {
+  position: relative;
+  border-radius: clamp(1.2rem, 2.5vw, 2rem);
+  padding: clamp(0.4rem, 0.75vw, 0.65rem);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.8) 0%,
+      rgba(255, 255, 255, 0.36) 42%,
+      rgba(255, 255, 255, 0.64) 100%
+    );
+  box-shadow:
+    0 52px 120px -58px rgba(10, 47, 62, 0.55),
+    0 18px 44px -28px rgba(10, 47, 62, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  backdrop-filter: blur(22px) saturate(135%);
+}
+
+.marketing-glass-frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.96) 50%,
+    transparent 100%
+  );
+}
+
+.marketing-glass-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: clamp(0.95rem, 2vw, 1.6rem);
+  background: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(10, 47, 62, 0.08),
+    inset 0 2px 12px rgba(10, 47, 62, 0.08);
+}
+
+.marketing-glass-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    122deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.05) 26%,
+    transparent 46%
+  );
+  mix-blend-mode: screen;
+}
+
+.marketing-dark-band {
+  background-color: #071b24;
+  background-image:
+    radial-gradient(
+      ellipse 55% 60% at 82% 8%,
+      rgba(135, 206, 235, 0.12) 0%,
+      rgba(135, 206, 235, 0) 70%
+    ),
+    radial-gradient(
+      ellipse 70% 70% at 12% 100%,
+      rgba(20, 78, 94, 0.45) 0%,
+      rgba(20, 78, 94, 0) 70%
+    );
+}
+
+.marketing-dark-grid {
+  opacity: 0.3;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.16) 1px,
+    transparent 0
+  );
+  background-size: 24px 24px;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
+  mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
+}
