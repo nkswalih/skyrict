@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="skyrict-avatar-title">
+  <title id="skyrict-avatar-title">Skyrict</title>
+  <defs>
+    <linearGradient id="skyrict-avatar-sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#aedef1" />
+      <stop offset="100%" stop-color="#4cb6e1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#f4fafd" />
+  <g transform="translate(102.4 102.4) scale(9.6)">
+    <rect width="32" height="32" rx="9" fill="url(#skyrict-avatar-sky)" />
+    <g stroke="#0a2f3e" stroke-width="2.6" stroke-linecap="round">
+      <path d="M9 22v-4" />
+      <path d="M14 22v-8" />
+      <path d="M19 22V11" />
+      <path d="M24 22v-13" />
+    </g>
+    <circle cx="24" cy="9" r="2.1" fill="#0a2f3e" />
+  </g>
+</svg>

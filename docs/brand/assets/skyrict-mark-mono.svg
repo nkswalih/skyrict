@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="skyrict-mono-title">
+  <title id="skyrict-mono-title">Skyrict</title>
+  <defs>
+    <mask id="skyrict-mono-knockout">
+      <rect width="32" height="32" fill="#ffffff" />
+      <g fill="none" stroke="#000000" stroke-width="2.6" stroke-linecap="round">
+        <path d="M9 22v-4" />
+        <path d="M14 22v-8" />
+        <path d="M19 22V11" />
+        <path d="M24 22v-13" />
+      </g>
+      <circle cx="24" cy="9" r="2.1" fill="#000000" />
+    </mask>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="#0a2f3e" mask="url(#skyrict-mono-knockout)" />
+</svg>

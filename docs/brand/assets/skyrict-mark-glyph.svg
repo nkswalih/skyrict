@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="skyrict-glyph-title">
+  <title id="skyrict-glyph-title">Skyrict</title>
+  <g fill="none" stroke="#0a2f3e" stroke-width="2.6" stroke-linecap="round">
+    <path d="M9 22v-4" />
+    <path d="M14 22v-8" />
+    <path d="M19 22V11" />
+    <path d="M24 22v-13" />
+  </g>
+  <circle cx="24" cy="9" r="2.1" fill="#0a2f3e" />
+</svg>
