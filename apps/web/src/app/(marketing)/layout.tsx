@@ -50,11 +50,19 @@ export default function MarketingLayout({
     };
 
     return (
-        <div className="flex min-h-screen flex-col bg-card">
+        <div className="marketing-theme flex min-h-screen flex-col bg-marketing-paper text-marketing-ink">
             <JsonLd data={organization} />
             <JsonLd data={website} />
+            <a
+                href="#main-content"
+                className="sr-only z-50 rounded-full bg-marketing-ink px-4 py-2 text-sm font-medium text-marketing-paper focus:not-sr-only focus:fixed focus:top-4 focus:left-4"
+            >
+                Skip to content
+            </a>
             <Header />
-            <main className="flex-1">{children}</main>
+            <main id="main-content" className="flex-1">
+                {children}
+            </main>
             <Footer />
         </div>
     );
