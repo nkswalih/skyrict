@@ -88,7 +88,7 @@ function Footer() {
                             aria-label="Skyrict home"
                             className="inline-flex min-h-9 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marketing-sky/60"
                         >
-                            <Logo className="text-marketing-ink" />
+                            <Logo className="text-marketing-ink" mark="image" />
                         </Link>
 
                         <p className="mt-4 font-display text-2xl font-semibold leading-[1.08] tracking-tight text-marketing-ink sm:mt-6 sm:text-[2rem]">

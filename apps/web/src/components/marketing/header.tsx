@@ -50,7 +50,7 @@ function Header() {
                             aria-label="Skyrict home"
                             className="flex w-fit items-center rounded-full outline-none focus-visible:ring-3 focus-visible:ring-marketing-sky/60"
                         >
-                            <Logo className="text-marketing-ink" />
+                            <Logo className="text-marketing-ink" mark="image" />
                         </Link>
 
                         <nav
