@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AiGlyph } from "@/components/brand/logo";
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
+import { Faq } from "@/components/marketing/sections/faq";
 import { SignalSparkline } from "@/components/marketing/signal-sparkline";
 import { Button } from "@/components/ui/button";
 import { signalSources } from "@/config";
@@ -554,6 +555,8 @@ export default function ProductPage() {
                     </RevealSection>
                 </div>
             </section>
+
+            <Faq />
 
             <Cta
                 eyebrow="Start free"
