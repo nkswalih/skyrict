@@ -205,6 +205,41 @@ Reviewers will check:
 - Code that introduces new linting errors or type errors
 - PRs that decrease test coverage on changed files
 
+## Brand Identity
+
+All customer-facing copy, visuals, and assets must follow
+[`docs/brand/README.md`](docs/brand/README.md). It defines the positioning,
+voice, messaging hierarchy, logo system, colour and type usage, applications,
+and brand governance.
+
+The short version:
+
+- Write **Skyrict**, one word, capital S. The descriptor is **AI Business
+  Operating System**.
+- Lead with the decision, then the evidence. Put units and time frames on every
+  number. Do not anthropomorphise agents.
+- The corporate signature is always the Sky mark. ERP and AI tones are product
+  wayfinding, never brand marks.
+- Use exported marks from [`docs/brand/assets/`](docs/brand/assets/) and keep
+  half the mark height clear on every side.
+- Label unfinished capabilities "in progress". Do not imply they are live.
+
+Brand changes need review from the design owner and one engineer. The name,
+logo, and marks are governed by [`TRADEMARK.md`](TRADEMARK.md) and are separate
+from the Apache 2.0 code licence.
+
+## Design System
+
+All web UI changes must follow [`docs/design-system/README.md`](docs/design-system/README.md).
+It defines the Sky theme tokens, typography, spacing, component specs, module
+worlds, motion, and accessibility rules. The live reference renders at
+`/design-system` while `next dev` is running (it returns 404 in production
+unless `NEXT_PUBLIC_DESIGN_SYSTEM=true`).
+
+Use semantic tokens (`bg-primary`, `text-muted-foreground`, `border-border`)
+instead of raw hex, and check light mode, dark mode, and the active module world
+before opening a PR.
+
 ## Architecture Decisions
 
 Significant design decisions should be documented as Architecture Decision Records (ADRs) in `docs/architecture/adr/`. Use the format:
