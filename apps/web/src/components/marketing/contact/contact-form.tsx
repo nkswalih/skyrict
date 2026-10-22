@@ -79,10 +79,7 @@ function ContactForm() {
         )}&body=${encodeURIComponent(body)}`;
     }, [values]);
 
-    const handleChange = (
-        field: keyof FormValues,
-        value: string,
-    ) => {
+    const handleChange = (field: keyof FormValues, value: string) => {
         setValues((current) => ({ ...current, [field]: value }));
         if (errors[field]) {
             setErrors((current) => ({ ...current, [field]: undefined }));
@@ -134,13 +131,18 @@ function ContactForm() {
                     </p>
                 </div>
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <Button asChild className="bg-[#87ceeb] text-[#06121c] hover:bg-[#4cb6e1]">
+                    <Button asChild variant="brand" size="pill-lg">
                         <a href={mailtoHref}>
                             <Mail aria-hidden="true" className="size-4" />
                             Open your email app
                         </a>
                     </Button>
-                    <Button variant="outline" onClick={() => setSent(false)}>
+                    <Button
+                        variant="outline"
+                        size="pill-lg"
+                        className="border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink"
+                        onClick={() => setSent(false)}
+                    >
                         Edit message
                     </Button>
                 </div>
@@ -167,9 +169,9 @@ function ContactForm() {
                 </p>
                 <Button
                     type="submit"
-                    size="lg"
+                    variant="brand"
+                    size="pill-lg"
                     disabled={submitting}
-                    className="bg-[#87ceeb] text-[#06121c] hover:bg-[#4cb6e1]"
                 >
                     {submitting ? (
                         <>
