@@ -1,65 +1,47 @@
-import {
-    Cable,
-    FileCode2,
-    Fingerprint,
-    Lock,
-    MailCheck,
-    ShieldCheck,
-    type LucideIcon,
-} from "lucide-react";
 import Link from "next/link";
 
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Button } from "@/components/ui/button";
 
-const trustFacts: {
-    icon: LucideIcon;
-    title: string;
-    body: string;
-}[] = [
+const trustFacts = [
     {
-        icon: Lock,
         title: "Workspace isolation",
-        body: "Each account runs in its own workspace. Data never crosses tenants.",
+        body: "Each account runs in its own tenant. Records never cross workspaces.",
     },
     {
-        icon: ShieldCheck,
         title: "Roles and permissions",
         body: "Owner, admin, and member roles gate every surface and report.",
     },
     {
-        icon: Fingerprint,
         title: "Multi-factor authentication",
-        body: "TOTP codes plus one-time backup codes on every account.",
+        body: "TOTP on every account, with one-time backup codes.",
     },
     {
-        icon: MailCheck,
-        title: "Email verification",
-        body: "Accounts stay limited until the address is confirmed.",
-    },
-    {
-        icon: Cable,
-        title: "Connected source systems",
-        body: "Skyrict reads your real operational sources instead of asking for a copy.",
-    },
-    {
-        icon: FileCode2,
         title: "Open source",
-        body: "The full codebase is public, so claims can be checked in the code.",
+        body: "The codebase is public, so the security model can be checked.",
     },
 ];
 
 function Trust() {
     return (
-        <section id="trust" className="scroll-mt-20 border-t border-border/40">
-            <div className="mx-auto w-full max-w-6xl px-6 py-20 sm:py-28">
+        <section
+            id="trust"
+            aria-labelledby="trust-heading"
+            className="scroll-mt-24 border-t border-marketing-line/70"
+        >
+            <div className="mx-auto w-full max-w-[1120px] px-6 py-20 sm:py-24 lg:py-28">
                 <RevealSection>
-                    <div className="grid gap-12 lg:grid-cols-[1fr_1.3fr] lg:items-start">
+                    <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-16">
                         <div>
-                            <h2 className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                                Built for real operations.
+                            <h2
+                                id="trust-heading"
+                                className="font-display text-3xl font-semibold leading-[1.06] tracking-[-0.04em] text-marketing-ink sm:text-4xl lg:text-[2.9rem]"
+                            >
+                                Built for real
+                                <br />
+                                operations.
                             </h2>
-                            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+                            <p className="mt-5 max-w-md text-base leading-relaxed text-marketing-muted">
                                 Scoped by design, not by accident. Tenant
                                 isolation, roles, MFA, and email verification on
                                 every account, and the source is public so the
@@ -82,26 +64,19 @@ function Trust() {
                                 </Button>
                             </div>
                         </div>
-                        <ul className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card">
-                            {trustFacts.map(({ icon: Icon, title, body }) => (
+
+                        <ul className="grid border-t border-marketing-line/80 sm:grid-cols-2">
+                            {trustFacts.map(({ title, body }) => (
                                 <li
                                     key={title}
-                                    className="flex items-start gap-4 px-5 py-4"
+                                    className="border-b border-marketing-line/80 py-5 sm:odd:border-r sm:odd:pr-6 sm:even:pl-6"
                                 >
-                                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
-                                        <Icon
-                                            aria-hidden="true"
-                                            className="size-4"
-                                        />
-                                    </span>
-                                    <div>
-                                        <h3 className="font-display text-sm font-semibold text-foreground">
-                                            {title}
-                                        </h3>
-                                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                                            {body}
-                                        </p>
-                                    </div>
+                                    <h3 className="font-display text-sm font-semibold text-marketing-ink">
+                                        {title}
+                                    </h3>
+                                    <p className="mt-1 text-sm leading-relaxed text-marketing-muted">
+                                        {body}
+                                    </p>
                                 </li>
                             ))}
                         </ul>
