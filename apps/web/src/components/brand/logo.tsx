@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
@@ -136,14 +137,32 @@ function Logo({
     className,
     wordmark = true,
     tone = "sky",
+    mark = "glyph",
 }: {
     className?: string;
     wordmark?: boolean;
     tone?: LogoMarkTone;
+    mark?: "glyph" | "image";
 }) {
     return (
         <span className={cn("inline-flex items-center gap-2.5", className)}>
-            <LogoMark className="size-7" tone={tone} />
+            {mark === "image" ? (
+                <span
+                    aria-hidden="true"
+                    className="relative size-7 shrink-0 overflow-hidden"
+                >
+                    <Image
+                        src="/skyrict_transparent_logo.png"
+                        alt=""
+                        width={1000}
+                        height={1000}
+                        sizes="44px"
+                        className="size-full scale-[1.58] object-contain"
+                    />
+                </span>
+            ) : (
+                <LogoMark className="size-7" tone={tone} />
+            )}
             {wordmark ? (
                 <span className="font-display text-lg font-semibold tracking-tight text-current">
                     Skyrict
