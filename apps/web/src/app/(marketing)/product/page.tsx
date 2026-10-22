@@ -19,20 +19,66 @@ export const metadata: Metadata = {
 };
 
 const inventoryRows = [
-    { sku: "EARB-M", name: "Earbuds, size M", stock: "124", cover: "2d", status: "Low" },
-    { sku: "EARB-L", name: "Earbuds, size L", stock: "512", cover: "8d", status: "OK" },
-    { sku: "CBL-1M", name: "USB-C cable, 1m", stock: "318", cover: "11d", status: "OK" },
-    { sku: "PWR-65W", name: "65W charger", stock: "96", cover: "3d", status: "Low" },
+    {
+        sku: "EARB-M",
+        name: "Earbuds, size M",
+        stock: "124",
+        cover: "2d",
+        status: "Low",
+    },
+    {
+        sku: "EARB-L",
+        name: "Earbuds, size L",
+        stock: "512",
+        cover: "8d",
+        status: "OK",
+    },
+    {
+        sku: "CBL-1M",
+        name: "USB-C cable, 1m",
+        stock: "318",
+        cover: "11d",
+        status: "OK",
+    },
+    {
+        sku: "PWR-65W",
+        name: "65W charger",
+        stock: "96",
+        cover: "3d",
+        status: "Low",
+    },
 ];
 
 const insightFeed = [
-    { source: "Google Trends", text: "Earbuds demand +18% w/w", time: "09:12 UTC" },
-    { source: "Reddit", text: "Thread on wireless earbuds is growing fast", time: "08:47 UTC" },
-    { source: "YouTube", text: "Search share shifts to small size format", time: "08:20 UTC" },
-    { source: "News", text: "Competitor restock delays reported", time: "07:58 UTC" },
+    {
+        source: "Google Trends",
+        text: "Earbuds demand +18% w/w",
+        time: "09:12 UTC",
+    },
+    {
+        source: "Reddit",
+        text: "Thread on wireless earbuds is growing fast",
+        time: "08:47 UTC",
+    },
+    {
+        source: "YouTube",
+        text: "Search share shifts to small size format",
+        time: "08:20 UTC",
+    },
+    {
+        source: "News",
+        text: "Competitor restock delays reported",
+        time: "07:58 UTC",
+    },
 ];
 
-function PanelHeader({ label, right }: { label: string; right?: React.ReactNode }) {
+function PanelHeader({
+    label,
+    right,
+}: {
+    label: string;
+    right?: React.ReactNode;
+}) {
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -60,9 +106,15 @@ function DataLayerVisual() {
                         <tr className="border-b border-border/60 text-[11px] uppercase tracking-wider text-muted-foreground">
                             <th className="px-4 py-2.5 font-medium">SKU</th>
                             <th className="px-4 py-2.5 font-medium">Product</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Stock</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Cover</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Status</th>
+                            <th className="px-4 py-2.5 text-right font-medium">
+                                Stock
+                            </th>
+                            <th className="px-4 py-2.5 text-right font-medium">
+                                Cover
+                            </th>
+                            <th className="px-4 py-2.5 text-right font-medium">
+                                Status
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -240,13 +292,21 @@ export default function ProductPage() {
                             actions, with the reasoning attached.
                         </p>
                         <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
-                            <Button size="lg" asChild>
+                            <Button variant="brand" size="pill-lg" asChild>
                                 <Link href="/signup">Create your account</Link>
                             </Button>
-                            <Button variant="outline" size="lg" asChild>
+                            <Button
+                                variant="outline"
+                                size="pill-lg"
+                                className="border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink"
+                                asChild
+                            >
                                 <Link href="/docs">
                                     Read the docs
-                                    <ArrowRight aria-hidden="true" className="size-4" />
+                                    <ArrowRight
+                                        aria-hidden="true"
+                                        className="size-4"
+                                    />
                                 </Link>
                             </Button>
                         </div>
@@ -389,7 +449,10 @@ export default function ProductPage() {
                                 </div>
                                 <div className="hidden items-center justify-center lg:flex">
                                     <span className="flex size-12 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary">
-                                        <AiGlyph aria-hidden="true" className="size-5" />
+                                        <AiGlyph
+                                            aria-hidden="true"
+                                            className="size-5"
+                                        />
                                     </span>
                                 </div>
                                 <div className="rounded-xl border border-border bg-muted/20 p-5">
@@ -451,7 +514,11 @@ export default function ProductPage() {
                                 <li>Connected source systems</li>
                                 <li>Progressive ERP sync</li>
                             </ul>
-                            <Button variant="link" className="mt-4 px-0" asChild>
+                            <Button
+                                variant="link"
+                                className="mt-4 px-0"
+                                asChild
+                            >
                                 <Link href="/docs/getting-started/connect-operations">
                                     How to connect your operations
                                 </Link>
