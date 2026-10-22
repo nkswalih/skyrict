@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,25 +17,8 @@ import { navLinks } from "@/config";
 import { cn } from "@/lib/utils";
 
 function Header() {
-    const [scrolled, setScrolled] = useState(false);
     const [open, setOpen] = useState(false);
-    const sentinelRef = useRef<HTMLDivElement>(null);
     const pathname = usePathname();
-
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                const entry = entries[0];
-                if (entry) setScrolled(!entry.isIntersecting);
-            },
-            { threshold: 0 },
-        );
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, []);
 
     useEffect(() => {
         const media = window.matchMedia("(min-width: 1024px)");
@@ -54,42 +37,14 @@ function Header() {
 
     return (
         <>
-            <div
-                ref={sentinelRef}
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 top-0 h-4"
-            />
-
             <header
                 className={cn(
                     "sticky top-0 z-40 px-4 pt-4 sm:px-6",
                     open && "pointer-events-none z-[60]",
                 )}
             >
-                {!open && (
-                    <>
-                        <div
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-x-0 top-0 h-4 bg-marketing-paper"
-                        />
-                        <div
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-x-0 top-4 h-20 bg-gradient-to-b from-marketing-paper via-marketing-paper/80 to-transparent"
-                        />
-                    </>
-                )}
-
                 <div className="relative mx-auto h-16 w-full max-w-[1120px]">
-                    <div
-                        className={cn(
-                            "absolute inset-x-0 top-0 grid h-16 grid-cols-[1fr_auto] items-center gap-4 rounded-full border px-3 backdrop-blur-xl transition-[background-color,border-color,box-shadow] duration-300 ease-out lg:grid-cols-[auto_1fr_auto] lg:px-4",
-                            scrolled
-                                ? "border-marketing-ink/15 bg-card shadow-[0_18px_50px_-24px_rgba(10,47,62,0.35)]"
-                                : open
-                                  ? "border-marketing-ink/15 bg-card shadow-[0_18px_50px_-24px_rgba(10,47,62,0.35)]"
-                                  : "border-marketing-ink/10 bg-marketing-paper/75",
-                        )}
-                    >
+                    <div className="absolute inset-x-0 top-0 grid h-16 grid-cols-[1fr_auto] items-center gap-4 rounded-full border border-marketing-ink/10 bg-white px-3 lg:grid-cols-[auto_1fr_auto] lg:px-4">
                         <Link
                             href="/"
                             aria-label="Skyrict home"
@@ -114,11 +69,11 @@ function Header() {
                                         className={cn(
                                             "group flex items-center gap-2 rounded-full px-3.5 py-2 text-[13px] font-medium transition-colors",
                                             active
-                                                ? "bg-marketing-paper text-marketing-ink shadow-[0_1px_2px_rgba(10,47,62,0.08)]"
+                                                ? "bg-white text-marketing-ink shadow-[0_3px_2px_rgba(10,47,62,0.08)]"
                                                 : "text-marketing-muted hover:bg-marketing-paper/70 hover:text-marketing-ink",
                                         )}
                                     >
-                                        <span
+                                        {/* <span
                                             aria-hidden="true"
                                             className={cn(
                                                 "size-1.5 rounded-full bg-marketing-sky transition-opacity",
@@ -126,7 +81,7 @@ function Header() {
                                                     ? "opacity-100"
                                                     : "opacity-0 group-hover:opacity-70",
                                             )}
-                                        />
+                                        /> */}
                                         {link.label}
                                     </Link>
                                 );
