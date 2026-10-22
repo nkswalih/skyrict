@@ -5,7 +5,8 @@ import { AuthAwareCta } from "@/components/marketing/auth-aware-cta";
 import { WorkspaceVisual } from "@/components/marketing/workspace-visual";
 import { Button } from "@/components/ui/button";
 
-const delay = (ms: number) => ({ "--sky-delay": `${ms}ms` }) as React.CSSProperties;
+const delay = (ms: number) =>
+    ({ "--sky-delay": `${ms}ms` }) as React.CSSProperties;
 
 function Hero() {
     return (
@@ -28,18 +29,27 @@ function Hero() {
                         className="sky-anim mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
                         style={delay(280)}
                     >
-                        Skyrict pairs your live operations with continuous market signals.
-                        Agents read both at once and return the next move.
+                        Skyrict pairs your live operations with continuous
+                        market signals. Agents read both at once and return the
+                        next move.
                     </p>
                     <div
                         className="sky-anim mt-9 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
                         style={delay(400)}
                     >
                         <AuthAwareCta />
-                        <Button variant="outline" size="lg" asChild>
+                        <Button
+                            variant="outline"
+                            size="pill-lg"
+                            className="border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink"
+                            asChild
+                        >
                             <Link href="/product">
                                 Explore the platform
-                                <ArrowRight aria-hidden="true" className="size-4" />
+                                <ArrowRight
+                                    aria-hidden="true"
+                                    className="size-4"
+                                />
                             </Link>
                         </Button>
                     </div>

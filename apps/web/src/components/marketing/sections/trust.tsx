@@ -60,12 +60,13 @@ function Trust() {
                                 Built for real operations.
                             </h2>
                             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                                Scoped by design, not by accident. Tenant isolation, roles,
-                                MFA, and email verification on every account, and the source
-                                is public so the defaults can be checked.
+                                Scoped by design, not by accident. Tenant
+                                isolation, roles, MFA, and email verification on
+                                every account, and the source is public so the
+                                defaults can be checked.
                             </p>
                             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                                <Button variant="outline" asChild>
+                                <Button variant="brand" size="pill" asChild>
                                     <Link href="/docs/security/multi-factor-authentication">
                                         Read the security guide
                                     </Link>
@@ -83,9 +84,15 @@ function Trust() {
                         </div>
                         <ul className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card">
                             {trustFacts.map(({ icon: Icon, title, body }) => (
-                                <li key={title} className="flex items-start gap-4 px-5 py-4">
+                                <li
+                                    key={title}
+                                    className="flex items-start gap-4 px-5 py-4"
+                                >
                                     <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
-                                        <Icon aria-hidden="true" className="size-4" />
+                                        <Icon
+                                            aria-hidden="true"
+                                            className="size-4"
+                                        />
                                     </span>
                                     <div>
                                         <h3 className="font-display text-sm font-semibold text-foreground">
