@@ -2,12 +2,18 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *):not(:is(.marketing-theme, .marketing-theme *)));
 
 @theme inline {
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
+  --color-marketing-line: var(--marketing-line);
+  --color-marketing-muted: var(--marketing-muted);
+  --color-marketing-sky: var(--marketing-sky);
+  --color-marketing-hover: var(--marketing-hover);
+  --color-marketing-paper: var(--marketing-paper);
+  --color-marketing-ink: var(--marketing-ink);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -25,6 +31,12 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -50,6 +62,12 @@
 
 :root {
   color-scheme: light;
+  --marketing-ink: #0a2f3e;
+  --marketing-hover: #114f68;
+  --marketing-paper: #f4fafd;
+  --marketing-sky: #87ceeb;
+  --marketing-line: #cae9f6;
+  --marketing-muted: #176a8b;
   --background: #f4fafd;
   --foreground: #0a2f3e;
   --card: #ffffff;
@@ -64,7 +82,13 @@
   --muted-foreground: #176a8b;
   --accent: #e6f5fa;
   --accent-foreground: #0d3f53;
-  --destructive: #020a0d;
+  --destructive: #dc2626;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --info: #0369a1;
+  --info-foreground: #ffffff;
   --border: #cae9f6;
   --input: #cae9f6;
   --ring: #87ceeb;
@@ -101,6 +125,12 @@
   --accent: #182636;
   --accent-foreground: #d9e8f2;
   --destructive: #f87171;
+  --success: #34d399;
+  --success-foreground: #052e16;
+  --warning: #fbbf24;
+  --warning-foreground: #451a03;
+  --info: #38bdf8;
+  --info-foreground: #082f49;
   --border: #1f2c3d;
   --input: #223043;
   --ring: #4db8e8;
@@ -117,6 +147,90 @@
   --sidebar-accent-foreground: #e6edf5;
   --sidebar-border: #1c2938;
   --sidebar-ring: #4db8e8;
+}
+
+/*
+ * Marketing is always Paper, even when the workspace theme is dark.
+ * The scope re-declares the core tokens so existing marketing components keep
+ * using the shared text/card/border utilities without inheriting dark values.
+ */
+.marketing-theme {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --destructive: #dc2626;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --info: #0369a1;
+  --info-foreground: #ffffff;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --chart-1: #87ceeb;
+  --chart-2: #4cb6e1;
+  --chart-3: #2199ca;
+  --chart-4: #114f68;
+  --chart-5: #aedef1;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer wordmark
+ *
+ * A restrained gradient fill, top highlight, and shallow edge shadow give the
+ * closing wordmark a subtle inset/embossed depth without adding artwork.
+ * ------------------------------------------------------------------------- */
+.marketing-footer-wordmark {
+  font-size: min(calc((100vw - 3rem) / 3.17), 21.75rem);
+  font-weight: 600;
+  line-height: 1.05;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0) 32%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.32) 0%,
+      rgba(255, 255, 255, 0) 42%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(2, 14, 20, 0) 48%,
+      rgba(2, 14, 20, 0.34) 100%
+    ),
+    linear-gradient(180deg, #1d6278 0%, #0a2f3e 52%, #02141c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.24))
+    drop-shadow(0 -1px 1px rgba(2, 18, 24, 0.22));
 }
 
 @layer base {
@@ -158,7 +272,8 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent)
+    transparent;
 }
 
 *::-webkit-scrollbar {
@@ -171,14 +286,22 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--muted-foreground) 40%,
+    transparent
+  );
   border: 2px solid transparent;
   border-radius: 9999px;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--muted-foreground) 65%,
+    transparent
+  );
 }
 
 *::-webkit-scrollbar-corner {
@@ -474,7 +597,11 @@
   .chat-thinking {
     animation: none;
     color: color-mix(in srgb, var(--primary) 65%, var(--muted-foreground));
-    -webkit-text-fill-color: color-mix(in srgb, var(--primary) 65%, var(--muted-foreground));
+    -webkit-text-fill-color: color-mix(
+      in srgb,
+      var(--primary) 65%,
+      var(--muted-foreground)
+    );
   }
 }
 
@@ -489,7 +616,12 @@
 
 .themed-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 28%, transparent) transparent;
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--sidebar-foreground) 28%,
+      transparent
+    )
+    transparent;
 }
 
 .themed-scrollbar::-webkit-scrollbar {
@@ -502,13 +634,21 @@
 
 .themed-scrollbar::-webkit-scrollbar-thumb {
   border-radius: 9999px;
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 28%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar-foreground) 28%,
+    transparent
+  );
   background-clip: padding-box;
   border: 2px solid transparent;
 }
 
 .themed-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 42%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar-foreground) 42%,
+    transparent
+  );
 }
 
 /* Hide scrollbar visually while keeping scroll functional. */
@@ -623,14 +763,14 @@
 }
 
 .chat-markdown code {
-  background: hsl(var(--muted));
+  background: var(--muted);
   padding: 0.15em 0.35em;
   border-radius: 0.25rem;
   font-size: 0.875em;
 }
 
 .chat-markdown pre {
-  background: hsl(var(--muted));
+  background: var(--muted);
   padding: 0.75em 1em;
   border-radius: 0.5rem;
   overflow-x: auto;
@@ -643,10 +783,10 @@
 }
 
 .chat-markdown blockquote {
-  border-left: 3px solid hsl(var(--border));
+  border-left: 3px solid var(--border);
   padding-left: 0.75em;
   margin: 0.5em 0;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .chat-markdown h1,
@@ -670,7 +810,7 @@
 }
 
 .chat-markdown a {
-  color: hsl(var(--primary));
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -681,7 +821,7 @@
 
 .chat-markdown hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--border);
   margin: 0.75em 0;
 }
 
@@ -694,13 +834,13 @@
 
 .chat-markdown th,
 .chat-markdown td {
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--border);
   padding: 0.35em 0.65em;
   text-align: left;
 }
 
 .chat-markdown th {
-  background: hsl(var(--muted));
+  background: var(--muted);
   font-weight: 600;
 }
 
