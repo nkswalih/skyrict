@@ -146,7 +146,7 @@ function Logo({
             <LogoMark className="size-7" tone={tone} />
             {wordmark ? (
                 <span className="font-display text-lg font-semibold tracking-tight text-current">
-                    Skyrict
+                    Skyrict.
                 </span>
             ) : null}
         </span>
