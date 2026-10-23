@@ -95,7 +95,7 @@ export default async function PricingPage() {
 
             <Cta
                 eyebrow="Start free"
-                title="Start with one live workspace."
+                title="Start with one workspace."
                 description="Create an account, set up the modules you need, and ask SkyAgent what needs attention."
             />
         </>

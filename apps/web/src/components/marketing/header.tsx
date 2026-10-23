@@ -95,7 +95,7 @@ function Header() {
                                 size="pill"
                                 className="text-marketing-muted hover:bg-marketing-ink/[0.04] hover:text-marketing-ink"
                             >
-                                <Link href="/contact">Book a demo</Link>
+                                <Link href="/contact">Book a walkthrough</Link>
                             </Button>
                             <Button asChild variant="brand" size="pill">
                                 <Link href="/signup">
@@ -201,7 +201,7 @@ function Header() {
                                 href="/contact"
                                 onClick={() => setOpen(false)}
                             >
-                                Book a demo
+                                Book a walkthrough
                             </Link>
                         </Button>
                         <Button

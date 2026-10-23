@@ -5,7 +5,7 @@ import { ProductShot } from "@/components/marketing/product-shot";
 import { RevealSection } from "@/components/marketing/reveal-section";
 
 const guarantees = [
-    "Reads the live workspace, not a stale export",
+    "Reads the workspace, not a stale export",
     "Shows the sources behind an answer",
     "Stops at the approval step",
 ];
@@ -36,7 +36,7 @@ function Agents() {
                         <div className="lg:pb-1">
                             <p className="max-w-md text-base leading-relaxed text-marketing-muted">
                                 Ask across your CRM, inventory, orders, finance,
-                                and people. SkyAgent answers from live workspace
+                                and people. SkyAgent answers from workspace
                                 records, names the agent that handled the
                                 question, and shows the sources behind its
                                 answer.

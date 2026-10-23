@@ -191,7 +191,7 @@ export default function AboutPage() {
 
             <Cta
                 eyebrow="See it for yourself"
-                title="Put your operations in one live workspace."
+                title="Put your operations in one workspace."
                 description="Create an account, set up the modules you need, and ask SkyAgent what needs attention."
             />
         </>

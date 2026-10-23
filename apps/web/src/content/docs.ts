@@ -126,7 +126,7 @@ export const docArticles: DocArticle[] = [
         slug: "connect-operations",
         title: "Set up your operations",
         description:
-            "Inventory, sales, cash, and orders in one live workspace.",
+            "Inventory, sales, cash, and orders in one workspace.",
         popular: true,
         cta: true,
         sections: [
@@ -134,7 +134,7 @@ export const docArticles: DocArticle[] = [
                 id: "what-you-connect",
                 title: "What you set up",
                 paragraphs: [
-                    "Skyrict holds products and stock, sales, cash, and open orders in one live workspace. You start with the modules you need. If you already run an ERP, talk to us about what you need to bring across.",
+                    "Skyrict holds products and stock, sales, cash, and open orders in one workspace. You start with the modules you need. If you already run an ERP, talk to us about what you need to bring across.",
                 ],
             },
             {

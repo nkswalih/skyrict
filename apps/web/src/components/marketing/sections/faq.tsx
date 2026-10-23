@@ -6,11 +6,11 @@ import { RevealSection } from "@/components/marketing/reveal-section";
 const faqItems = [
     {
         question: "What is Skyrict?",
-        answer: "Skyrict is a scoped ERP with an AI agent workspace on top. It brings inventory, sales, cash, orders, CRM, and people into one system, and SkyAgent answers questions from those live records.",
+        answer: "Skyrict is a scoped ERP with an AI agent workspace on top. It brings inventory, sales, cash, orders, CRM, and people into one system, and SkyAgent answers questions from those records.",
     },
     {
         question: "How is this different from a dashboard?",
-        answer: "A dashboard shows what happened. Skyrict holds the live records and lets you ask questions across them in plain language. SkyAgent can point to the records and sources behind an answer so you can check it before you act.",
+        answer: "A dashboard shows what happened. Skyrict holds the records and lets you ask questions across them in plain language. SkyAgent can point to the records and sources behind an answer so you can check it before you act.",
     },
     {
         question: "Do I have to replace my ERP?",
@@ -18,7 +18,7 @@ const faqItems = [
     },
     {
         question: "What does Skyrict cover?",
-        answer: "The live modules are inventory, orders, sales, finance, CRM, HR, payroll, documents, approvals, and reporting. Market signals are in development: the signal collection engine is planned, and the intelligence workspace is in progress.",
+        answer: "The modules are inventory, orders, sales, finance, CRM, HR, payroll, documents, approvals, and reporting. Market signals are in development: the signal collection engine is planned, and the intelligence workspace is in progress.",
     },
     {
         question: "How is my data protected?",
@@ -26,7 +26,7 @@ const faqItems = [
     },
     {
         question: "How do I get started?",
-        answer: "Starter is free forever. Paid plans begin with a 14-day trial, no credit card required. Create an account, set up your workspace, and ask SkyAgent your first question. For a guided rollout, book a demo.",
+        answer: "Starter is free forever. Paid plans begin with a 14-day trial, no credit card required. Create an account, set up your workspace, and ask SkyAgent your first question. For a guided rollout, book a walkthrough.",
     },
 ];
 

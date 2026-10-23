@@ -10,7 +10,7 @@ import { contactEmail } from "@/config";
 export const metadata: Metadata = {
     title: "Contact Sales",
     description:
-        "Talk to Skyrict about your operations, a demo, or a rollout. Bug reports belong in the public GitHub issue tracker.",
+        "Talk to Skyrict about your operations, a walkthrough, or a rollout. Bug reports belong in the public GitHub issue tracker.",
     alternates: {
         canonical: "/contact",
     },

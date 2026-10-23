@@ -864,31 +864,37 @@
 @keyframes sky-fade-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate3d(0, 14px, 0);
+    filter: blur(5px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
   }
 }
 
 @keyframes sky-fade {
   from {
     opacity: 0;
+    filter: blur(4px);
   }
   to {
     opacity: 1;
+    filter: blur(0);
   }
 }
 
 @keyframes sky-pop {
   from {
     opacity: 0;
-    transform: scale(0.92);
+    transform: scale(0.95);
+    filter: blur(5px);
   }
   to {
     opacity: 1;
     transform: scale(1);
+    filter: blur(0);
   }
 }
 
@@ -934,11 +940,13 @@
 .sky-enter-fade {
   animation-name: sky-fade;
   animation-duration: 500ms;
+  animation-fill-mode: both;
 }
 
 .sky-pop-in {
   animation-name: sky-pop;
   animation-duration: 380ms;
+  animation-fill-mode: both;
 }
 
 .sky-analyzing {
@@ -963,9 +971,88 @@
   animation-iteration-count: 2;
 }
 
+@keyframes agent-thinking-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.agent-thinking-dot {
+  animation: agent-thinking-dot 1.15s ease-in-out infinite;
+}
+
+@keyframes agent-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.agent-caret {
+  animation: agent-caret 1s steps(1, end) infinite;
+}
+
 .sky-row {
   animation-name: sky-fade;
   animation-duration: 420ms;
+}
+
+/* ---------------------------------------------------------------------------
+ * Marketing scroll reveal
+ *
+ * Content is visible by default. RevealSection only arms the blur-fade for
+ * elements that are still below the fold when they mount, so a slow hydration,
+ * a disabled observer, or a reduced-motion preference can never leave a
+ * section stuck at opacity 0.
+ * ------------------------------------------------------------------------- */
+.reveal {
+  --reveal-delay: 0ms;
+  --reveal-blur: 8px;
+  --reveal-y: 18px;
+  --reveal-duration: 780ms;
+  transition:
+    opacity var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay),
+    transform var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay),
+    filter var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay);
+}
+
+.reveal-media {
+  --reveal-blur: 4px;
+  --reveal-y: 12px;
+  --reveal-duration: 760ms;
+}
+
+.reveal.reveal-armed {
+  opacity: 0;
+  transform: translate3d(0, var(--reveal-y), 0);
+  filter: blur(var(--reveal-blur));
+  transition: none;
+}
+
+@media (max-width: 640px) {
+  .reveal {
+    --reveal-blur: 5px;
+    --reveal-y: 14px;
+  }
+
+  .reveal-media {
+    --reveal-blur: 2px;
+    --reveal-y: 10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -974,6 +1061,20 @@
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+    filter: none !important;
+  }
+
+  .reveal,
+  .reveal.reveal-armed {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+
+  .agent-caret,
+  .agent-thinking-dot {
+    animation: none !important;
   }
 }
 
