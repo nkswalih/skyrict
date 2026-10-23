@@ -106,7 +106,7 @@ export default function AboutPage() {
                                 </p>
                             </div>
                         </RevealSection>
-                        <RevealSection delay={120}>
+                        <RevealSection delay={60}>
                             <div className="h-full rounded-2xl border border-border bg-card p-7">
                                 <span className="flex size-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
                                     <Globe aria-hidden="true" className="size-5" />
@@ -123,7 +123,7 @@ export default function AboutPage() {
                             </div>
                         </RevealSection>
                     </div>
-                    <RevealSection delay={160}>
+                    <RevealSection delay={100}>
                         <p className="mx-auto mt-12 max-w-2xl text-center text-base leading-relaxed text-foreground">
                             When the records stay apart, decisions arrive late
                             or lean on guesses. Skyrict starts by putting the
@@ -167,7 +167,7 @@ export default function AboutPage() {
             </section>
 
             <section className="border-t border-border/60 bg-card/60">
-                <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
+                <div className="mx-auto w-full max-w-6xl px-6 pt-16 pb-8 sm:pt-24 sm:pb-12">
                     <RevealSection>
                         <div className="mx-auto max-w-3xl text-center">
                             <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">

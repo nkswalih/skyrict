@@ -88,7 +88,7 @@ export default function ContactPage() {
                             </div>
                         </div>
                     </RevealSection>
-                    <RevealSection delay={120}>
+                    <RevealSection delay={60}>
                         <ContactForm />
                     </RevealSection>
                 </div>

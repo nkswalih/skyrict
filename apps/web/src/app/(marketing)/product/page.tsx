@@ -530,7 +530,7 @@ function ProductHero() {
                                 className="border-marketing-ink/15 bg-white/35 text-marketing-ink hover:bg-white/60 hover:text-marketing-ink"
                                 asChild
                             >
-                                <Link href="/contact">Book a walkthrough</Link>
+                                <Link href="/contact">Try demo first</Link>
                             </Button>
                         </div>
                     </div>
@@ -624,7 +624,7 @@ function OperatingCore() {
                                         </RevealSection>
                                         <RevealSection
                                             variant="media"
-                                            delay={80}
+                                            delay={40}
                                         >
                                             {figure}
                                         </RevealSection>
@@ -650,7 +650,7 @@ function OperatingCore() {
                                 </RevealSection>
                                 <RevealSection
                                     variant="media"
-                                    delay={80}
+                                    delay={40}
                                     className={cn(
                                         "lg:col-span-7",
                                         block.reversed &&
@@ -702,7 +702,7 @@ function SignalToWork() {
                                 sizes="(min-width: 1240px) 1188px, 100vw"
                             />
                         </RevealSection>
-                        <RevealSection variant="text" delay={80}>
+                        <RevealSection variant="text" delay={40}>
                             <div className="grid gap-6 border-t border-marketing-line/80 pt-5 lg:grid-cols-[minmax(0,0.55fr)_minmax(0,1fr)] lg:gap-16">
                                 <div>
                                     <div className="flex items-baseline gap-3">
@@ -999,8 +999,8 @@ export default function ProductPage() {
                 description="Create a workspace, add a few records, and ask SkyAgent what needs attention. The answer comes with the records behind it."
                 ctaLabel="Create an account"
                 ctaHref="/signup"
-                secondaryCtaLabel="Book a walkthrough"
-                secondaryCtaHref="/contact"
+                secondaryCtaLabel="Try demo"
+                secondaryCtaHref="/demo/erp"
             />
         </>
     );
