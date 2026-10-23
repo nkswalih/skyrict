@@ -7,13 +7,14 @@ import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
 import { Faq } from "@/components/marketing/sections/faq";
 import { SignalSparkline } from "@/components/marketing/signal-sparkline";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import { Button } from "@/components/ui/button";
 import { signalSources } from "@/config";
 
 export const metadata: Metadata = {
-    title: "Product",
+    title: "AI ERP Platform",
     description:
-        "Skyrict connects ERP operations, global market intelligence, and AI agents into one decision system. See the data layer, context layer, and decision layer.",
+        "Skyrict connects inventory, sales, cash, orders, CRM, HR, and reporting in one live workspace. AI agents turn those records into decisions your team can act on.",
     alternates: {
         canonical: "/product",
     },
@@ -278,6 +279,12 @@ function SectionHeader({
 export default function ProductPage() {
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "AI ERP Platform", path: "/product" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
                 <RevealSection>
                     <div className="mx-auto max-w-3xl space-y-6 text-center">

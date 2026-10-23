@@ -10,11 +10,12 @@ import type { Metadata } from "next";
 
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 
 export const metadata: Metadata = {
-    title: "About",
+    title: "About Us",
     description:
-        "Why Skyrict exists: operational truth inside your business and market context outside it, connected into decisions you can verify and act on.",
+        "Why Skyrict exists: one live system for your operations, with AI agents that help your team make decisions on current records instead of stale exports.",
     alternates: {
         canonical: "/about",
     },
@@ -50,6 +51,12 @@ const philosophy: {
 export default function AboutPage() {
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "About Us", path: "/about" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
                 <RevealSection>
                     <div className="mx-auto max-w-3xl space-y-6 text-center">

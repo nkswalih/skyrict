@@ -50,7 +50,7 @@ export const docCategories: DocCategory[] = [
     {
         id: "getting-started",
         name: "Getting started",
-        description: "From first account to first signal in one sitting.",
+        description: "From first account to first live view in one sitting.",
     },
     {
         id: "operations",
@@ -60,12 +60,12 @@ export const docCategories: DocCategory[] = [
     {
         id: "intelligence",
         name: "Intelligence",
-        description: "Live signals from the market, read continuously.",
+        description: "Market intelligence, currently in development.",
     },
     {
         id: "agents",
         name: "Agents",
-        description: "Reasoning across operations and the market at once.",
+        description: "Reasoning across your operations and records.",
     },
     {
         id: "security",

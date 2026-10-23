@@ -12,10 +12,9 @@ import { site } from "@/config";
 
 export const metadata: Metadata = {
     title: {
-        absolute: `${site.name} AI Business Operating System`,
+        absolute: site.title,
     },
-    description:
-        "Skyrict pairs a scoped ERP, inventory, sales, cash, and orders, with continuous market signals from Google Trends, YouTube, Reddit, GitHub, and news. AI agents read both at once and tell you what to do next.",
+    description: site.description,
     alternates: {
         canonical: "/",
     },

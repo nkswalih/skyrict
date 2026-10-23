@@ -4,39 +4,15 @@
   /docs tree without the /docs prefix, so every URL below omits it.
 
   This file is validated against the docs content registry by
-  src/content/sitemap.test.ts: add a new article/category and regenerate
-  this file (or CI signals the drift).
+  src/content/sitemap.test.ts: add a new article and regenerate this file
+  (or CI signals the drift). Category routes redirect to their first guide,
+  so only canonical article URLs belong here.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://docs.skyrict.in/</loc>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://docs.skyrict.in/getting-started</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://docs.skyrict.in/operations</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://docs.skyrict.in/intelligence</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://docs.skyrict.in/agents</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://docs.skyrict.in/security</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://docs.skyrict.in/getting-started/create-account</loc>

@@ -4,12 +4,13 @@ import Link from "next/link";
 
 import { ContactForm } from "@/components/marketing/contact/contact-form";
 import { RevealSection } from "@/components/marketing/reveal-section";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import { contactEmail } from "@/config";
 
 export const metadata: Metadata = {
-    title: "Contact",
+    title: "Contact Sales",
     description:
-        "Talk to Skyrict about your operations. Bug reports belong in the public GitHub issue tracker.",
+        "Talk to Skyrict about your operations, a demo, or a rollout. Bug reports belong in the public GitHub issue tracker.",
     alternates: {
         canonical: "/contact",
     },
@@ -24,6 +25,12 @@ const pointers = [
 export default function ContactPage() {
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "Contact Sales", path: "/contact" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                 <div className="grid items-start gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
                     <RevealSection>

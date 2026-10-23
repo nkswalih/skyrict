@@ -1,8 +1,9 @@
 export const site = {
     name: "Skyrict",
     tagline: "AI Business Operating System",
+    title: "Skyrict: AI Business Operating System",
     description:
-        "Skyrict connects your live operations, inventory, sales, cash, and orders, to continuous market signals. AI agents act on the synthesis.",
+        "Skyrict is the AI business operating system for inventory, sales, cash, orders, CRM, and HR. AI agents turn live records into decisions your team can act on.",
     url: "https://skyrict.in",
 };
 

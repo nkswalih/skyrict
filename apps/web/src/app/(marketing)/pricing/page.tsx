@@ -3,15 +3,16 @@ import type { Metadata } from "next";
 import { PricingTiers } from "@/components/marketing/pricing/pricing-tiers";
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import { pricingFaq } from "@/config";
 import { resolvePricingContext } from "@/lib/server/geo";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-    title: "Pricing",
+    title: "Pricing and Plans",
     description:
-        "Skyrict pricing. Starter is free forever. Paid plans start with a 14-day free trial, no credit card required, and prices resolve to your currency.",
+        "Skyrict pricing and plans. Starter is free forever. Paid plans start with a 14-day free trial, no credit card required, and prices resolve to your currency.",
     alternates: {
         canonical: "/pricing",
     },
@@ -22,6 +23,12 @@ export default async function PricingPage() {
 
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "Pricing and Plans", path: "/pricing" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 pt-16 sm:pt-20">
                 <RevealSection>
                     <div className="mx-auto max-w-2xl space-y-4 text-center">

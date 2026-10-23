@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { CopyPageLink } from "@/components/docs/copy-page-link";
 import { Feedback } from "@/components/docs/feedback";
 import { Toc } from "@/components/docs/toc";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import {
     docArticles,
     getArticle,
@@ -269,10 +270,21 @@ export default async function ArticlePage({ params }: PageProps) {
             entry.slug === article.slug,
     );
     const href = pathFor(article.categoryId, article.slug);
+    const breadcrumbItems = [
+        { name: "Docs", path: "/" },
+        {
+            name: article.title,
+            path: surfacePathFor(article.categoryId, article.slug),
+        },
+    ];
 
     return (
         <div className="mx-auto flex w-full max-w-[960px] justify-center gap-10 px-6 py-10 lg:py-12">
             <div className="min-w-0 w-full max-w-2xl">
+                <BreadcrumbJsonLd
+                    baseUrl="https://docs.skyrict.in"
+                    items={breadcrumbItems}
+                />
                 <Breadcrumb article={article} />
 
                 <div className="mt-6 flex items-start justify-between gap-4">

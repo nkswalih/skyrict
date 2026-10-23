@@ -32,6 +32,7 @@ export default function MarketingLayout({
         "@type": "Organization",
         "@id": `${site.url}/#organization`,
         name: site.name,
+        alternateName: ["Skyrict AI", site.title],
         url: site.url,
         logo: {
             "@type": "ImageObject",
@@ -53,6 +54,8 @@ export default function MarketingLayout({
         "@id": `${site.url}/#website`,
         url: site.url,
         name: site.name,
+        alternateName: ["Skyrict AI", site.title],
+        inLanguage: "en",
         description: site.description,
         publisher: {
             "@id": `${site.url}/#organization`,
