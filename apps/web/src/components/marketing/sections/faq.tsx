@@ -26,7 +26,7 @@ const faqItems = [
     },
     {
         question: "How do I get started?",
-        answer: "Starter is free forever. Paid plans begin with a 14-day trial, no credit card required. Create an account, set up your workspace, and ask SkyAgent your first question. For a guided rollout, book a walkthrough.",
+        answer: "Starter is free forever. Paid plans begin with a 14-day trial, no credit card required. Create an account, set up your workspace, and ask SkyAgent your first question. For a guided rollout, Open a demo account.",
     },
 ];
 

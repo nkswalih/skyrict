@@ -15,14 +15,10 @@ function Intelligence() {
                 aria-hidden="true"
                 className="marketing-dark-grid pointer-events-none absolute inset-0"
             />
-            <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -right-32 top-0 size-[30rem] rounded-full bg-[#87ceeb]/10 blur-[120px]"
-            />
 
             <div className="relative mx-auto w-full max-w-[1120px] px-6 py-20 sm:py-24 lg:py-28">
-                <RevealSection>
-                    <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16">
+                <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16">
+                    <RevealSection>
                         <div>
                             <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-paper/70">
                                 <span
@@ -57,7 +53,9 @@ function Intelligence() {
                                 />
                             </Link>
                         </div>
+                    </RevealSection>
 
+                    <RevealSection delay={60} variant="media-soft">
                         <div>
                             <ProductShot
                                 src="/marketing/vastraline-trending.png"
@@ -70,8 +68,8 @@ function Intelligence() {
                                 development.
                             </p>
                         </div>
-                    </div>
-                </RevealSection>
+                    </RevealSection>
+                </div>
             </div>
         </section>
     );

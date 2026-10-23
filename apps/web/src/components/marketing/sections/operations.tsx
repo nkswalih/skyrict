@@ -40,7 +40,7 @@ function Operations() {
                     </div>
                 </RevealSection>
 
-                <RevealSection delay={120}>
+                <RevealSection delay={60} variant="media-soft">
                     <div className="mt-12 grid gap-6 lg:grid-cols-12 lg:items-start">
                         <ProductShot
                             src="/marketing/vastraline-operations.png"

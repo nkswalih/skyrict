@@ -55,7 +55,7 @@ function Agents() {
                     </div>
                 </RevealSection>
 
-                <RevealSection delay={120}>
+                <RevealSection delay={60}>
                     <ul className="mt-10 grid border-y border-marketing-line/80 sm:grid-cols-3">
                         {guarantees.map((item) => (
                             <li
@@ -74,7 +74,7 @@ function Agents() {
                     </ul>
                 </RevealSection>
 
-                <RevealSection delay={200}>
+                <RevealSection delay={120} variant="media-soft">
                     <ProductShot
                         src="/marketing/skyrict-agent-history.png"
                         alt="SkyAgent conversation history about stock cover, with agent labels, a reorder recommendation, and the source records behind the answer."

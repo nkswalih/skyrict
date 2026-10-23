@@ -23,7 +23,7 @@ function Cta({
 }) {
     return (
         <section aria-labelledby="cta-heading">
-            <div className="mx-auto w-full max-w-6xl px-6 pb-24">
+            <div className="mx-auto w-full max-w-6xl px-6 pt-12 pb-24 sm:pt-16">
                 <RevealSection>
                     <div className="relative overflow-hidden rounded-[2rem] border border-marketing-line bg-card px-6 py-14 text-center shadow-[0_32px_100px_-64px_rgba(10,47,62,0.4)] sm:px-12 sm:py-20 lg:px-16">
                         <div

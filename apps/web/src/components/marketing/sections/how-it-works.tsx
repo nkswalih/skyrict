@@ -57,7 +57,7 @@ function HowItWorks() {
                     </div>
                 </RevealSection>
 
-                <RevealSection delay={120}>
+                <RevealSection delay={60}>
                     <ol className="mt-12 grid border-y border-marketing-line/80 md:mt-16 md:grid-cols-3">
                         {steps.map((step) => (
                             <li
