@@ -1036,6 +1036,17 @@
   --reveal-duration: 760ms;
 }
 
+/*
+ * Full-width homepage screenshots use the same blur-in motion at a lighter
+ * radius. A 4px+ filter over a large image forces expensive re-rasterization
+ * and can delay every reveal below it.
+ */
+.reveal-media-soft {
+  --reveal-blur: 2px;
+  --reveal-y: 12px;
+  --reveal-duration: 760ms;
+}
+
 .reveal.reveal-armed {
   opacity: 0;
   transform: translate3d(0, var(--reveal-y), 0);
@@ -1113,13 +1124,6 @@
     linear-gradient(180deg, #fbf8f3 0%, #f4fafd 54%, #f4fafd 100%);
 }
 
-.marketing-hero-art-grain {
-  opacity: 0.12;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
-}
-
 .marketing-glass-frame {
   position: relative;
   border-radius: clamp(1.2rem, 2.5vw, 2rem);
@@ -1136,8 +1140,6 @@
     0 52px 120px -58px rgba(10, 47, 62, 0.55),
     0 18px 44px -28px rgba(10, 47, 62, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  -webkit-backdrop-filter: blur(22px) saturate(135%);
-  backdrop-filter: blur(22px) saturate(135%);
 }
 
 .marketing-glass-frame::after {
@@ -1176,7 +1178,6 @@
     rgba(255, 255, 255, 0.05) 26%,
     transparent 46%
   );
-  mix-blend-mode: screen;
 }
 
 .marketing-dark-band {
