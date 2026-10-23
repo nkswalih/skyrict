@@ -267,7 +267,7 @@ function AgentCitations({ message }: { message: AgentChatMessage }) {
                             href={citation.url ?? citation.sourceRef}
                             target={citation.url ? "_blank" : undefined}
                             rel="noreferrer"
-                            className="text-xs text-primary underline-offset-2 hover:underline"
+                            className="text-xs font-medium text-foreground underline decoration-primary/70 decoration-1 underline-offset-2 hover:decoration-foreground"
                         >
                             {citation.title}
                             {citation.module ? (

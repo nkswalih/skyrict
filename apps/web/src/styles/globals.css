@@ -754,6 +754,14 @@
   padding-left: 1.5em;
 }
 
+.chat-markdown ul {
+  list-style: disc;
+}
+
+.chat-markdown ol {
+  list-style: decimal;
+}
+
 .chat-markdown li {
   margin: 0.15em 0;
 }
