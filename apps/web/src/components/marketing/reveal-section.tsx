@@ -10,9 +10,11 @@ type RevealSectionProps = {
     delay?: number;
     /**
      * Media reveals use a shorter travel and a lighter blur so large screenshots
-     * stay sharp while they settle.
+     * stay sharp while they settle. The soft variant is used on the home page
+     * for full-width product screenshots, where a heavier blur blocks the main
+     * thread on slower devices.
      */
-    variant?: "text" | "media";
+    variant?: "text" | "media" | "media-soft";
 };
 
 type RevealCallback = () => void;
@@ -37,11 +39,12 @@ function getSharedObserver(): IntersectionObserver | null {
             }
         },
         {
-            // Trigger as soon as the element's leading edge is inside the
-            // viewport. The old 0.15 threshold never fired for sections taller
-            // than the viewport, which left them permanently hidden.
+            // Trigger as the section approaches the viewport instead of
+            // waiting until it has already scrolled 8% into view. This removes
+            // the post-hero hang where the first sections sat blurred until a
+            // scroll reached them. threshold 0 keeps the leading edge sufficient.
             threshold: 0,
-            rootMargin: "0px 0px -8% 0px",
+            rootMargin: "0px 0px 12% 0px",
         },
     );
 
@@ -71,24 +74,32 @@ function RevealSection({
             return;
         }
 
-        element.classList.add("reveal-armed");
+        // Arm on the next animation frame so the blurred hidden state is set
+        // before the first paint where possible, avoiding a visible→blurred
+        // snap that looks like a hang after the hero.
+        const raf = requestAnimationFrame(() => {
+            if (!element.isConnected) return;
+            element.classList.add("reveal-armed");
 
-        const observer = getSharedObserver();
-        if (!observer) {
-            element.classList.remove("reveal-armed");
-            return;
-        }
+            const observer = getSharedObserver();
+            if (!observer) {
+                element.classList.remove("reveal-armed");
+                return;
+            }
 
-        const reveal = () => {
-            element.classList.remove("reveal-armed");
-        };
+            const reveal = () => {
+                element.classList.remove("reveal-armed");
+            };
 
-        callbacks.set(element, reveal);
-        observer.observe(element);
+            callbacks.set(element, reveal);
+            observer.observe(element);
+        });
 
         return () => {
+            cancelAnimationFrame(raf);
             callbacks.delete(element);
-            observer.unobserve(element);
+            const observer = getSharedObserver();
+            observer?.unobserve(element);
             element.classList.remove("reveal-armed");
         };
     }, []);
@@ -103,7 +114,9 @@ function RevealSection({
             }
             className={cn(
                 "reveal",
-                variant === "media" ? "reveal-media" : "reveal-text",
+                variant === "media" && "reveal-media",
+                variant === "media-soft" && "reveal-media-soft",
+                variant === "text" && "reveal-text",
                 className,
             )}
         >
