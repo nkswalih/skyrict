@@ -145,19 +145,19 @@ function Logo({
     mark?: "glyph" | "image";
 }) {
     return (
-        <span className={cn("inline-flex items-center gap-2.5", className)}>
+        <span className={cn("inline-flex items-center gap-0", className)}>
             {mark === "image" ? (
                 <span
                     aria-hidden="true"
-                    className="relative size-7 shrink-0 overflow-hidden"
+                    className="relative size-8 shrink-0 overflow-hidden"
                 >
                     <Image
                         src="/skyrict_transparent_logo.png"
                         alt=""
                         width={1000}
                         height={1000}
-                        sizes="44px"
-                        className="size-full scale-[1.58] object-contain"
+                        sizes="46px"
+                        className="size-full object-contain"
                     />
                 </span>
             ) : (
