@@ -33,6 +33,16 @@ export default function MarketingLayout({
         "@id": `${site.url}/#organization`,
         name: site.name,
         url: site.url,
+        logo: {
+            "@type": "ImageObject",
+            "@id": `${site.url}/#logo`,
+            url: `${site.url}/skyrict_logo.png`,
+            contentUrl: `${site.url}/skyrict_logo.png`,
+            width: 1000,
+            height: 1000,
+            caption: site.name,
+        },
+        image: `${site.url}/skyrict_logo.png`,
         description: site.description,
         sameAs: ["https://github.com/nkswalih/skyrict"],
     };
