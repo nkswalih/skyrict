@@ -303,7 +303,7 @@ export default function ProductPage() {
                         </p>
                         <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
                             <Button variant="brand" size="pill-lg" asChild>
-                                <Link href="/signup">Try it free</Link>
+                                <Link href="/signup">Create account</Link>
                             </Button>
                             <Button
                                 variant="outline"

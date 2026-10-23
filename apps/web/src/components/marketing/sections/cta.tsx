@@ -8,7 +8,7 @@ function Cta({
     eyebrow = "Start free",
     title = "Make your first call on live numbers.",
     description = "Create an account, set up your workspace, and ask SkyAgent what needs attention. The answer comes with the records behind it.",
-    ctaLabel = "Get started",
+    ctaLabel = "Try it free",
     ctaHref = "/signup",
     secondaryCtaLabel = "Contact sales",
     secondaryCtaHref = "/contact",
