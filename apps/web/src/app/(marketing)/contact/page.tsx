@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 };
 
 const pointers = [
-    "The systems you run and what connects to them",
+    "The systems you run today and what you want to improve",
     "Team size and the decisions you want covered",
-    "A specific signal you watch and want acted on",
+    "A workflow or report that takes too long today",
 ];
 
 export default function ContactPage() {
@@ -35,9 +35,8 @@ export default function ContactPage() {
                                 Talk to us about your operations.
                             </h1>
                             <p className="mt-5 text-base leading-relaxed text-muted-foreground">
-                                Tell us what you run, what you want to connect,
-                                and where the market is pushing you. We reply
-                                from{" "}
+                                Tell us what you run, what you want to improve,
+                                and where the work slows down. We reply from{" "}
                                 <span className="font-mono text-sm text-foreground">
                                     {contactEmail}
                                 </span>

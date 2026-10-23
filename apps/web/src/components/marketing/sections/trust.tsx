@@ -10,11 +10,11 @@ const trustFacts = [
     },
     {
         title: "Roles and permissions",
-        body: "Owner, admin, and member roles gate every surface and report.",
+        body: "Owner, admin, and member roles, with custom roles built from a fixed permission menu.",
     },
     {
         title: "Multi-factor authentication",
-        body: "TOTP on every account, with one-time backup codes.",
+        body: "TOTP support with one-time backup codes.",
     },
     {
         title: "Open source",
@@ -43,9 +43,9 @@ function Trust() {
                             </h2>
                             <p className="mt-5 max-w-md text-base leading-relaxed text-marketing-muted">
                                 Scoped by design, not by accident. Tenant
-                                isolation, roles, MFA, and email verification on
-                                every account, and the source is public so the
-                                defaults can be checked.
+                                isolation, roles, MFA, and email verification
+                                are built into the account model, and the source
+                                is public so the defaults can be checked.
                             </p>
                             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                                 <Button variant="brand" size="pill" asChild>

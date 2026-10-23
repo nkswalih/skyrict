@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const askAiPrompt = `As a potential client, I want to concretely understand what I will receive with Skyrict (skyrict.in).
 
-Detail step by step what the service includes: what Skyrict is, how AI business agents work, how they connect live operations, inventory, sales, cash, and orders with continuous market signals, the security and compliance features, and how it helps teams turn signals into decisions and scale.
+Detail step by step what the service includes: what Skyrict is, how the AI agents work across live operations, inventory, sales, cash, and orders, the security and compliance features, and how teams use it to make decisions and scale. Note that market intelligence is in development and not live yet.
 
 Explain it simply, as if you were describing the real experience of the service.`;
 

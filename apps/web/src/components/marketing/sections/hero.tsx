@@ -60,8 +60,8 @@ function Hero() {
                         style={delay(240)}
                     >
                         CRM, inventory, orders, finance, and people in one
-                        operating workspace. Skyrict reads the market alongside
-                        them, so every decision starts with context.
+                        operating workspace. SkyAgent works across that live
+                        data and shows the records behind its answers.
                     </p>
 
                     <div

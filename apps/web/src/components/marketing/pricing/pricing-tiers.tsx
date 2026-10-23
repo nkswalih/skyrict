@@ -93,13 +93,8 @@ const COMPARISON_MATRIX: {
             },
             { label: "AI agents", value: formatAgents },
             {
-                label: "Market signal sources",
-                value: (p) =>
-                    hasModule(p, "all 5 signal")
-                        ? "All 5"
-                        : hasModule(p, "signal source")
-                          ? "1"
-                          : "None",
+                label: "Market signal sources (in development)",
+                value: () => "In development",
             },
         ],
     },
@@ -164,7 +159,7 @@ function moduleChips(plan: BillingPlan, max = 3) {
                     key={module}
                     className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground"
                 >
-                    {module}
+                    {displayModule(module)}
                 </li>
             ))}
             {rest > 0 ? (
@@ -174,6 +169,13 @@ function moduleChips(plan: BillingPlan, max = 3) {
             ) : null}
         </ul>
     );
+}
+
+/** Market intelligence is not live yet; do not present the catalog entry as a shipped feature. */
+function displayModule(module: string): string {
+    return module.toLowerCase().includes("market intel")
+        ? "Market intel · in development"
+        : module;
 }
 
 function planCta(plan: BillingPlan): { label: string; href: string } {

@@ -24,24 +24,33 @@ function Intelligence() {
                 <RevealSection>
                     <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16">
                         <div>
+                            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-paper/70">
+                                <span
+                                    aria-hidden="true"
+                                    className="size-1.5 rounded-full bg-marketing-sky"
+                                />
+                                In development
+                            </span>
                             <h2
                                 id="intelligence-heading"
-                                className="max-w-lg font-display text-3xl font-semibold leading-[1.06] tracking-[-0.04em] text-marketing-paper sm:text-4xl lg:text-[2.9rem]"
+                                className="mt-5 max-w-lg font-display text-3xl font-semibold leading-[1.06] tracking-[-0.04em] text-marketing-paper sm:text-4xl lg:text-[2.9rem]"
                             >
                                 The market,
                                 <br />
-                                before the meeting.
+                                being built into the workspace.
                             </h2>
                             <p className="mt-5 max-w-md text-base leading-relaxed text-marketing-paper/65">
-                                Google Trends, YouTube, Reddit, GitHub, and news
-                                read continuously, ranked by momentum, and
-                                mapped to the categories you actually sell.
+                                Skyrict is building a signal collection engine
+                                that will read Google Trends, YouTube, Reddit,
+                                GitHub, and news, rank them by momentum, and map
+                                them to the categories you sell. External
+                                signals are not live yet.
                             </p>
                             <Link
                                 href="/docs/intelligence/market-signals"
                                 className="group mt-7 inline-flex items-center gap-1.5 text-sm font-medium text-marketing-paper underline decoration-marketing-sky/60 decoration-2 underline-offset-4 transition-colors hover:decoration-marketing-sky focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-marketing-sky/60"
                             >
-                                How market signals work
+                                See the intelligence roadmap
                                 <ArrowUpRight
                                     aria-hidden="true"
                                     className="size-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
@@ -49,12 +58,18 @@ function Intelligence() {
                             </Link>
                         </div>
 
-                        <ProductShot
-                            src="/marketing/vastraline-trending.png"
-                            alt="Skyrict market intelligence showing trending topics ranked by momentum across AI, logistics, retail, and developer tools."
-                            tone="dark"
-                            sizes="(min-width: 1024px) 620px, 100vw"
-                        />
+                        <div>
+                            <ProductShot
+                                src="/marketing/vastraline-trending.png"
+                                alt="Preview of the Skyrict intelligence workspace showing trending topics ranked by momentum across AI, logistics, retail, and developer tools."
+                                tone="dark"
+                                sizes="(min-width: 1024px) 620px, 100vw"
+                            />
+                            <p className="mt-3 text-xs leading-relaxed text-marketing-paper/50">
+                                Preview data. The signal collection engine is in
+                                development.
+                            </p>
+                        </div>
                     </div>
                 </RevealSection>
             </div>

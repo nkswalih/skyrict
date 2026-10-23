@@ -5,16 +5,16 @@ import { RevealSection } from "@/components/marketing/reveal-section";
 
 const steps = [
     {
-        title: "Connect the company",
+        title: "Set up the workspace",
         body: "Bring CRM, inventory, orders, finance, and people into one scoped workspace. Roles, permissions, and the audit trail come with it.",
     },
     {
-        title: "Read the market",
-        body: "Demand, competitors, and category shifts are read continuously from the sources that move your market—not after the quarter closes.",
+        title: "Ask across the business",
+        body: "SkyAgent answers from live records, flags low stock and unusual movement, and turns a question into a next step.",
     },
     {
-        title: "Decide with evidence",
-        body: "Every recommendation carries the records, sources, and reasoning behind it, so the next move is inspectable before it is approved.",
+        title: "Review before you act",
+        body: "Recommendations stop at the approval step. You can inspect the records and sources behind an answer before anything changes.",
     },
 ];
 
@@ -38,10 +38,10 @@ function HowItWorks() {
                         </h2>
                         <div className="lg:pt-2">
                             <p className="max-w-xl text-base leading-relaxed text-marketing-muted">
-                                Skyrict does not ask you to replace the systems
-                                you already run. It connects them, reads the
-                                market alongside them, and routes the next move
-                                to a person.
+                                Skyrict is a scoped ERP and an agent workspace
+                                in one. It reads your live operations, answers
+                                questions in plain language, and keeps the
+                                records behind each answer in view.
                             </p>
                             <Link
                                 href="/product"

@@ -10,29 +10,14 @@ import { Operations } from "@/components/marketing/sections/operations";
 import { Trust } from "@/components/marketing/sections/trust";
 import { site } from "@/config";
 
-const title = "Skyrict — the operating system for evidence-led companies";
-const description =
-    "Skyrict brings CRM, inventory, orders, finance, and people into one workspace, then reads the market alongside them. Run the business on live evidence.";
-
 export const metadata: Metadata = {
     title: {
-        absolute: title,
+        absolute: `${site.name} AI Business Operating System`,
     },
-    description,
+    description:
+        "Skyrict pairs a scoped ERP, inventory, sales, cash, and orders, with continuous market signals from Google Trends, YouTube, Reddit, GitHub, and news. AI agents read both at once and tell you what to do next.",
     alternates: {
         canonical: "/",
-    },
-    openGraph: {
-        title,
-        description,
-        url: "/",
-        siteName: site.name,
-        type: "website",
-    },
-    twitter: {
-        card: "summary_large_image",
-        title,
-        description,
     },
 };
 

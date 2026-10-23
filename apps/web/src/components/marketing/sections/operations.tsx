@@ -23,8 +23,8 @@ function Operations() {
                         <div className="lg:pb-1">
                             <p className="max-w-md text-base leading-relaxed text-marketing-muted">
                                 CRM, inventory, orders, finance, and people in
-                                one live system. No spreadsheets between teams,
-                                no stale numbers in the room.
+                                one live system. The records stay in one place,
+                                so teams work from the same numbers.
                             </p>
                             <Link
                                 href="/product"

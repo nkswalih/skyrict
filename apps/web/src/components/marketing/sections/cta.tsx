@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 
 function Cta({
     eyebrow = "Start free",
-    title = "Make your first call on live signals.",
-    description = "Create an account, connect your business, and Skyrict surfaces the market's next signal before it reaches your stock.",
+    title = "Make your first call on live numbers.",
+    description = "Create an account, set up your workspace, and ask SkyAgent what needs attention. The answer comes with the records behind it.",
     ctaLabel = "Get started",
     ctaHref = "/signup",
     secondaryCtaLabel = "Contact sales",

@@ -1,4 +1,4 @@
-import { ArrowRight, TrendingUp } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -54,22 +54,22 @@ const insightFeed = [
     {
         source: "Google Trends",
         text: "Earbuds demand +18% w/w",
-        time: "09:12 UTC",
+        time: "Example",
     },
     {
         source: "Reddit",
         text: "Thread on wireless earbuds is growing fast",
-        time: "08:47 UTC",
+        time: "Example",
     },
     {
         source: "YouTube",
         text: "Search share shifts to small size format",
-        time: "08:20 UTC",
+        time: "Example",
     },
     {
         source: "News",
         text: "Competitor restock delays reported",
-        time: "07:58 UTC",
+        time: "Example",
     },
 ];
 
@@ -97,7 +97,7 @@ function DataLayerVisual() {
                 label="Inventory · live"
                 right={
                     <span className="font-mono text-[10px] text-muted-foreground">
-                        Connected · 2 sources
+                        Scoped ERP · live
                     </span>
                 }
             />
@@ -160,15 +160,17 @@ function ContextLayerVisual() {
     return (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
             <PanelHeader
-                label="Market · continuous"
+                label="Market · in development"
                 right={
-                    <span className="flex items-center gap-1.5 text-[11px] font-medium text-primary">
-                        <TrendingUp aria-hidden="true" className="size-3" />
-                        +18% w/w
+                    <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Not live
                     </span>
                 }
             />
             <div className="space-y-3 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Planned sources
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                     {signalSources.map((source) => (
                         <span
@@ -179,7 +181,7 @@ function ContextLayerVisual() {
                         </span>
                     ))}
                 </div>
-                <SignalSparkline label="Earbuds search demand rising over eight weeks" />
+                <SignalSparkline label="Illustrative: earbuds search demand over eight weeks" />
                 <ul className="space-y-2">
                     {insightFeed.map((item) => (
                         <li
@@ -207,7 +209,7 @@ function DecisionLayerVisual() {
     return (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
             <PanelHeader
-                label="Agents · explanation attached"
+                label="Agents · sources attached"
                 right={
                     <span className="flex size-6 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
                         <AiGlyph aria-hidden="true" className="size-3.5" />
@@ -220,9 +222,9 @@ function DecisionLayerVisual() {
                 </div>
                 <ul className="space-y-2">
                     {[
-                        "Demand is up three straight weeks across Trends and Reddit.",
                         "Cover is two days, below the reorder point of five.",
-                        "Margin stays intact at the current price.",
+                        "Sales are running above the 30-day average.",
+                        "The reorder fits the current cash position.",
                     ].map((evidence) => (
                         <li
                             key={evidence}
@@ -241,7 +243,7 @@ function DecisionLayerVisual() {
                         Restock 600 units of size M
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                        Vendor lead time 5 days. Approve in one step.
+                        Vendor lead time 5 days. Send to Approvals.
                     </p>
                 </div>
             </div>
@@ -283,18 +285,18 @@ export default function ProductPage() {
                             The platform
                         </p>
                         <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl">
-                            One decision system for your operations and the
-                            market.
+                            One operating system for your operations, with
+                            agents on top.
                         </h1>
                         <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">
-                            Skyrict connects the ERP data you already run on
-                            with continuous market intelligence, then uses
-                            agents to turn the combination into recommended
-                            actions, with the reasoning attached.
+                            Skyrict brings CRM, inventory, orders, finance, HR,
+                            and reporting into one scoped ERP. SkyAgent answers
+                            questions from those live records and shows the
+                            sources behind its answers.
                         </p>
                         <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
                             <Button variant="brand" size="pill-lg" asChild>
-                                <Link href="/signup">Create your account</Link>
+                                <Link href="/signup">Try it free</Link>
                             </Button>
                             <Button
                                 variant="outline"
@@ -321,12 +323,12 @@ export default function ProductPage() {
                         <SectionHeader
                             eyebrow="Layer 01 · ERP and operations"
                             title="The data layer. Your operations, live."
-                            description="Skyrict reads the slice of your business that drives the rest: inventory, orders, sales, cash, payroll, HR, CRM, and reporting. It connects to the source of truth instead of asking for exports, so the numbers you decide on are the numbers your operations run on."
+                            description="Skyrict is the system of record for the slice of your business that drives the rest: inventory, orders, sales, cash, payroll, HR, CRM, and reporting. The records live in one place, so the numbers you decide on are the numbers your operations run on."
                         />
                         <ul className="mt-8 space-y-3">
                             {[
-                                "Connect the systems you already run.",
-                                "Skyrict reads live stock and movement.",
+                                "Run inventory, orders, sales, finance, CRM, HR, and reporting in one workspace.",
+                                "See live stock and movement.",
                                 "Every surface shows the same numbers.",
                             ].map((item) => (
                                 <li
@@ -343,8 +345,8 @@ export default function ProductPage() {
                         </ul>
                         <p className="mt-8 rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground">
                             Deliberately scoped. Skyrict is not a 400-module ERP
-                            swap. It is a live read of the operations that
-                            matter, connected without a migration project.
+                            replacement. It is a live operating core built
+                            around the modules that drive the rest.
                         </p>
                     </RevealSection>
                     <RevealSection delay={120} className="min-w-0">
@@ -359,9 +361,9 @@ export default function ProductPage() {
                         <RevealSection className="min-w-0">
                             <div className="lg:order-2">
                                 <SectionHeader
-                                    eyebrow="Layer 02 · Global market intelligence"
-                                    title="The context layer. The market, read continuously."
-                                    description="Demand trends, market movement, news, community signals, competitors, and category changes. Five public sources are watched around the clock, so a shift surfaces the week it happens, not a quarter later in a report."
+                                    eyebrow="Layer 02 · Global market intelligence (in development)"
+                                    title="The context layer. The market, being built into the workspace."
+                                    description="Demand trends, market movement, news, community signals, competitors, and category changes are the next layer. Skyrict is building a signal collection engine to read public sources and map them to the categories you sell. This layer is not live yet."
                                 />
                                 <div className="mt-8 grid gap-3 sm:grid-cols-2">
                                     {[
@@ -387,6 +389,11 @@ export default function ProductPage() {
                         <RevealSection delay={120} className="min-w-0">
                             <div className="lg:order-1">
                                 <ContextLayerVisual />
+                                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                                    Preview data. The signal collection engine
+                                    is in development and external signals are
+                                    not live yet.
+                                </p>
                             </div>
                         </RevealSection>
                     </div>
@@ -398,14 +405,14 @@ export default function ProductPage() {
                     <RevealSection className="min-w-0">
                         <SectionHeader
                             eyebrow="Layer 03 · AI agents"
-                            title="The decision layer. Agents that explain themselves."
-                            description="Guardian reports on what changed and why. Coaching turns history into playbooks. Your agents answer direct questions with both layers in context. Every recommended action carries the reasoning, so you can verify it before you approve it."
+                            title="The decision layer. Agents that show their work."
+                            description="SkyAgent answers direct questions from your live records and can show the sources behind an answer. Restock suggestions and anomaly detection are live. Guardian and Coaching consoles are in progress."
                         />
                         <ul className="mt-8 space-y-3">
                             {[
-                                "Guardian: daily risk and change reports.",
-                                "Coaching: playbooks built from your history.",
-                                "Your agents: ask with both layers in context.",
+                                "SkyAgent: ask across your live records.",
+                                "Restock and anomaly agents: suggestions and flags, live.",
+                                "Guardian and Coaching: consoles in progress.",
                             ].map((item) => (
                                 <li
                                     key={item}
@@ -430,9 +437,9 @@ export default function ProductPage() {
                 <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                     <RevealSection>
                         <SectionHeader
-                            eyebrow="How the layers connect"
-                            title="One decision, built from both truths."
-                            description="A single recommended action pulls the evidence from operations on one side and the market on the other. Nothing arrives as a bare suggestion."
+                            eyebrow="How the records connect"
+                            title="One decision, built from your live records."
+                            description="A single recommendation pulls the records behind it from stock, sales, and cash. Nothing arrives as a bare suggestion."
                         />
                     </RevealSection>
                     <RevealSection delay={120}>
@@ -440,12 +447,14 @@ export default function ProductPage() {
                             <div className="grid gap-6 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
                                 <div className="rounded-xl border border-border bg-muted/20 p-5">
                                     <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                                        Inside your operations
+                                        Stock and movement
                                     </p>
                                     <ul className="mt-4 space-y-2 text-sm text-foreground">
                                         <li>Cover on size M is 2 days</li>
                                         <li>3 low-stock alerts active</li>
-                                        <li>Cash on hand $84.2K</li>
+                                        <li>
+                                            Last restock arrived 12 days ago
+                                        </li>
                                     </ul>
                                 </div>
                                 <div className="hidden items-center justify-center lg:flex">
@@ -458,12 +467,12 @@ export default function ProductPage() {
                                 </div>
                                 <div className="rounded-xl border border-border bg-muted/20 p-5">
                                     <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                                        Outside, in the market
+                                        Sales and cash
                                     </p>
                                     <ul className="mt-4 space-y-2 text-sm text-foreground">
-                                        <li>Trends +18% w/w, up 3 weeks</li>
-                                        <li>Reddit mentions accelerating</li>
-                                        <li>Competitor supply tightening</li>
+                                        <li>Sales above the 30-day average</li>
+                                        <li>Cash available for the reorder</li>
+                                        <li>Supplier lead time is 5 days</li>
                                     </ul>
                                 </div>
                             </div>
@@ -475,9 +484,10 @@ export default function ProductPage() {
                                     Restock size M, 600 units
                                 </p>
                                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                                    Demand is up three weeks, cover is two days,
-                                    and margin holds at the current price.
-                                    Vendor lead time is five days.
+                                    Cover is two days, sales are above the
+                                    30-day average, and the reorder fits the
+                                    current cash position. Vendor lead time is
+                                    five days.
                                 </p>
                             </div>
                         </div>
@@ -488,9 +498,9 @@ export default function ProductPage() {
             <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                 <RevealSection>
                     <SectionHeader
-                        eyebrow="Tenants, integrations, and trust"
+                        eyebrow="Tenants and trust"
                         title="Built for real, tenant-based operations."
-                        description="The platform is designed around workspaces, roles, and verifiable security, with integrations that read your real systems."
+                        description="The platform is designed around workspaces, roles, and verifiable security."
                     />
                 </RevealSection>
                 <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -509,11 +519,11 @@ export default function ProductPage() {
                     <RevealSection delay={100}>
                         <div className="h-full rounded-2xl border border-border bg-card p-6">
                             <h3 className="font-display text-lg font-semibold text-foreground">
-                                Integrations
+                                Platform
                             </h3>
                             <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-                                <li>Connected source systems</li>
-                                <li>Progressive ERP sync</li>
+                                <li>Scoped ERP modules</li>
+                                <li>Role-based access</li>
                             </ul>
                             <Button
                                 variant="link"
@@ -521,7 +531,7 @@ export default function ProductPage() {
                                 asChild
                             >
                                 <Link href="/docs/getting-started/connect-operations">
-                                    How to connect your operations
+                                    How to set up your operations
                                 </Link>
                             </Button>
                         </div>
@@ -560,8 +570,8 @@ export default function ProductPage() {
 
             <Cta
                 eyebrow="Start free"
-                title="Connect your operations to the market."
-                description="Create an account, connect your business, and get a recommended next move built on both truths."
+                title="Run your operations from one live system."
+                description="Create an account, set up the modules you need, and ask SkyAgent what needs attention. The answer comes with the records behind it."
             />
         </>
     );
