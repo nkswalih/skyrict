@@ -176,9 +176,12 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
 
       <AuthButton
         type="submit"
-        className="w-full"
+        className="size-10 justify-self-end w-full"
         loading={isSubmitting}
         disabled={captchaVisible && !captchaValid}
+        variant="brand"
+        size="icon-lg"
+        
       >
         Continue with email
       </AuthButton>

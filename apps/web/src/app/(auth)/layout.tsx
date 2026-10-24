@@ -27,7 +27,7 @@ export default function AuthLayout({
 
             <main className="flex min-h-0 flex-col px-6 py-10 lg:overflow-y-auto">
                 <div className="mt-8 flex justify-center">
-                    <Logo className="text-foreground" />
+                    <Logo mark="rounded" className="text-foreground" />
                 </div>
 
                 <div className="mx-auto my-auto flex w-full max-w-sm flex-col py-10">

@@ -215,7 +215,7 @@ function VerifyStep({ email }: { email: string }) {
               type="button"
               onClick={handleResend}
               disabled={resending || resendIn > 0}
-              className="font-medium text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              className="font-medium text-foreground underline-offset-3 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
               {resending ? "Resending\n" : "Resend code"}
             </button>
@@ -225,7 +225,7 @@ function VerifyStep({ email }: { email: string }) {
           Wrong email?{" "}
           <Link
             href="/signup"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="font-medium text-foreground underline-offset-3 hover:underline"
           >
             Change it
           </Link>
@@ -234,7 +234,8 @@ function VerifyStep({ email }: { email: string }) {
 
       <AuthButton
         type="button"
-        className="w-full"
+        className="size-10 justify-self-end w-full"
+        variant="brand"
         loading={verifying}
         onClick={handleVerify}
       >

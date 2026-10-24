@@ -129,7 +129,7 @@ function OtpInput({
                         "disabled:cursor-not-allowed disabled:opacity-50",
                         error
                             ? "border-destructive"
-                            : "border-border hover:border-primary/60",
+                            : "border-border hover:border-foreground/60",
                     )}
                 />
             ))}

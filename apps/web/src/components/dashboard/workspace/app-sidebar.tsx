@@ -354,7 +354,7 @@ export function AppSidebar({
                                 ) : null}
                             </span>
                         ) : (
-                            <Logo wordmark={!collapsed} tone={logoTone} />
+                            <Logo wordmark={!collapsed} tone={logoTone} mark="rounded" />
                         )}
                     </Link>
                     <button
