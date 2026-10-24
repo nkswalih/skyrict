@@ -418,7 +418,7 @@ function PricingTiers({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "month"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >
@@ -431,7 +431,7 @@ function PricingTiers({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "year"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >

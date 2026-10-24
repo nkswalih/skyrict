@@ -96,7 +96,7 @@ function StateCard({
                 </div>
             </div>
             <Link href={actionHref} className="block">
-                <AuthButton className="w-full">{actionLabel}</AuthButton>
+                <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">{actionLabel}</AuthButton>
             </Link>
         </div>
     );

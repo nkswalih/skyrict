@@ -147,7 +147,7 @@ function VerifyStep({ email }: { email: string }) {
           {SESSION_EXPIRED}
         </div>
         <Link href="/signup" className="block">
-          <AuthButton className="w-full">
+          <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">
             Back to account details
           </AuthButton>
         </Link>

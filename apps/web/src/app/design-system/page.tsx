@@ -680,7 +680,7 @@ export default function DesignSystemPage() {
                                         <Input
                                             id="ds-email"
                                             type="email"
-                                            placeholder="name@company.com"
+                                            placeholder="Enter your work email."
                                         />
                                         <p className="text-xs text-muted-foreground">
                                             Use a visible label, not a

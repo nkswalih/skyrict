@@ -44,7 +44,7 @@ export default async function PlanPage({
                     </p>
                 </div>
                 <Link href="/signup" className="block">
-                    <AuthButton className="w-full">Start over</AuthButton>
+                    <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">Start over</AuthButton>
                 </Link>
             </div>
         );

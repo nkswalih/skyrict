@@ -126,7 +126,9 @@ function MfaVerifyForm({ mfaToken }: { mfaToken?: string }) {
             ) : null}
             <AuthButton
                 type="submit"
-                className="w-full"
+                className="size-10 justify-self-end w-full"
+                variant="brand"
+                size="icon-lg"
                 loading={verifying}
                 disabled={!codeReady}
             >

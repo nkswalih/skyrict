@@ -150,7 +150,7 @@ function SecurityStep({ email, vt }: { email: string; vt: string }) {
                 </p>
             ) : null}
 
-            <AuthButton type="submit" className="w-full" loading={isSubmitting}>
+            <AuthButton type="submit" className="size-10 justify-self-end w-full" variant="brand" size="icon-lg" loading={isSubmitting}>
                 Continue
             </AuthButton>
         </form>

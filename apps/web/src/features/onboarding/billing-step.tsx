@@ -214,7 +214,9 @@ function BillingStep({
                     </p>
                 </div>
                 <AuthButton
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={() => {
                         clearWizardSession();
                         router.push("/signup");
@@ -338,7 +340,9 @@ function BillingStep({
                             <AuthButton
                                 type="button"
                                 loading={creating}
-                                className="w-full"
+                                className="size-10 justify-self-end w-full"
+                                variant="brand"
+                                size="icon-lg"
                                 onClick={handleCheckout}
                             >
                                 Pay with card ·{" "}
@@ -361,7 +365,9 @@ function BillingStep({
                     ) : (
                         <AuthButton
                             type="button"
-                            className="w-full"
+                            className="size-10 justify-self-end w-full"
+                            variant="brand"
+                            size="icon-lg"
                             onClick={handleStarterContinue}
                         >
                             Continue for free

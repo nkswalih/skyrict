@@ -179,7 +179,9 @@ function InviteAcceptForm({
                 </div>
                 <AuthButton
                     type="button"
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={() => router.push("/signin")}
                 >
                     Sign in
@@ -315,7 +317,7 @@ function InviteAcceptForm({
                 </div>
             ) : null}
 
-            <AuthButton type="submit" className="w-full" loading={isSubmitting}>
+            <AuthButton type="submit" className="size-10 justify-self-end w-full" variant="brand" size="icon-lg" loading={isSubmitting}>
                 Accept invitation
             </AuthButton>
 

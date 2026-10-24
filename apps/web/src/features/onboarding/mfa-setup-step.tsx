@@ -177,7 +177,9 @@ function MfaSetupStep() {
                     </p>
                     <AuthButton
                         type="button"
-                        className="w-full"
+                        className="size-10 justify-self-end w-full"
+                        variant="brand"
+                        size="icon-lg"
                         onClick={() => window.location.reload()}
                     >
                         Try again
@@ -290,7 +292,9 @@ function MfaSetupStep() {
                         )}
                         <AuthButton
                             type="button"
-                            className="w-full"
+                            className="size-10 justify-self-end w-full"
+                            variant="brand"
+                            size="icon-lg"
                             loading={confirming}
                             onClick={confirm}
                         >
@@ -444,7 +448,9 @@ function MfaSetupStep() {
 
                     <AuthButton
                         type="button"
-                        className="w-full"
+                        className="size-10 justify-self-end w-full"
+                        variant="brand"
+                        size="icon-lg"
                         loading={handingOff}
                         disabled={!acknowledged}
                         onClick={finish}
