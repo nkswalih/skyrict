@@ -144,7 +144,7 @@ function DocsShell({ children }: { children: React.ReactNode }) {
                         aria-label="Skyrict home"
                         className="flex min-w-0 items-center gap-2.5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
-                        <Logo wordmark={false} className="[&>svg]:size-6" />
+                        <Logo wordmark={false} className="[&>svg]:size-6" mark="rounded"/>
                         <span className="text-[15px] font-medium tracking-tight">
                             Skyrict
                         </span>
@@ -229,7 +229,7 @@ function DocsShell({ children }: { children: React.ReactNode }) {
                                     aria-label="Skyrict home"
                                     className="flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                                 >
-                                    <Logo wordmark={false} className="[&>svg]:size-6" />
+                                    <Logo wordmark={false} className="[&>svg]:size-6" mark="rounded" />
                                 </Link>
                                 <span className="text-[15px] font-medium tracking-tight">
                                     Docs

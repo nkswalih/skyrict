@@ -49,7 +49,7 @@ export default async function OrganizationPage({
     return (
         <div className="space-y-6">
             <div className="space-y-2">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-foreground">
                     Step 5 of 7 · Organization
                 </p>
                 <h1 className="font-display text-2xl font-semibold text-foreground">
