@@ -1206,3 +1206,67 @@
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
   mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
 }
+
+/* ==========================================================================
+   THEME: DEMO (Brand White / Paper Canvas / Sky Accent)
+   Distinct from the paid green .theme-erp while retaining exact layout sizing.
+   ========================================================================== */
+
+.theme-demo {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+}
+
+/* Force light theme in demo mode even if system prefers dark */
+.dark .theme-demo {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+}
