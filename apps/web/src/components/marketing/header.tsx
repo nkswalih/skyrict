@@ -73,15 +73,6 @@ function Header() {
                                                 : "text-marketing-muted hover:bg-marketing-paper/70 hover:text-marketing-ink",
                                         )}
                                     >
-                                        {/* <span
-                                            aria-hidden="true"
-                                            className={cn(
-                                                "size-1.5 rounded-full bg-marketing-sky transition-opacity",
-                                                active
-                                                    ? "opacity-100"
-                                                    : "opacity-0 group-hover:opacity-70",
-                                            )}
-                                        /> */}
                                         {link.label}
                                     </Link>
                                 );
@@ -95,7 +86,7 @@ function Header() {
                                 size="pill"
                                 className="text-marketing-muted hover:bg-marketing-ink/[0.04] hover:text-marketing-ink"
                             >
-                                <Link href="/contact">Book a walkthrough</Link>
+                                <Link href="/demo/erp">Try demo</Link>
                             </Button>
                             <Button asChild variant="brand" size="pill">
                                 <Link href="/signup">
@@ -198,10 +189,10 @@ function Header() {
                             className="flex-1 rounded-full border-marketing-ink/15 bg-transparent px-3.5 text-marketing-ink hover:bg-marketing-ink/[0.04]"
                         >
                             <Link
-                                href="/contact"
+                                href="/demo/erp"
                                 onClick={() => setOpen(false)}
                             >
-                                Book a walkthrough
+                                Try demo
                             </Link>
                         </Button>
                         <Button
