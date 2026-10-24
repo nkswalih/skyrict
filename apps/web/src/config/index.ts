@@ -52,7 +52,7 @@ export const footerColumns: FooterColumn[] = [
             { label: "About", href: "/about" },
             { label: "Contact", href: "/contact" },
             { label: "Get started", href: "/signup" },
-            { label: "Book a walkthrough", href: "/contact" },
+            { label: "Try demo", href: "/demo/erp" },
         ],
     },
 ];
