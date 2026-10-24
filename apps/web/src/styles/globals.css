@@ -1207,10 +1207,10 @@
   mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
 }
 
-/* ==========================================================================
+/* -------------------------------------------------------------------------
    THEME: DEMO (Brand White / Paper Canvas / Sky Accent)
    Distinct from the paid green .theme-erp while retaining exact layout sizing.
-   ========================================================================== */
+* ------------------------------------------------------------------------- */
 
 .theme-demo {
   color-scheme: light;
