@@ -15,6 +15,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import type { AuthUser } from "@/lib/api/auth-api";
+import { useDemo } from "@/components/demo/demo-provider";
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +39,19 @@ function avatarSrc(user: AuthUser | null): string | null {
  */
 export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
     const { user, logout } = useSession();
+    const { state: demoState } = useDemo();
     const pathname = usePathname();
+    const demoMode = pathname?.startsWith("/demo") ?? false;
     const [open, setOpen] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const lastPathname = useRef(pathname);
+
+    const displayName = demoMode
+        ? demoState.profile.fullName
+        : user?.fullName || user?.email || "Account";
+    const displayEmail = demoMode ? demoState.profile.email : user?.email;
+    const profileHref = demoMode ? "/demo/erp/settings" : "/settings";
 
     useEffect(() => {
         if (lastPathname.current !== pathname) {
@@ -72,7 +81,7 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
         };
     }, [open]);
 
-    const src = avatarSrc(user);
+    const src = demoMode ? null : avatarSrc(user);
 
     return (
         <div ref={rootRef} className="relative">
@@ -81,17 +90,20 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                 onClick={() => setOpen((value) => !value)}
                 aria-haspopup="menu"
                 aria-expanded={open}
-                title={
-                    collapsed
-                        ? user?.fullName || user?.email || "Account"
-                        : undefined
-                }
+                title={collapsed ? displayName : undefined}
                 className={cn(
                     "flex w-full items-center gap-3 rounded-lg text-left transition-colors hover:bg-muted/60",
                     collapsed ? "justify-center px-2 py-1" : "px-2 py-1.5",
                 )}
             >
-                <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 text-[11px] font-semibold text-primary-foreground">
+                <span
+                    className={cn(
+                        "flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold",
+                        demoMode
+                            ? "bg-gradient-to-br from-primary to-sky-400 text-primary-foreground ring-2 ring-primary/20"
+                            : "bg-primary/15 text-primary-foreground",
+                    )}
+                >
                     {src ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -104,17 +116,20 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                             className="size-full object-cover"
                         />
                     ) : (
-                        initialsFor(user?.fullName ?? "", user?.email ?? "")
+                        initialsFor(
+                            demoMode ? demoState.profile.fullName : (user?.fullName ?? ""),
+                            demoMode ? demoState.profile.email : (user?.email ?? ""),
+                        )
                     )}
                 </span>
                 {!collapsed ? (
                     <>
                         <span className="min-w-0 flex-1">
                             <span className="block truncate text-xs font-medium text-foreground">
-                                {user?.fullName || user?.email || "Account"}
+                                {displayName}
                             </span>
                             <span className="block truncate text-[11px] text-muted-foreground">
-                                {user?.email}
+                                {displayEmail}
                             </span>
                         </span>
                         <ChevronDown
@@ -141,7 +156,7 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                 >
                     <Link
                         role="menuitem"
-                        href="/settings"
+                        href={profileHref}
                         prefetch={false}
                         onClick={() => setOpen(false)}
                         className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
@@ -175,8 +190,9 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                     <DialogHeader>
                         <DialogTitle>Sign out?</DialogTitle>
                         <DialogDescription>
-                            You&apos;ll need to sign in again to access your
-                            workspace.
+                            {demoMode
+                                ? "You'll leave the demo and return to the marketing site. Your sample edits stay saved in this browser."
+                                : "You'll need to sign in again to access your workspace."}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -190,6 +206,10 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                             variant="destructive"
                             onClick={() => {
                                 setConfirmOpen(false);
+                                if (demoMode) {
+                                    window.location.assign("/");
+                                    return;
+                                }
                                 void logout();
                             }}
                         >

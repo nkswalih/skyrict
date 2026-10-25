@@ -4,51 +4,61 @@ import { Users, ShoppingCart, Package, Wallet, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/shared/page-header";
 import { useDemo } from "@/components/demo/demo-provider";
-import { Button } from "@/components/ui/button";
 
 export default function DemoDashboardPage() {
   const { state } = useDemo();
 
+  const openOpportunities = state.opportunities.filter(
+    (opportunity) => opportunity.stage !== "won" && opportunity.stage !== "lost",
+  );
+  const openPipeline = openOpportunities.reduce(
+    (total, opportunity) => total + opportunity.amount,
+    0,
+  );
+  const confirmedOrders = state.orders.filter(
+    (order) => order.status === "confirmed" || order.status === "fulfilled",
+  );
+  const confirmedVolume = confirmedOrders.reduce(
+    (total, order) => total + order.total,
+    0,
+  );
+  const activeEmployees = state.employees.filter(
+    (employee) => employee.employmentStatus === "active",
+  );
+
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between">
-        <PageHeader
-          title="Business Operations"
-          description="Integrated management across sales, inventory, payroll, and financials."
-          icon={Package}
-        />
-        <Button asChild variant="brand" size="sm">
-          <Link href="/signup">
-            Deploy Live Instance <ArrowRight className="ml-1 size-3.5" />
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Business Operations"
+        description="Integrated management across sales, inventory, payroll, and financials."
+        icon={Package}
+      />
 
       {/* KPI Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase">
-            <span>Active Pipeline</span>
+            <span>Open Pipeline</span>
             <Wallet className="size-4 text-primary" />
           </div>
           <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-            ₹{state.opportunities.reduce((acc, o) => acc + o.amount, 0).toLocaleString()}
+            ₹{openPipeline.toLocaleString()}
           </p>
           <span className="text-xs text-emerald-600 mt-1 inline-block font-medium">
-            {state.opportunities.length} open opportunities
+            {openOpportunities.length} active opportunities
           </span>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase">
-            <span>Orders Confirmed</span>
+            <span>Confirmed Orders</span>
             <ShoppingCart className="size-4 text-primary" />
           </div>
           <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-            {state.orders.length}
+            {confirmedOrders.length}
           </p>
           <span className="text-xs text-muted-foreground mt-1 inline-block font-medium">
-            ₹{state.orders.reduce((acc, o) => acc + o.total, 0).toLocaleString()} volume
+            ₹{confirmedVolume.toLocaleString()} booked volume
           </span>
         </div>
 
@@ -74,7 +84,7 @@ export default function DemoDashboardPage() {
             {state.employees.length}
           </p>
           <span className="text-xs text-muted-foreground mt-1 inline-block font-medium">
-            100% active roster
+            {activeEmployees.length} active of {state.employees.length} on roster
           </span>
         </div>
       </div>
