@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 const PROMPT =
     "Draft a concise follow-up email to Zephyr Airlines about the loyalty rebuild opportunity. Mention the $310,000 proposal and ask for a decision by 16 November.";
 
-const ANSWER = `Subject: Zephyr Airlines — loyalty rebuild proposal
+const ANSWER = `Subject: Zephyr Airlines loyalty rebuild proposal
 
 Hi Zephyr team,
 
@@ -32,7 +32,7 @@ const ANSWER_TOKENS = ANSWER.match(/\S+\s*/g) ?? [];
 const SOURCES = [
     {
         label: "Opportunity",
-        value: "Zephyr Airlines — loyalty rebuild",
+        value: "Zephyr Airlines loyalty rebuild",
     },
     {
         label: "Value",
