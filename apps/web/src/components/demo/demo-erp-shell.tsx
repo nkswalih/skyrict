@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/dashboard/workspace/app-sidebar";
 import { Topbar } from "@/components/dashboard/workspace/topbar";
 import { erpNavGroups, type NavGroup, type NavItem } from "@/components/dashboard/workspace/sidebar-config";
 import { DemoBanner } from "@/components/demo/demo-banner";
+import { DemoNotificationCenter } from "@/components/demo/demo-notification-center";
 import { useDemo } from "@/components/demo/demo-provider";
 
 const COLLAPSED_KEY = "skyrict:sidebar:collapsed";
@@ -83,11 +84,19 @@ export function DemoErpShell({ children }: { children: React.ReactNode }) {
         accountItems={[]}
         brandHref="/demo/erp"
         logoTone="sky"
+        demoProfile={{
+          fullName: state.profile.fullName,
+          email: state.profile.email,
+        }}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <DemoBanner />
-        <Topbar demoMode onOpenMenu={() => setMobileOpen(true)} />
+        <Topbar
+          demoMode
+          onOpenMenu={() => setMobileOpen(true)}
+          notificationSlot={<DemoNotificationCenter />}
+        />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 lg:py-8">
             {children}

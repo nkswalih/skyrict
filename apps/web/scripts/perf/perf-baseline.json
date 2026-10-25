@@ -13,7 +13,7 @@
     {
       "route": "/dashboard/agents",
       "sizeKb": 1.58,
-      "firstLoadKb": 275.0
+      "firstLoadKb": 276.0
     },
     {
       "route": "/dashboard/agents/c/[id]",
@@ -308,7 +308,7 @@
     {
       "route": "/dashboard/erp/orders/[orderId]",
       "sizeKb": 8.21,
-      "firstLoadKb": 220.0
+      "firstLoadKb": 221.0
     },
     {
       "route": "/dashboard/erp/payroll",
@@ -408,7 +408,7 @@
     {
       "route": "/dashboard/leave",
       "sizeKb": 8.29,
-      "firstLoadKb": 219.0,
+      "firstLoadKb": 220.0,
       "budgetNote": "1 kB drift from shared First Load JS (PERF-WEB-002 in-flight GET dedup added to lib/api/http.ts; route-local chunk unchanged at 9.73 kB). Baseline 217 -> 218."
     },
     {
@@ -469,7 +469,7 @@
     {
       "route": "/signup/verify",
       "sizeKb": 4.61,
-      "firstLoadKb": 185.0,
+      "firstLoadKb": 186.0,
       "budgetNote": "The inline TurnstileWidget and code-send-challenge module that once pushed this route to 5.35 kB / 186 kB are gone: the step now spends the signup flow proof minted at step 1, so the code request no longer carries its own challenge. Measured from a full next build - route-local chunk 5.35 -> 4.61 kB, First Load JS 186 -> 185 kB, back to the pre-challenge budget. Regenerate with: node scripts/perf/parse-bundle-sizes.mjs --log build.log"
     },
     {

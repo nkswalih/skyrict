@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { CircleHelp, Menu, Settings } from "lucide-react";
 
 import { NotificationCenter } from "@/features/notifications/notification-center";
-import { DemoNotificationCenter } from "@/components/demo/demo-notification-center";
 import {
     Tooltip,
     TooltipContent,
@@ -18,11 +17,17 @@ import { PAGE_TITLE_EVENT } from "@/lib/topbar-title";
 
 interface TopbarProps {
     onOpenMenu: () => void;
-    /** Public demo shell: demo-safe settings, inbox and conversion CTA. */
+    /** Public demo shell: demo-safe settings and inbox routing. */
     demoMode?: boolean;
+    /** Injected by the demo shell so the live bundle never imports demo code. */
+    notificationSlot?: React.ReactNode;
 }
 
-export function Topbar({ onOpenMenu, demoMode = false }: TopbarProps) {
+export function Topbar({
+    onOpenMenu,
+    demoMode = false,
+    notificationSlot,
+}: TopbarProps) {
     const pathname = usePathname();
     const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
 
@@ -85,7 +90,7 @@ export function Topbar({ onOpenMenu, demoMode = false }: TopbarProps) {
                                 Settings
                             </TooltipContent>
                         </Tooltip>
-                        <DemoNotificationCenter />
+                        {notificationSlot}
                     </>
                 ) : (
                     <>

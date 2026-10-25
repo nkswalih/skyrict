@@ -17,7 +17,7 @@ import {
     type NavGroup,
     type NavItem,
 } from "@/components/dashboard/workspace/sidebar-config";
-import { UserMenu } from "@/components/dashboard/workspace/user-menu";
+import { UserMenu, type UserMenuProfile } from "@/components/dashboard/workspace/user-menu";
 import { cn } from "@/lib/utils";
 
 function SidebarLink({
@@ -245,6 +245,8 @@ export interface AppSidebarProps {
     logoTone?: LogoMarkTone;
     /** Module sidebars render a "Back to overview" link above the footer. */
     showBackToOverview?: boolean;
+    /** Public demo persona for the footer account menu. */
+    demoProfile?: UserMenuProfile | null;
 }
 
 export function AppSidebar({
@@ -257,6 +259,7 @@ export function AppSidebar({
     brandHref = "/",
     logoTone = "sky",
     showBackToOverview = false,
+    demoProfile = null,
 }: AppSidebarProps) {
     const pathname = usePathname();
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -551,7 +554,7 @@ export function AppSidebar({
                     data-tour="sidebar-profile"
                     className="border-t border-sidebar-border p-3"
                 >
-                    <UserMenu collapsed={collapsed} />
+                    <UserMenu collapsed={collapsed} demoProfile={demoProfile} />
                 </footer>
             </aside>
         </>

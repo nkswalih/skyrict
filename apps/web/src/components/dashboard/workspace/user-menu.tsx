@@ -15,7 +15,6 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import type { AuthUser } from "@/lib/api/auth-api";
-import { useDemo } from "@/components/demo/demo-provider";
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
@@ -32,26 +31,39 @@ function avatarSrc(user: AuthUser | null): string | null {
     return user?.avatarUrl ? `/api/auth/avatar/${user.avatarUrl}` : null;
 }
 
+export interface UserMenuProfile {
+    fullName: string;
+    email: string;
+}
+
 /**
  * Sidebar user menu. The avatar + name row is the trigger; clicking it opens a
  * menu with Profile settings and Sign out, so the logout action no longer sits
  * directly in the footer.
+ *
+ * Passing `demoProfile` keeps the public walkthrough fully demo-safe without
+ * pulling the demo store into the authenticated dashboard bundle.
  */
-export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
+export function UserMenu({
+    collapsed = false,
+    demoProfile = null,
+}: {
+    collapsed?: boolean;
+    demoProfile?: UserMenuProfile | null;
+}) {
     const { user, logout } = useSession();
-    const { state: demoState } = useDemo();
     const pathname = usePathname();
-    const demoMode = pathname?.startsWith("/demo") ?? false;
+    const demoMode = demoProfile !== null;
     const [open, setOpen] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const lastPathname = useRef(pathname);
 
-    const displayName = demoMode
-        ? demoState.profile.fullName
+    const displayName = demoProfile
+        ? demoProfile.fullName
         : user?.fullName || user?.email || "Account";
-    const displayEmail = demoMode ? demoState.profile.email : user?.email;
-    const profileHref = demoMode ? "/demo/erp/settings" : "/settings";
+    const displayEmail = demoProfile ? demoProfile.email : user?.email;
+    const profileHref = demoProfile ? "/demo/erp/settings" : "/settings";
 
     useEffect(() => {
         if (lastPathname.current !== pathname) {
@@ -117,8 +129,8 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
                         />
                     ) : (
                         initialsFor(
-                            demoMode ? demoState.profile.fullName : (user?.fullName ?? ""),
-                            demoMode ? demoState.profile.email : (user?.email ?? ""),
+                            demoProfile ? demoProfile.fullName : (user?.fullName ?? ""),
+                            demoProfile ? demoProfile.email : (user?.email ?? ""),
                         )
                     )}
                 </span>
