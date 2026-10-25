@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import {
     createContext,
     useCallback,
@@ -31,7 +32,11 @@ interface SessionContextValue {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-    const [status, setStatus] = useState<SessionStatus>("loading");
+    const pathname = usePathname();
+    // The public demo is a session-free marketing surface: hydrating the BFF
+    // session there leaked `/api/auth/session` traffic into the walkthrough.
+    const isDemo = pathname?.startsWith("/demo") ?? false;
+    const [status, setStatus] = useState<SessionStatus>(isDemo ? "unauthenticated" : "loading");
     const [user, setUser] = useState<AuthUser | null>(null);
 
     const restore = useCallback(async () => {
@@ -64,8 +69,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     useEffect(() => {
+        if (isDemo) {
+            setAccessToken(null);
+            setUser(null);
+            setStatus("unauthenticated");
+            return;
+        }
         void restore();
-    }, [restore]);
+    }, [restore, isDemo]);
 
     const logout = useCallback(async () => {
         try {

@@ -1,8 +1,16 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { getDemoState, resetDemoState, setDemoState, type DemoState } from "@/lib/demo/demo-store";
+import {
+  createDemoSeedState,
+  ensureDemoStorage,
+  getDemoState,
+  resetDemoState,
+  setDemoState,
+  subscribeDemoState,
+  type DemoState,
+} from "@/lib/demo/demo-store";
 import { installDemoNetworkGuard } from "@/lib/demo/demo-network-guard";
 
 interface DemoContextType {
@@ -14,28 +22,36 @@ interface DemoContextType {
 
 const DemoContext = createContext<DemoContextType | null>(null);
 
+// Direct loads of a demo URL should be guarded before React hydrates. SPA
+// navigation into /demo is covered by the effect below.
+if (typeof window !== "undefined" && window.location.pathname.startsWith("/demo")) {
+  installDemoNetworkGuard();
+}
+
 export function DemoProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Automatically activate when on any /demo route, eliminating "Not in demo mode" gates
+  // Automatically activate when on any /demo route, eliminating "Not in demo mode" gates.
   const isDemoPath = pathname?.startsWith("/demo") ?? false;
-  const [state, setStateInternal] = useState<DemoState>(getDemoState);
+
+  // Server and first client render both use the deterministic seed, so the
+  // markup matches. Stored edits are loaded after mount (DEMO-001).
+  const [state, setStateInternal] = useState<DemoState>(() => createDemoSeedState());
 
   useEffect(() => {
+    if (!isDemoPath) return;
     installDemoNetworkGuard();
-    const handleSync = () => setStateInternal(getDemoState());
-    window.addEventListener("skyrict:demo-storage-changed", handleSync);
-    return () => window.removeEventListener("skyrict:demo-storage-changed", handleSync);
-  }, []);
+    ensureDemoStorage();
+    setStateInternal(getDemoState());
+    return subscribeDemoState(() => setStateInternal(getDemoState()));
+  }, [isDemoPath]);
 
   const updateState = useCallback((fn: (current: DemoState) => DemoState) => {
     const updated = fn(getDemoState());
-    setDemoState(updated);
-    setStateInternal(updated);
+    setStateInternal(setDemoState(updated));
   }, []);
 
   const reset = useCallback(() => {
-    const fresh = resetDemoState();
-    setStateInternal(fresh);
+    setStateInternal(resetDemoState());
   }, []);
 
   return (
