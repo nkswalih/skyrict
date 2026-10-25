@@ -39,8 +39,8 @@ test("reports workspace smoke: auth, live catalog, and report run", async ({
   await test.step("page loads authenticated", async () => {
     await page.goto("/dashboard/erp/reports");
 
-    // The dashboard top bar renders a second h1 ("Business Operations · …"),
-    // so match the page heading exactly.
+    // The top bar shows the current page as plain text (not a heading), so
+    // match the page heading exactly.
     await expect(
       page.getByRole("heading", { level: 1, name: "Reports", exact: true }),
     ).toBeVisible();
@@ -77,8 +77,8 @@ test("reports workspace smoke: auth, live catalog, and report run", async ({
       .click();
 
     // Report detail heading (the client-side router has already landed on the
-    // detail route at this point). The topbar h1 also carries the dynamic
-    // "· Pipeline value by stage" title, so the match must be exact.
+    // detail route at this point). The top bar carries the dynamic
+    // "· Pipeline value by stage" text, so the match must be exact.
     await expect(
       page.getByRole("heading", {
         level: 1,

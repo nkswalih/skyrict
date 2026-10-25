@@ -38,6 +38,14 @@
  * fixture in fixtures/tenants.ts) so its cookie jar advances a single rotation
  * chain (T0 -> T1 -> ...), exactly what identity expects. Never load the same
  * storage-state snapshot into two contexts.
+ *
+ * The demo project (demo-erp.spec.ts)
+ * -----------------------------------
+ * /demo/erp is the public walkthrough. It is deliberately NOT an authenticated
+ * workspace route: the demo lives on the marketing surface (bare `localhost` /
+ * `web.*`), never on `{tenant}.localhost`. The project overrides `baseURL`
+ * with that marketing origin and has no `setup` dependency, because a
+ * first-time visitor has no session.
  */
 
 import { defineConfig } from "@playwright/test";
@@ -49,6 +57,21 @@ import { defineConfig } from "@playwright/test";
 require("./e2e/localhost-dns.cjs");
 
 const baseURL = process.env.E2E_BASE_URL ?? "http://default.localhost:3000";
+
+/**
+ * The demo project must land on the marketing surface (bare `localhost`), not
+ * the authenticated tenant origin the rest of the suite uses. In CI nginx
+ * serves that surface through its `server_name localhost` block, so replacing
+ * just the host keeps scheme + port. Override outright with E2E_DEMO_BASE_URL
+ * if the marketing surface lives on another origin.
+ */
+const demoBaseURL =
+    process.env.E2E_DEMO_BASE_URL ??
+    (() => {
+        const url = new URL(baseURL);
+        url.hostname = "localhost";
+        return url.origin;
+    })();
 
 /*
  * CI boots the whole stack (nginx + services via docker compose) and runs
@@ -139,6 +162,14 @@ export default defineConfig({
             // Cold-start trace (PERF-WEB-002): worker-scoped `workspace` fixture
             // signs in through the real surface; the spec opens a fresh page so
             // the cookie-rotation chain stays private to the worker (see header).
+        },
+        {
+            name: "demo",
+            testMatch: /demo-erp\.spec\.ts$/,
+            // No `dependencies: ["setup"]` on purpose: a logged-out visitor is
+            // the primary demo audience, and the marketing surface never reads
+            // the workspace session cookie.
+            use: { baseURL: demoBaseURL },
         },
     ],
     ...(webServer ? { webServer } : {}),

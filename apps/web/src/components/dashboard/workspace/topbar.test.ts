@@ -33,4 +33,43 @@ describe("resolvePageTitle", () => {
             "AI Agents · C · Abc",
         );
     });
+
+    it("resolves short page-level titles for the public demo", () => {
+        expect(resolvePageTitle("/demo")).toBe("Interactive Demo");
+        expect(resolvePageTitle("/demo/erp")).toBe("Business Operations");
+        expect(resolvePageTitle("/demo/erp/crm/leads")).toBe("Leads");
+        expect(resolvePageTitle("/demo/erp/crm/overview")).toBe("CRM Overview");
+        expect(resolvePageTitle("/demo/erp/inventory/abc")).toBe("ABC");
+        expect(resolvePageTitle("/demo/erp/crm/leads/lead-1")).toBe(
+            "Lead Detail",
+        );
+        expect(resolvePageTitle("/demo/erp/hr/data-quality")).toBe(
+            "Data Quality",
+        );
+    });
+
+    it("resolves account and settings titles for the public demo", () => {
+        expect(resolvePageTitle("/demo/erp/profile")).toBe("Profile");
+        expect(resolvePageTitle("/demo/erp/settings")).toBe(
+            "Profile & settings",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/appearance")).toBe(
+            "Appearance",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/workspace")).toBe(
+            "Workspace preferences",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/notifications")).toBe(
+            "Notification preferences",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/billing")).toBe(
+            "Plans & billing",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/security")).toBe(
+            "Security & access",
+        );
+        expect(resolvePageTitle("/demo/erp/settings/integrations")).toBe(
+            "Integrations",
+        );
+    });
 });
