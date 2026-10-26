@@ -26,7 +26,7 @@ export default async function BillingPage({
     return (
         <div className="space-y-6">
             <div className="space-y-2">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-foreground">
                     Step 6 of 7 · Billing
                 </p>
                 <h1 className="font-display text-2xl font-semibold text-foreground">

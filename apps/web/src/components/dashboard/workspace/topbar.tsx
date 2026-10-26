@@ -17,9 +17,17 @@ import { PAGE_TITLE_EVENT } from "@/lib/topbar-title";
 
 interface TopbarProps {
     onOpenMenu: () => void;
+    /** Public demo shell: demo-safe settings and inbox routing. */
+    demoMode?: boolean;
+    /** Injected by the demo shell so the live bundle never imports demo code. */
+    notificationSlot?: React.ReactNode;
 }
 
-export function Topbar({ onOpenMenu }: TopbarProps) {
+export function Topbar({
+    onOpenMenu,
+    demoMode = false,
+    notificationSlot,
+}: TopbarProps) {
     const pathname = usePathname();
     const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
 
@@ -57,51 +65,79 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
                 >
                     <Menu aria-hidden="true" className="size-5" />
                 </button>
-                <h1 className="truncate font-display text-lg font-semibold tracking-tight text-foreground">
+                <p className="truncate font-display text-lg font-semibold tracking-tight text-foreground">
                     {title}
-                </h1>
+                </p>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-                {(pathname === "/" || pathname === "/dashboard") && (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <button
-                                type="button"
-                                aria-label="Replay product tour"
-                                onClick={() =>
-                                    window.dispatchEvent(
-                                        new Event("skyrict:start-tour"),
-                                    )
-                                }
-                                className="flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
-                            >
-                                <CircleHelp
-                                    aria-hidden="true"
-                                    className="size-5"
-                                />
-                            </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" sideOffset={6}>
-                            Replay tour
-                        </TooltipContent>
-                    </Tooltip>
+                {demoMode ? (
+                    <>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Link
+                                    href="/demo/erp/settings"
+                                    aria-label="Settings"
+                                    className="flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
+                                >
+                                    <Settings
+                                        aria-hidden="true"
+                                        className="size-5"
+                                    />
+                                </Link>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" sideOffset={6}>
+                                Settings
+                            </TooltipContent>
+                        </Tooltip>
+                        {notificationSlot}
+                    </>
+                ) : (
+                    <>
+                        {(pathname === "/" || pathname === "/dashboard") && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        type="button"
+                                        aria-label="Replay product tour"
+                                        onClick={() =>
+                                            window.dispatchEvent(
+                                                new Event("skyrict:start-tour"),
+                                            )
+                                        }
+                                        className="flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
+                                    >
+                                        <CircleHelp
+                                            aria-hidden="true"
+                                            className="size-5"
+                                        />
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" sideOffset={6}>
+                                    Replay tour
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Link
+                                    href="/settings"
+                                    aria-label="Settings"
+                                    className="flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
+                                >
+                                    <Settings
+                                        aria-hidden="true"
+                                        className="size-5"
+                                    />
+                                </Link>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" sideOffset={6}>
+                                Settings
+                            </TooltipContent>
+                        </Tooltip>
+                        <NotificationCenter />
+                    </>
                 )}
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Link
-                            href="/settings"
-                            aria-label="Settings"
-                            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
-                        >
-                            <Settings aria-hidden="true" className="size-5" />
-                        </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" sideOffset={6}>
-                        Settings
-                    </TooltipContent>
-                </Tooltip>
-                <NotificationCenter />
             </div>
         </header>
     );

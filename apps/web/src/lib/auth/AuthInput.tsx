@@ -22,7 +22,6 @@ const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
             label,
             error,
             hint,
-            icon: Icon,
             trailing,
             id,
             className,
@@ -40,12 +39,6 @@ const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
                     {label}
                 </Label>
                 <div className="relative">
-                    {Icon ? (
-                        <Icon
-                            aria-hidden="true"
-                            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        />
-                    ) : null}
                     <Input
                         ref={ref}
                         id={id}
@@ -55,7 +48,6 @@ const AuthInput = forwardRef<HTMLInputElement, AuthInputProps>(
                         }
                         className={cn(
                             "h-10",
-                            Icon && "pl-9",
                             trailing && "pr-10",
                             error && "pr-3",
                             className,

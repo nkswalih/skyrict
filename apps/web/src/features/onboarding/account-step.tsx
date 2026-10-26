@@ -127,13 +127,13 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
         id="email"
         type="email"
         autoComplete="email"
-        placeholder="name@company.com"
+        placeholder="Enter your work email"
         icon={Mail}
         error={errors.email?.message}
         {...register("email")}
       />
 
-      <div className="pt-1">
+      <div className="">
         <RiskChallenge
           demoCaptcha={demoCaptcha}
           onShowChange={setCaptchaVisible}
@@ -141,16 +141,16 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
           onValidChange={handleCaptchaValid}
         />
         {captchaVisible && !captchaValid ? (
-          <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+          <p className="text-xs font-medium text-muted-foreground">
             Complete the security check to continue.
           </p>
         ) : captchaError ? (
-          <p className="mt-1.5 text-xs font-medium text-destructive">
+          <p className="text-xs font-medium text-destructive">
             Confirm you&apos;re not a robot to continue.
           </p>
         ) : null}
         {submitError ? (
-          <p className="mt-1.5 text-xs font-medium text-destructive">
+          <p className="text-xs font-medium text-destructive">
             {submitError}
           </p>
         ) : null}
@@ -160,14 +160,14 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
         By signing up, I agree to the Skyrict{" "}
         <Link
           href="/terms"
-          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap text-foreground hover:text-foreground-muted"
         >
           Terms of Service
         </Link>{" "}
         and{" "}
         <Link
           href="/privacy"
-          className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
+          className="whitespace-nowrap text-foreground hover:text-foreground"
         >
           Privacy Policy
         </Link>
@@ -176,9 +176,12 @@ function AccountStep({ demoCaptcha = false }: { demoCaptcha?: boolean }) {
 
       <AuthButton
         type="submit"
-        className="w-full"
+        className="size-10 justify-self-end w-full"
         loading={isSubmitting}
         disabled={captchaVisible && !captchaValid}
+        variant="brand"
+        size="icon-lg"
+        
       >
         Continue with email
       </AuthButton>

@@ -154,7 +154,9 @@ function ReviewStep({
                     </p>
                 </div>
                 <AuthButton
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={() => {
                         clearWizardSession();
                         window.location.assign("/signup");
@@ -258,7 +260,9 @@ function ReviewStep({
                 <div className="space-y-3">
                     <AuthButton
                         type="button"
-                        className="w-full"
+                        className="size-10 justify-self-end w-full"
+                        variant="brand"
+                        size="icon-lg"
                         onClick={() =>
                             window.location.assign(
                                 signinTarget(session.slug, session.email),

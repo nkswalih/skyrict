@@ -1,479 +1,945 @@
-import { ArrowRight, TrendingUp } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import {
+    ArrowRight,
+    ArrowUpRight,
+    Code2,
+    Database,
+    Fingerprint,
+    Lock,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AiGlyph } from "@/components/brand/logo";
+import { ProductFigure } from "@/components/marketing/product/product-figure";
+import { SkyAgentReplay } from "@/components/marketing/product/skyagent-replay";
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
-import { SignalSparkline } from "@/components/marketing/signal-sparkline";
+import { Faq } from "@/components/marketing/sections/faq";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import { Button } from "@/components/ui/button";
-import { signalSources } from "@/config";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-    title: "Product",
+    title: "Product: Skyrict ERP and SkyAgent",
     description:
-        "Skyrict connects ERP operations, global market intelligence, and AI agents into one decision system. See the data layer, context layer, and decision layer.",
+        "See the Skyrict ERP and SkyAgent workspace: HR, payroll, finance, reports, inventory, orders, and CRM. Explore how the records connect and how the agent drafts from them.",
     alternates: {
         canonical: "/product",
     },
 };
 
-const inventoryRows = [
-    { sku: "EARB-M", name: "Earbuds, size M", stock: "124", cover: "2d", status: "Low" },
-    { sku: "EARB-L", name: "Earbuds, size L", stock: "512", cover: "8d", status: "OK" },
-    { sku: "CBL-1M", name: "USB-C cable, 1m", stock: "318", cover: "11d", status: "OK" },
-    { sku: "PWR-65W", name: "65W charger", stock: "96", cover: "3d", status: "Low" },
+const delay = (ms: number) => ({ "--sky-delay": `${ms}ms` }) as CSSProperties;
+
+const heroMetrics = [
+    { label: "Active employees", value: "21" },
+    { label: "Latest run", value: "$2,456,500" },
+    { label: "Revenue booked", value: "$25,320" },
+    { label: "Low-stock SKUs", value: "8" },
 ];
 
-const insightFeed = [
-    { source: "Google Trends", text: "Earbuds demand +18% w/w", time: "09:12 UTC" },
-    { source: "Reddit", text: "Thread on wireless earbuds is growing fast", time: "08:47 UTC" },
-    { source: "YouTube", text: "Search share shifts to small size format", time: "08:20 UTC" },
-    { source: "News", text: "Competitor restock delays reported", time: "07:58 UTC" },
+const moduleBlocks = [
+    {
+        index: "01.1",
+        eyebrow: "People",
+        title: "HR, without the spreadsheet.",
+        description:
+            "Active employees, departments, leave balances, and the requests waiting on a decision. The workspace has 21 active employees across 7 departments. The request queue shows who is waiting, for how long, and in which department.",
+        metrics: [
+            { label: "Active", value: "21" },
+            { label: "Open leave", value: "5" },
+            { label: "Departments", value: "7" },
+        ],
+        figure: {
+            src: "/marketing/product/live-hr-activity-desktop.png",
+            mobileSrc: "/marketing/product/live-hr-overview-mobile.png",
+            width: 550,
+            height: 400,
+            mobileWidth: 370,
+            mobileHeight: 600,
+            alt: "Skyrict HR workspace showing recent leave requests with employee names, departments, dates, and statuses.",
+            sizes: "(min-width: 1024px) 58vw, 100vw",
+        },
+        docsHref: "/docs/operations/payroll-hr",
+        docsLabel: "Read the Payroll & HR docs",
+    },
+    {
+        index: "01.2",
+        eyebrow: "Payroll",
+        title: "Runs you can audit.",
+        description:
+            "Eighteen runs, thirteen paid, one draft. The latest run is PR-2026-09 for $2,456,500.00. Each run keeps its period and status, so the number has a trail instead of a single total.",
+        metrics: [
+            { label: "Runs", value: "18" },
+            { label: "Paid", value: "13" },
+            { label: "Latest run", value: "$2,456,500" },
+        ],
+        figure: {
+            src: "/marketing/product/live-payroll-runs-desktop.png",
+            mobileSrc: "/marketing/product/live-payroll-kpis-mobile.png",
+            width: 555,
+            height: 390,
+            mobileWidth: 370,
+            mobileHeight: 590,
+            alt: "Skyrict payroll workspace showing recent payroll runs and their statuses.",
+            sizes: "(min-width: 1024px) 58vw, 100vw",
+        },
+        docsHref: "/docs/operations/payroll-hr",
+        docsLabel: "Read the Payroll & HR docs",
+        reversed: true,
+    },
+    {
+        index: "01.3",
+        eyebrow: "Finance",
+        title: "Revenue history, with the limits stated.",
+        description:
+            "Revenue, expenses, net income, and outstanding invoices on one surface. When there is not enough history to forecast, the product states the limit instead of drawing a line.",
+        metrics: [
+            { label: "Revenue", value: "$25,320" },
+            { label: "Expenses", value: "$784,800" },
+            { label: "Outstanding", value: "$377,550" },
+        ],
+        figure: {
+            src: "/marketing/product/live-finance-history-desktop.png",
+            mobileSrc: "/marketing/product/live-finance-kpis-mobile.png",
+            width: 1110,
+            height: 300,
+            mobileWidth: 370,
+            mobileHeight: 590,
+            alt: "Skyrict finance workspace showing revenue history and a note that there is not enough history to forecast yet.",
+            sizes: "(min-width: 1240px) 1188px, 100vw",
+        },
+        docsHref: "/docs/getting-started/read-your-first-pulse",
+        docsLabel: "Read the pulse docs",
+        fullWidth: true,
+    },
+    {
+        index: "01.4",
+        eyebrow: "Reports",
+        title: "Cross-department answers, built from the same records.",
+        description:
+            "Cash received, open receivables, pipeline value, stock alerts, and headcount on one page. The report studio turns a plain-language request into a reviewed template, so the output has a definition behind it.",
+        metrics: [
+            { label: "Cash received", value: "$25,000" },
+            { label: "Open receivables", value: "$292,950" },
+            { label: "Headcount", value: "28" },
+        ],
+        figure: {
+            src: "/marketing/product/live-reports-overview-desktop.png",
+            mobileSrc: "/marketing/product/live-reports-kpis-mobile.png",
+            width: 1110,
+            height: 640,
+            mobileWidth: 370,
+            mobileHeight: 360,
+            alt: "Skyrict reports workspace showing cash received, open receivables, pipeline value, stock alerts, headcount, and the report studio.",
+            sizes: "(min-width: 1024px) 58vw, 100vw",
+        },
+        docsHref: "/docs/operations/reports",
+        docsLabel: "Read the Reports docs",
+        reversed: true,
+    },
 ];
 
-function PanelHeader({ label, right }: { label: string; right?: React.ReactNode }) {
-    return (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
-            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                {label}
-            </p>
-            {right}
-        </div>
-    );
-}
+const signalSteps = [
+    {
+        index: "01",
+        label: "Signal",
+        title: "What needs attention",
+        description:
+            "The dashboard attention row counts the work that needs a decision. Six SKUs are out of stock, one invoice is overdue, and ten opportunities are open. Each count links to the records behind it.",
+        figure: {
+            src: "/marketing/product/live-dashboard-attention-desktop.png",
+            mobileSrc: "/marketing/product/live-dashboard-attention-mobile.png",
+            width: 1110,
+            height: 180,
+            mobileWidth: 370,
+            mobileHeight: 500,
+            alt: "Skyrict dashboard attention row showing out-of-stock SKUs, an overdue invoice, and open opportunities.",
+            sizes: "(min-width: 1024px) 46vw, 100vw",
+        },
+        docsHref: "/docs/getting-started/read-your-first-pulse",
+        docsLabel: "Read the pulse docs",
+    },
+    {
+        index: "02",
+        label: "Detail",
+        title: "The SKUs behind the count",
+        description:
+            "Inventory shows what is on hand, the reorder point, and the shortfall. The list starts with API Gateway Setup, CRM Module Add-on, Analytics Dashboard, and HR Module Add-on. The inventory assistant sits on the same screen, so a question can start from the record instead of a separate tool.",
+        figure: {
+            src: "/marketing/product/live-inventory-attention-desktop.png",
+            mobileSrc: "/marketing/product/live-inventory-mobile.png",
+            width: 1110,
+            height: 300,
+            mobileWidth: 370,
+            mobileHeight: 590,
+            alt: "Skyrict inventory workspace showing products that need attention, their on-hand quantity, and reorder point.",
+            sizes: "(min-width: 1024px) 46vw, 100vw",
+        },
+        docsHref: "/docs/operations/inventory",
+        docsLabel: "Read the Inventory docs",
+    },
+    {
+        index: "03",
+        label: "Commitment",
+        title: "The order and the credit check",
+        description:
+            "Orders keep the status, the customer's credit check, and the value in the same row. SO-0011 is a $30,800 draft with a pending credit check. Confirmation runs the check before the order moves, while fulfilled, confirmed, and cancelled orders stay visible.",
+        figure: {
+            src: "/marketing/product/live-orders-table-desktop.png",
+            mobileSrc: "/marketing/product/live-orders-table-mobile.png",
+            width: 1110,
+            height: 560,
+            mobileWidth: 370,
+            mobileHeight: 480,
+            alt: "Skyrict orders table showing order numbers, statuses, credit checks, dates, and totals.",
+            sizes: "(min-width: 1024px) 46vw, 100vw",
+        },
+        docsHref: "/docs/operations/orders",
+        docsLabel: "Read the Orders docs",
+    },
+    {
+        index: "04",
+        label: "Follow-up",
+        title: "The opportunity and the next step",
+        description:
+            "CRM holds the deal, stage, value, and close date. Zephyr Airlines is a $310,000 opportunity at Negotiation, 70%, closing 17 November 2026. SkyAgent drafts the follow-up from that record, then stops at the approval step.",
+        figure: {
+            src: "/marketing/product/live-crm-top-desktop.png",
+            mobileSrc: "/marketing/product/live-crm-kpis-mobile.png",
+            width: 720,
+            height: 290,
+            mobileWidth: 370,
+            mobileHeight: 600,
+            alt: "Skyrict CRM top opportunities list showing Zephyr Airlines, Quicksilver Bank, and Forma Group with values and stages.",
+            sizes: "(min-width: 1024px) 46vw, 100vw",
+        },
+        docsHref: "/docs/agents/your-agents",
+        docsLabel: "Read the SkyAgent docs",
+    },
+];
 
-function DataLayerVisual() {
-    return (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <PanelHeader
-                label="Inventory · live"
-                right={
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                        Connected · 2 sources
-                    </span>
-                }
-            />
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead>
-                        <tr className="border-b border-border/60 text-[11px] uppercase tracking-wider text-muted-foreground">
-                            <th className="px-4 py-2.5 font-medium">SKU</th>
-                            <th className="px-4 py-2.5 font-medium">Product</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Stock</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Cover</th>
-                            <th className="px-4 py-2.5 text-right font-medium">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {inventoryRows.map((row) => (
-                            <tr
-                                key={row.sku}
-                                className="border-b border-border/40 last:border-0"
-                            >
-                                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                                    {row.sku}
-                                </td>
-                                <td className="px-4 py-2.5 font-medium text-foreground">
-                                    {row.name}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums text-foreground">
-                                    {row.stock}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                                    {row.cover}
-                                </td>
-                                <td className="px-4 py-2.5 text-right">
-                                    <span
-                                        className={
-                                            row.status === "Low"
-                                                ? "rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
-                                                : "rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
-                                        }
-                                    >
-                                        {row.status}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-}
+const availableModules = [
+    {
+        title: "Dashboard",
+        body: "Attention needed, finance and revenue, operations and sales, and report KPIs on one surface.",
+    },
+    {
+        title: "CRM",
+        body: "Leads, opportunities, customers, contacts, activities, and notes, with pipeline stage and value.",
+    },
+    {
+        title: "Orders",
+        body: "Draft, confirm, fulfil, and cancel sales orders. Confirmation runs the customer's credit check.",
+    },
+    {
+        title: "Inventory",
+        body: "Stock levels, warehouses, reorder points, movement, and an inventory assistant.",
+    },
+    {
+        title: "HR",
+        body: "Employees, departments, leave balances, and leave requests with their status.",
+    },
+    {
+        title: "Finance",
+        body: "Cash, invoices, journal entries, and accounting, with the limits of the history stated.",
+    },
+    {
+        title: "Payroll",
+        body: "Runs, compensation, and payroll rules, with each run's period and status.",
+    },
+    {
+        title: "Documents",
+        body: "A central document store. The surface is ready; this workspace has no uploaded documents yet.",
+    },
+    {
+        title: "Reports",
+        body: "Cross-department KPIs, reviewed templates, and exports from the same records.",
+    },
+    {
+        title: "SkyAgent",
+        body: "Ask across the workspace. Answers show the records used, and drafts stop before sending.",
+    },
+];
 
-function ContextLayerVisual() {
-    return (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <PanelHeader
-                label="Market · continuous"
-                right={
-                    <span className="flex items-center gap-1.5 text-[11px] font-medium text-primary">
-                        <TrendingUp aria-hidden="true" className="size-3" />
-                        +18% w/w
-                    </span>
-                }
-            />
-            <div className="space-y-3 p-4">
-                <div className="flex flex-wrap gap-1.5">
-                    {signalSources.map((source) => (
-                        <span
-                            key={source}
-                            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
-                        >
-                            {source}
-                        </span>
-                    ))}
-                </div>
-                <SignalSparkline label="Earbuds search demand rising over eight weeks" />
-                <ul className="space-y-2">
-                    {insightFeed.map((item) => (
-                        <li
-                            key={item.text}
-                            className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs"
-                        >
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <span className="font-mono text-[10px] uppercase tracking-wider text-primary">
-                                    {item.source}
-                                </span>
-                                {item.text}
-                            </span>
-                            <span className="font-mono text-[10px] text-muted-foreground/70">
-                                {item.time}
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
-    );
-}
+const inDevelopment = [
+    {
+        title: "Market intelligence",
+        body: "Competitor and trend tracking. The signal collection engine is still being built.",
+    },
+    {
+        title: "Sales Coach",
+        body: "The console loads, but the coaching queue is empty. It is in development and not counted as an available capability.",
+    },
+    {
+        title: "Audit Guardian",
+        body: "The console loads, but the audit queue is empty. The review workflow is still in development.",
+    },
+    {
+        title: "Revenue forecasting",
+        body: "Requires at least three months of approved invoice history. Finance states this in the product instead of drawing a speculative line.",
+    },
+];
 
-function DecisionLayerVisual() {
-    return (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <PanelHeader
-                label="Agents · explanation attached"
-                right={
-                    <span className="flex size-6 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
-                        <AiGlyph aria-hidden="true" className="size-3.5" />
-                    </span>
-                }
-            />
-            <div className="space-y-3 p-4">
-                <div className="rounded-lg border border-border bg-muted/20 px-3.5 py-2.5 text-sm text-muted-foreground">
-                    Question: what should we do about size M?
-                </div>
-                <ul className="space-y-2">
-                    {[
-                        "Demand is up three straight weeks across Trends and Reddit.",
-                        "Cover is two days, below the reorder point of five.",
-                        "Margin stays intact at the current price.",
-                    ].map((evidence) => (
-                        <li
-                            key={evidence}
-                            className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
-                        >
-                            <span
-                                aria-hidden="true"
-                                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
-                            />
-                            {evidence}
-                        </li>
-                    ))}
-                </ul>
-                <div className="rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-3">
-                    <p className="font-display text-sm font-semibold text-foreground">
-                        Restock 600 units of size M
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Vendor lead time 5 days. Approve in one step.
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-}
+const trustFacts = [
+    {
+        icon: Database,
+        title: "Workspace isolation",
+        body: "Each account runs in its own tenant. Records never cross workspaces.",
+    },
+    {
+        icon: Lock,
+        title: "Roles and permissions",
+        body: "Owner, admin, and member roles, with custom roles built from a fixed permission menu.",
+    },
+    {
+        icon: Fingerprint,
+        title: "Multi-factor authentication",
+        body: "TOTP support with one-time backup codes.",
+    },
+    {
+        icon: Code2,
+        title: "Open source",
+        body: "The codebase is public, so the security model can be checked.",
+    },
+];
 
-function SectionHeader({
+function SectionHeading({
     eyebrow,
     title,
     description,
+    id,
 }: {
     eyebrow: string;
     title: string;
-    description: string;
+    description: ReactNode;
+    id?: string;
 }) {
     return (
-        <div className="max-w-2xl">
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
-                {eyebrow}
+        <RevealSection>
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-end lg:gap-16">
+                <div>
+                    <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-muted">
+                        {eyebrow}
+                    </p>
+                    <h2
+                        id={id}
+                        className="mt-4 text-balance font-display text-3xl font-semibold leading-[1.04] tracking-[-0.045em] text-marketing-ink sm:text-4xl lg:text-[3.15rem]"
+                    >
+                        {title}
+                    </h2>
+                </div>
+                <div className="lg:pb-1">
+                    <p className="max-w-xl text-pretty text-sm leading-relaxed text-marketing-muted sm:text-base">
+                        {description}
+                    </p>
+                </div>
+            </div>
+        </RevealSection>
+    );
+}
+
+function ModuleCopy({
+    index,
+    eyebrow,
+    title,
+    description,
+    metrics,
+    docsHref,
+    docsLabel,
+}: {
+    index: string;
+    eyebrow: string;
+    title: string;
+    description: string;
+    metrics: { label: string; value: string }[];
+    docsHref: string;
+    docsLabel: string;
+}) {
+    return (
+        <div className="lg:pt-2">
+            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-muted">
+                {index} · {eyebrow}
             </p>
-            <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            <h3 className="mt-4 text-balance font-display text-2xl font-semibold leading-[1.08] tracking-[-0.035em] text-marketing-ink sm:text-3xl">
                 {title}
-            </h2>
-            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+            </h3>
+            <p className="mt-4 max-w-md text-pretty text-sm leading-relaxed text-marketing-muted sm:text-base">
                 {description}
             </p>
+            <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-marketing-line/80 pt-4">
+                {metrics.map((metric) => (
+                    <div key={metric.label}>
+                        <dt className="font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-marketing-muted">
+                            {metric.label}
+                        </dt>
+                        <dd className="mt-1 break-words font-display text-sm font-semibold tracking-tight text-marketing-ink sm:text-base">
+                            {metric.value}
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+            <Link
+                href={docsHref}
+                className="mt-6 inline-flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-marketing-ink underline decoration-marketing-sky underline-offset-4 transition-colors hover:decoration-marketing-ink"
+            >
+                {docsLabel}
+                <ArrowUpRight aria-hidden="true" className="size-3.5" />
+            </Link>
         </div>
     );
 }
 
-export default function ProductPage() {
+function StepCopy({
+    index,
+    label,
+    title,
+    description,
+    docsHref,
+    docsLabel,
+}: {
+    index: string;
+    label: string;
+    title: string;
+    description: string;
+    docsHref: string;
+    docsLabel: string;
+}) {
     return (
-        <>
-            <section className="mx-auto w-full max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
-                <RevealSection>
-                    <div className="mx-auto max-w-3xl space-y-6 text-center">
-                        <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
-                            The platform
-                        </p>
-                        <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl">
-                            One decision system for your operations and the
-                            market.
+        <div className="mt-4">
+            <div className="flex items-baseline gap-3 border-t border-marketing-line/80 pt-3">
+                <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-marketing-muted">
+                    {index}
+                </span>
+                <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-muted">
+                    {label}
+                </span>
+            </div>
+            <h3 className="mt-3 text-balance font-display text-xl font-semibold leading-[1.12] tracking-[-0.03em] text-marketing-ink sm:text-2xl">
+                {title}
+            </h3>
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-marketing-muted">
+                {description}
+            </p>
+            <Link
+                href={docsHref}
+                className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-marketing-ink underline decoration-marketing-sky underline-offset-4 transition-colors hover:decoration-marketing-ink"
+            >
+                {docsLabel}
+                <ArrowUpRight aria-hidden="true" className="size-3.5" />
+            </Link>
+        </div>
+    );
+}
+
+function StatusList({
+    tone,
+    items,
+}: {
+    tone: "available" | "development";
+    items: { title: string; body: string }[];
+}) {
+    const available = tone === "available";
+
+    return (
+        <div>
+            <div className="flex items-center gap-2.5">
+                <span
+                    aria-hidden="true"
+                    className={cn(
+                        "size-2 rounded-full",
+                        available ? "bg-emerald-500" : "bg-amber-500",
+                    )}
+                />
+                <h3 className="font-display text-lg font-semibold tracking-tight text-marketing-ink">
+                    {available ? "Available now" : "In development"}
+                </h3>
+                <span className="font-mono text-[10px] tracking-[0.14em] text-marketing-muted">
+                    {items.length.toString().padStart(2, "0")}
+                </span>
+            </div>
+            <dl className="mt-5 border-t border-marketing-line/80">
+                {items.map((item) => (
+                    <div
+                        key={item.title}
+                        className="grid gap-1 border-b border-marketing-line/80 py-4 sm:grid-cols-[minmax(0,0.55fr)_minmax(0,1fr)] sm:gap-6"
+                    >
+                        <dt className="font-display text-sm font-semibold text-marketing-ink">
+                            {item.title}
+                        </dt>
+                        <dd className="text-sm leading-relaxed text-marketing-muted">
+                            {item.body}
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+        </div>
+    );
+}
+
+function ProductHero() {
+    return (
+        <section
+            aria-labelledby="product-hero-heading"
+            className="relative isolate -mt-20 overflow-hidden border-b border-marketing-line/70"
+        >
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_18%_18%,rgba(135,206,235,0.18),transparent_34%),radial-gradient(circle_at_86%_8%,rgba(255,216,198,0.16),transparent_30%)]"
+            />
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-transparent via-marketing-line to-transparent"
+            />
+            <div className="mx-auto w-full max-w-[1240px] px-6 pb-16 pt-36 sm:pt-40 lg:pb-24 lg:pt-44">
+                <div className="grid gap-12 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] lg:items-center lg:gap-16">
+                    <div>
+                        <h1
+                            id="product-hero-heading"
+                            className="sky-anim text-balance font-display text-[2.7rem] font-semibold leading-[0.96] tracking-[-0.055em] text-marketing-ink max-[359px]:text-[2.25rem] sm:text-5xl lg:text-[3.5rem] xl:text-[4.35rem]"
+                            style={delay(0)}
+                        >
+                            The work,
+                            <br />
+                            not the wrapper.
                         </h1>
-                        <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">
-                            Skyrict connects the ERP data you already run on
-                            with continuous market intelligence, then uses
-                            agents to turn the combination into recommended
-                            actions, with the reasoning attached.
+                        <p
+                            className="sky-anim mt-6 max-w-lg text-pretty text-base leading-relaxed text-marketing-muted"
+                            style={delay(90)}
+                        >
+                            Every screen below is the Skyrict workspace. Follow
+                            HR, payroll, finance, reports, inventory, orders, and
+                            CRM as they connect, then watch SkyAgent answer from
+                            the same records.
                         </p>
-                        <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
-                            <Button size="lg" asChild>
-                                <Link href="/signup">Create your account</Link>
-                            </Button>
-                            <Button variant="outline" size="lg" asChild>
-                                <Link href="/docs">
-                                    Read the docs
-                                    <ArrowRight aria-hidden="true" className="size-4" />
+                        <div
+                            className="sky-anim mt-8 flex flex-col gap-3 sm:flex-row"
+                            style={delay(180)}
+                        >
+                            <Button variant="brand" size="pill" asChild>
+                                <Link href="/signup" prefetch={false}>
+                                    Create an account
+                                    <ArrowRight
+                                        aria-hidden="true"
+                                        className="size-4 transition-transform duration-200 group-hover/button:translate-x-0.5"
+                                    />
                                 </Link>
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="pill"
+                                className="border-marketing-ink/15 bg-white/35 text-marketing-ink hover:bg-white/60 hover:text-marketing-ink"
+                                asChild
+                            >
+                                <Link href="/contact">Try demo first</Link>
                             </Button>
                         </div>
                     </div>
-                </RevealSection>
-            </section>
 
-            <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
-                    <RevealSection className="min-w-0">
-                        <SectionHeader
-                            eyebrow="Layer 01 · ERP and operations"
-                            title="The data layer. Your operations, live."
-                            description="Skyrict reads the slice of your business that drives the rest: inventory, orders, sales, cash, payroll, HR, CRM, and reporting. It connects to the source of truth instead of asking for exports, so the numbers you decide on are the numbers your operations run on."
+                    <div className="relative">
+                        <ProductFigure
+                            src="/marketing/product/live-hr-overview-desktop.png"
+                            mobileSrc="/marketing/product/live-hr-overview-mobile.png"
+                            width={1110}
+                            height={548}
+                            mobileWidth={370}
+                            mobileHeight={600}
+                            alt="Skyrict HR workspace showing active employees, open leave requests, departments, and recent leave activity."
+                            sizes="(min-width: 1024px) 620px, 100vw"
+                            mobileSizes="100vw"
+                            priority
                         />
-                        <ul className="mt-8 space-y-3">
-                            {[
-                                "Connect the systems you already run.",
-                                "Skyrict reads live stock and movement.",
-                                "Every surface shows the same numbers.",
-                            ].map((item) => (
-                                <li
-                                    key={item}
-                                    className="flex items-center gap-3 text-sm text-foreground"
-                                >
-                                    <ArrowRight
-                                        aria-hidden="true"
-                                        className="size-4 shrink-0 text-primary"
-                                    />
-                                    {item}
-                                </li>
+                        <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-marketing-line/80 pt-4 sm:grid-cols-4">
+                            {heroMetrics.map((metric) => (
+                                <div key={metric.label}>
+                                    <p className="font-display text-lg font-semibold tracking-tight text-marketing-ink sm:text-xl">
+                                        {metric.value}
+                                    </p>
+                                    <p className="mt-0.5 font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-marketing-muted">
+                                        {metric.label}
+                                    </p>
+                                </div>
                             ))}
-                        </ul>
-                        <p className="mt-8 rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground">
-                            Deliberately scoped. Skyrict is not a 400-module ERP
-                            swap. It is a live read of the operations that
-                            matter, connected without a migration project.
-                        </p>
-                    </RevealSection>
-                    <RevealSection delay={120} className="min-w-0">
-                        <DataLayerVisual />
-                    </RevealSection>
+                        </div>
+                    </div>
                 </div>
-            </section>
+            </div>
+        </section>
+    );
+}
 
-            <section className="border-y border-border/60 bg-card/60">
-                <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                    <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16">
-                        <RevealSection className="min-w-0">
-                            <div className="lg:order-2">
-                                <SectionHeader
-                                    eyebrow="Layer 02 · Global market intelligence"
-                                    title="The context layer. The market, read continuously."
-                                    description="Demand trends, market movement, news, community signals, competitors, and category changes. Five public sources are watched around the clock, so a shift surfaces the week it happens, not a quarter later in a report."
-                                />
-                                <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                                    {[
-                                        "Demand trends",
-                                        "Market movement",
-                                        "News and community",
-                                        "Competitor moves",
-                                        "Category changes",
-                                    ].map((item, index) => (
-                                        <div
-                                            key={item}
-                                            className="rounded-xl border border-border bg-card p-3.5 text-sm text-foreground"
+function OperatingCore() {
+    return (
+        <section
+            id="operating-core"
+            aria-labelledby="operating-core-heading"
+            className="scroll-mt-24 border-b border-marketing-line/70"
+        >
+            <div className="mx-auto w-full max-w-[1240px] px-6 py-20 sm:py-24 lg:py-28">
+                <SectionHeading
+                    eyebrow="01 · The operating core"
+                    id="operating-core-heading"
+                    title="Four surfaces, one set of records."
+                    description={
+                        <>
+                            HR, payroll, finance, and reports read from the
+                            same tenant, so the numbers reconcile. The status
+                            table later separates what ships today from what is
+                            still being built.
+                        </>
+                    }
+                />
+
+                <div className="mt-14 space-y-20 sm:space-y-24 lg:mt-16 lg:space-y-28">
+                    {moduleBlocks.map((block) => {
+                        const figure = (
+                            <ProductFigure
+                                src={block.figure.src}
+                                mobileSrc={block.figure.mobileSrc}
+                                width={block.figure.width}
+                                height={block.figure.height}
+                                mobileWidth={block.figure.mobileWidth}
+                                mobileHeight={block.figure.mobileHeight}
+                                alt={block.figure.alt}
+                                sizes={block.figure.sizes}
+                            />
+                        );
+                        const copy = (
+                            <ModuleCopy
+                                index={block.index}
+                                eyebrow={block.eyebrow}
+                                title={block.title}
+                                description={block.description}
+                                metrics={block.metrics}
+                                docsHref={block.docsHref}
+                                docsLabel={block.docsLabel}
+                            />
+                        );
+
+                        if (block.fullWidth) {
+                            return (
+                                <div key={block.index}>
+                                    <div className="grid gap-8 lg:grid-cols-[minmax(0,0.62fr)_minmax(0,1fr)] lg:items-end lg:gap-16">
+                                        <RevealSection variant="text">
+                                            {copy}
+                                        </RevealSection>
+                                        <RevealSection
+                                            variant="media"
+                                            delay={40}
                                         >
-                                            <span className="font-mono text-[10px] text-muted-foreground">
-                                                0{index + 1}
-                                            </span>
-                                            <p className="mt-1">{item}</p>
-                                        </div>
-                                    ))}
+                                            {figure}
+                                        </RevealSection>
+                                    </div>
                                 </div>
+                            );
+                        }
+
+                        return (
+                            <div
+                                key={block.index}
+                                className="grid gap-8 lg:grid-cols-12 lg:items-start lg:gap-12"
+                            >
+                                <RevealSection
+                                    variant="text"
+                                    className={cn(
+                                        "lg:col-span-5",
+                                        block.reversed &&
+                                            "lg:order-2 lg:col-start-8",
+                                    )}
+                                >
+                                    {copy}
+                                </RevealSection>
+                                <RevealSection
+                                    variant="media"
+                                    delay={40}
+                                    className={cn(
+                                        "lg:col-span-7",
+                                        block.reversed &&
+                                            "lg:order-1 lg:col-start-1",
+                                    )}
+                                >
+                                    {figure}
+                                </RevealSection>
                             </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function SignalToWork() {
+    const signal = signalSteps[0];
+    const detailSteps = signalSteps.slice(1);
+
+    return (
+        <section
+            id="signal-to-work"
+            aria-labelledby="signal-to-work-heading"
+            className="scroll-mt-24 border-b border-marketing-line/70"
+        >
+            <div className="mx-auto w-full max-w-[1240px] px-6 py-20 sm:py-24 lg:py-28">
+                <SectionHeading
+                    eyebrow="02 · From signal to work"
+                    id="signal-to-work-heading"
+                    title="The system points. The record explains. The agent drafts."
+                    description="A workspace earns its place when it connects the signal to the next action. These four surfaces come from the same workspace, in the order the work moves."
+                />
+
+                <div className="mt-12 space-y-16 sm:space-y-20 lg:mt-14">
+                    {/* The attention row is a wide, short surface. Give it the
+                        full measure so the four counts stay legible. */}
+                    <div>
+                        <RevealSection variant="media">
+                            <ProductFigure
+                                src={signal.figure.src}
+                                mobileSrc={signal.figure.mobileSrc}
+                                width={signal.figure.width}
+                                height={signal.figure.height}
+                                mobileWidth={signal.figure.mobileWidth}
+                                mobileHeight={signal.figure.mobileHeight}
+                                alt={signal.figure.alt}
+                                sizes="(min-width: 1240px) 1188px, 100vw"
+                            />
                         </RevealSection>
-                        <RevealSection delay={120} className="min-w-0">
-                            <div className="lg:order-1">
-                                <ContextLayerVisual />
+                        <RevealSection variant="text" delay={40}>
+                            <div className="grid gap-6 border-t border-marketing-line/80 pt-5 lg:grid-cols-[minmax(0,0.55fr)_minmax(0,1fr)] lg:gap-16">
+                                <div>
+                                    <div className="flex items-baseline gap-3">
+                                        <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-marketing-muted">
+                                            {signal.index}
+                                        </span>
+                                        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-muted">
+                                            {signal.label}
+                                        </span>
+                                    </div>
+                                    <h3 className="mt-3 text-balance font-display text-xl font-semibold leading-[1.12] tracking-[-0.03em] text-marketing-ink sm:text-2xl">
+                                        {signal.title}
+                                    </h3>
+                                </div>
+                                <div>
+                                    <p className="max-w-2xl text-sm leading-relaxed text-marketing-muted sm:text-base">
+                                        {signal.description}
+                                    </p>
+                                    <Link
+                                        href={signal.docsHref}
+                                        className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-marketing-ink underline decoration-marketing-sky underline-offset-4 transition-colors hover:decoration-marketing-ink"
+                                    >
+                                        {signal.docsLabel}
+                                        <ArrowUpRight
+                                            aria-hidden="true"
+                                            className="size-3.5"
+                                        />
+                                    </Link>
+                                </div>
                             </div>
                         </RevealSection>
                     </div>
-                </div>
-            </section>
 
-            <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
-                    <RevealSection className="min-w-0">
-                        <SectionHeader
-                            eyebrow="Layer 03 · AI agents"
-                            title="The decision layer. Agents that explain themselves."
-                            description="Guardian reports on what changed and why. Coaching turns history into playbooks. Your agents answer direct questions with both layers in context. Every recommended action carries the reasoning, so you can verify it before you approve it."
-                        />
-                        <ul className="mt-8 space-y-3">
-                            {[
-                                "Guardian: daily risk and change reports.",
-                                "Coaching: playbooks built from your history.",
-                                "Your agents: ask with both layers in context.",
-                            ].map((item) => (
-                                <li
-                                    key={item}
-                                    className="flex items-center gap-3 text-sm text-foreground"
+                    {detailSteps.map((step, index) => {
+                        const reversed = index % 2 === 1;
+
+                        return (
+                            <div
+                                key={step.index}
+                                className="grid gap-8 lg:grid-cols-12 lg:items-start lg:gap-12"
+                            >
+                                <RevealSection
+                                    variant="text"
+                                    className={cn(
+                                        "lg:col-span-5",
+                                        reversed &&
+                                            "lg:order-2 lg:col-start-8",
+                                    )}
                                 >
-                                    <ArrowRight
-                                        aria-hidden="true"
-                                        className="size-4 shrink-0 text-primary"
+                                    <StepCopy
+                                        index={step.index}
+                                        label={step.label}
+                                        title={step.title}
+                                        description={step.description}
+                                        docsHref={step.docsHref}
+                                        docsLabel={step.docsLabel}
                                     />
-                                    {item}
-                                </li>
-                            ))}
-                        </ul>
-                    </RevealSection>
-                    <RevealSection delay={120} className="min-w-0">
-                        <DecisionLayerVisual />
-                    </RevealSection>
-                </div>
-            </section>
-
-            <section className="border-y border-border/60 bg-card/60">
-                <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                    <RevealSection>
-                        <SectionHeader
-                            eyebrow="How the layers connect"
-                            title="One decision, built from both truths."
-                            description="A single recommended action pulls the evidence from operations on one side and the market on the other. Nothing arrives as a bare suggestion."
-                        />
-                    </RevealSection>
-                    <RevealSection delay={120}>
-                        <div className="mt-12 overflow-hidden rounded-2xl border border-border bg-card p-6 sm:p-8">
-                            <div className="grid gap-6 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
-                                <div className="rounded-xl border border-border bg-muted/20 p-5">
-                                    <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                                        Inside your operations
-                                    </p>
-                                    <ul className="mt-4 space-y-2 text-sm text-foreground">
-                                        <li>Cover on size M is 2 days</li>
-                                        <li>3 low-stock alerts active</li>
-                                        <li>Cash on hand $84.2K</li>
-                                    </ul>
-                                </div>
-                                <div className="hidden items-center justify-center lg:flex">
-                                    <span className="flex size-12 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary">
-                                        <AiGlyph aria-hidden="true" className="size-5" />
-                                    </span>
-                                </div>
-                                <div className="rounded-xl border border-border bg-muted/20 p-5">
-                                    <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                                        Outside, in the market
-                                    </p>
-                                    <ul className="mt-4 space-y-2 text-sm text-foreground">
-                                        <li>Trends +18% w/w, up 3 weeks</li>
-                                        <li>Reddit mentions accelerating</li>
-                                        <li>Competitor supply tightening</li>
-                                    </ul>
-                                </div>
+                                </RevealSection>
+                                <RevealSection
+                                    variant="media"
+                                    delay={80}
+                                    className={cn(
+                                        "lg:col-span-7",
+                                        reversed &&
+                                            "lg:order-1 lg:col-start-1",
+                                    )}
+                                >
+                                    <ProductFigure
+                                        src={step.figure.src}
+                                        mobileSrc={step.figure.mobileSrc}
+                                        width={step.figure.width}
+                                        height={step.figure.height}
+                                        mobileWidth={step.figure.mobileWidth}
+                                        mobileHeight={step.figure.mobileHeight}
+                                        alt={step.figure.alt}
+                                        sizes="(min-width: 1024px) 58vw, 100vw"
+                                    />
+                                </RevealSection>
                             </div>
-                            <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4">
-                                <p className="font-mono text-[11px] uppercase tracking-wider text-primary">
-                                    Recommended decision
+                        );
+                    })}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function SkyAgentSection() {
+    return (
+        <section
+            id="skyagent"
+            aria-labelledby="skyagent-heading"
+            className="scroll-mt-24 border-b border-marketing-line/70 bg-[linear-gradient(180deg,rgba(247,246,255,0.55),rgba(250,250,249,0))]"
+        >
+            <div className="mx-auto w-full max-w-[1240px] px-6 py-20 sm:py-24 lg:py-28">
+                <SectionHeading
+                    eyebrow="03 · SkyAgent"
+                    id="skyagent-heading"
+                    title="Ask. Watch it work. Check the records."
+                    description="Ask across the workspace. SkyAgent reads the Zephyr Airlines opportunity, streams the follow-up, and keeps the records it used attached to the answer."
+                />
+
+                <RevealSection variant="text" className="mt-10">
+                    <div className="grid gap-5 border-t border-marketing-line/80 pt-6 sm:grid-cols-3 sm:gap-8">
+                        {[
+                            {
+                                title: "Reads the workspace",
+                                body: "The prompt runs against CRM records, not a pasted export.",
+                            },
+                            {
+                                title: "Shows the sources",
+                                body: "The draft is tied to the opportunity, value, stage, and close date.",
+                            },
+                            {
+                                title: "Stops at approval",
+                                body: "SkyAgent drafts. A person decides what to send.",
+                            },
+                        ].map((item) => (
+                            <div key={item.title}>
+                                <p className="font-display text-sm font-semibold text-marketing-ink">
+                                    {item.title}
                                 </p>
-                                <p className="mt-1.5 font-display text-lg font-semibold text-foreground">
-                                    Restock size M, 600 units
-                                </p>
-                                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                                    Demand is up three weeks, cover is two days,
-                                    and margin holds at the current price.
-                                    Vendor lead time is five days.
+                                <p className="mt-1 text-sm leading-relaxed text-marketing-muted">
+                                    {item.body}
                                 </p>
                             </div>
-                        </div>
-                    </RevealSection>
-                </div>
-            </section>
-
-            <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
-                <RevealSection>
-                    <SectionHeader
-                        eyebrow="Tenants, integrations, and trust"
-                        title="Built for real, tenant-based operations."
-                        description="The platform is designed around workspaces, roles, and verifiable security, with integrations that read your real systems."
-                    />
+                        ))}
+                    </div>
                 </RevealSection>
-                <div className="mt-12 grid gap-6 md:grid-cols-3">
-                    <RevealSection>
-                        <div className="h-full rounded-2xl border border-border bg-card p-6">
-                            <h3 className="font-display text-lg font-semibold text-foreground">
-                                Tenant model
-                            </h3>
-                            <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-                                <li>Workspace isolation</li>
-                                <li>Roles and permissions</li>
-                                <li>Multi-factor authentication</li>
-                            </ul>
+
+                <RevealSection variant="media" className="mt-10">
+                    <SkyAgentReplay />
+                </RevealSection>
+
+                <RevealSection variant="text" className="mt-6">
+                    <div className="flex flex-col gap-4 border-t border-marketing-line/80 pt-4 sm:flex-row sm:items-start sm:justify-between sm:gap-10">
+                        <p className="max-w-2xl text-xs leading-relaxed text-marketing-muted">
+                            SkyAgent drafts the follow-up and stops before
+                            sending. The records it used stay attached to the
+                            answer.
+                        </p>
+                        <div className="grid shrink-0 grid-cols-3 gap-4 sm:gap-6">
+                            {[
+                                { label: "CRM leads", value: "12" },
+                                { label: "Open pipeline", value: "$864,500" },
+                                { label: "Draft status", value: "Not sent" },
+                            ].map((metric) => (
+                                <div key={metric.label}>
+                                    <p className="font-display text-base font-semibold tracking-tight text-marketing-ink">
+                                        {metric.value}
+                                    </p>
+                                    <p className="mt-0.5 font-mono text-[8px] font-medium uppercase tracking-[0.14em] text-marketing-muted">
+                                        {metric.label}
+                                    </p>
+                                </div>
+                            ))}
                         </div>
-                    </RevealSection>
-                    <RevealSection delay={100}>
-                        <div className="h-full rounded-2xl border border-border bg-card p-6">
-                            <h3 className="font-display text-lg font-semibold text-foreground">
-                                Integrations
-                            </h3>
-                            <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-                                <li>Connected source systems</li>
-                                <li>Progressive ERP sync</li>
-                            </ul>
-                            <Button variant="link" className="mt-4 px-0" asChild>
-                                <Link href="/docs/getting-started/connect-operations">
-                                    How to connect your operations
-                                </Link>
-                            </Button>
-                        </div>
-                    </RevealSection>
-                    <RevealSection delay={200}>
-                        <div className="h-full rounded-2xl border border-border bg-card p-6">
-                            <h3 className="font-display text-lg font-semibold text-foreground">
-                                Trust
-                            </h3>
-                            <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
-                                <li>Open source, publicly readable</li>
-                                <li>Security defaults in the code</li>
-                            </ul>
-                            <div className="mt-4 flex flex-col gap-2">
-                                <Button variant="link" className="px-0" asChild>
+                    </div>
+                </RevealSection>
+            </div>
+        </section>
+    );
+}
+
+function StatusSection() {
+    return (
+        <section
+            id="status"
+            aria-labelledby="status-heading"
+            className="scroll-mt-24 border-b border-marketing-line/70"
+        >
+            <div className="mx-auto w-full max-w-[1240px] px-6 py-20 sm:py-24 lg:py-28">
+                <SectionHeading
+                    eyebrow="04 · Status"
+                    id="status-heading"
+                    title="What ships today. What is still being built."
+                    description="We would rather show you the empty state than pretend a finished feature exists. This is the current status of the workspace."
+                />
+
+                <RevealSection className="mt-12">
+                    <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
+                        <StatusList tone="available" items={availableModules} />
+                        <StatusList
+                            tone="development"
+                            items={inDevelopment}
+                        />
+                    </div>
+                </RevealSection>
+
+                <RevealSection variant="text" className="mt-10">
+                    <p className="max-w-3xl border-t border-marketing-line/80 pt-4 text-sm leading-relaxed text-marketing-muted">
+                        Empty states are part of the product, not a marketing
+                        gap. The document store has no uploaded files in this
+                        workspace. The coaching and guardian consoles load their
+                        queues, but the workflows behind them are still in
+                        development. The finance forecast tells you when it needs
+                        more approved history.
+                    </p>
+                </RevealSection>
+            </div>
+        </section>
+    );
+}
+
+function TrustStrip() {
+    return (
+        <section
+            id="trust"
+            aria-labelledby="trust-heading"
+            className="scroll-mt-24 border-b border-marketing-line/70"
+        >
+            <div className="mx-auto w-full max-w-[1240px] px-6 py-20 sm:py-24">
+                <RevealSection>
+                    <div className="grid gap-8 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:items-start lg:gap-16">
+                        <div>
+                            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-marketing-muted">
+                                Built into the account model
+                            </p>
+                            <h2
+                                id="trust-heading"
+                                className="mt-4 text-balance font-display text-3xl font-semibold leading-[1.06] tracking-[-0.04em] text-marketing-ink sm:text-4xl"
+                            >
+                                Trust is a product surface, not a badge.
+                            </h2>
+                            <p className="mt-5 max-w-md text-sm leading-relaxed text-marketing-muted sm:text-base">
+                                Tenant isolation, roles, MFA, and email
+                                verification are part of the account model. The
+                                source is public, so the defaults can be
+                                checked instead of asserted.
+                            </p>
+                            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                                <Button variant="brand" size="pill" asChild>
                                     <Link href="/docs/security/multi-factor-authentication">
                                         Read the security guide
                                     </Link>
                                 </Button>
-                                <Button variant="link" className="px-0" asChild>
+                                <Button variant="ghost" asChild>
                                     <Link
                                         href="https://github.com/nkswalih/skyrict"
                                         target="_blank"
@@ -484,14 +950,57 @@ export default function ProductPage() {
                                 </Button>
                             </div>
                         </div>
-                    </RevealSection>
-                </div>
-            </section>
 
+                        <ul className="grid border-t border-marketing-line/80 sm:grid-cols-2">
+                            {trustFacts.map(({ icon: Icon, title, body }) => (
+                                <li
+                                    key={title}
+                                    className="border-b border-marketing-line/80 py-5 sm:odd:border-r sm:odd:pr-6 sm:even:pl-6"
+                                >
+                                    <Icon
+                                        aria-hidden="true"
+                                        className="size-4 text-marketing-ink"
+                                    />
+                                    <h3 className="mt-3 font-display text-sm font-semibold text-marketing-ink">
+                                        {title}
+                                    </h3>
+                                    <p className="mt-1 text-sm leading-relaxed text-marketing-muted">
+                                        {body}
+                                    </p>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </RevealSection>
+            </div>
+        </section>
+    );
+}
+
+export default function ProductPage() {
+    return (
+        <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "Product", path: "/product" },
+                ]}
+            />
+            <ProductHero />
+            <OperatingCore />
+            <SignalToWork />
+            <SkyAgentSection />
+            <StatusSection />
+            <TrustStrip />
+            <Faq />
             <Cta
-                eyebrow="Start free"
-                title="Connect your operations to the market."
-                description="Create an account, connect your business, and get a recommended next move built on both truths."
+                eyebrow="See it with your records"
+                title="Bring one workflow. See the whole system."
+                description="Create a workspace, add a few records, and ask SkyAgent what needs attention. The answer comes with the records behind it."
+                ctaLabel="Create an account"
+                ctaHref="/signup"
+                secondaryCtaLabel="Try demo"
+                secondaryCtaHref="/demo/erp"
             />
         </>
     );

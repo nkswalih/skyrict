@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { docArticles, docCategories, surfacePathFor } from "@/content/docs";
+import { docArticles, surfacePathFor } from "@/content/docs";
 
 const marketingHost = "https://skyrict.in";
 const docsHost = "https://docs.skyrict.in";
@@ -45,10 +45,9 @@ describe("marketing sitemap (public/sitemap-marketing.xml)", () => {
 });
 
 describe("docs sitemap (public/sitemap-docs.xml)", () => {
-    it("covers every category and article from the docs registry", () => {
+    it("covers every canonical article from the docs registry", () => {
         const expected = [
             `${docsHost}/`,
-            ...docCategories.map((category) => `${docsHost}/${category.id}`),
             ...docArticles.map((article) =>
                 `${docsHost}${surfacePathFor(article.categoryId, article.slug)}`,
             ),

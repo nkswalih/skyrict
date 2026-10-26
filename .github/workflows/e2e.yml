@@ -244,10 +244,15 @@ jobs:
         # the SAME seeded admin, and identity rotates + revokes the refresh
         # family on reuse. Two parallel workers hydrating that one account race
         # the rotation chain and get bounced to /signin (or a revoked session).
-        run: pnpm --filter @skyrict/web exec playwright test --project=setup --project=reports-smoke --project=crm-finance --project=perf --workers=1
+        # The demo project is public and stateless (marketing surface, no
+        # session), so it rides along without adding auth-rotation pressure.
+        run: pnpm --filter @skyrict/web exec playwright test --project=setup --project=reports-smoke --project=crm-finance --project=perf --project=demo --workers=1
         env:
           CI: "true"
           E2E_BASE_URL: "http://default.localhost:3000"
+          # The demo lives on the marketing surface; nginx serves it from its
+          # `server_name localhost` block on the same port.
+          E2E_DEMO_BASE_URL: "http://localhost:3000"
           E2E_SKIP_WEBSERVER: "1"
           SESSION_COOKIE_SECURE: "false"
           E2E_TENANT_SLUG: "default"

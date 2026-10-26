@@ -90,7 +90,7 @@ test("dashboard smoke: routes render + error paths recover", async ({
       ["/erp/hr/employees", "Employees"],
       ["/erp/hr/leave", /Leave/],
       ["/erp/hr/data-quality", /Data quality/i],
-      ["/erp/payroll/runs", /Runs/],
+      ["/erp/payroll/runs", /Payroll runs/i],
       ["/erp/finance/audit-log", /Audit/],
       ["/erp/finance/journal-entries", /Journal/],
       ["/erp/crm/overview", /Overview/],

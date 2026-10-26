@@ -256,7 +256,7 @@ function PlanCard({
             )}
         >
             {popular ? (
-                <span className="absolute -top-2.5 left-4 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                <span className="absolute -top-2.5 left-4 rounded-full bg-foreground px-2.5 py-0.5 text-[11px] font-semibold text-accent">
                     Most popular
                 </span>
             ) : null}
@@ -277,7 +277,7 @@ function PlanCard({
                         className={cn(
                             "flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                             selected
-                                ? "border-primary bg-primary text-primary-foreground"
+                                ? "border-primary bg-foreground text-accent"
                                 : "border-border",
                         )}
                     >
@@ -355,7 +355,7 @@ function PlanCard({
                         href="mailto:sales@skyrict.in?subject=Enterprise plan"
                         className={cn(
                             ctaClass,
-                            "border-primary bg-primary text-primary-foreground",
+                            "border-primary bg-foreground text-accent",
                         )}
                     >
                         {ctaLabel}
@@ -368,7 +368,7 @@ function PlanCard({
                         className={cn(
                             ctaClass,
                             selected
-                                ? "border-primary bg-primary text-primary-foreground"
+                                ? "border-primary bg-foreground text-accent"
                                 : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
                         )}
                     >
@@ -402,7 +402,7 @@ function PlanDetailsDialog({
 
     return (
         <Dialog>
-            <DialogTrigger className="w-full text-center text-xs font-medium text-primary underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring/30 rounded-md py-1">
+            <DialogTrigger className="w-full text-center text-xs font-medium text-foreground underline-offset-3 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring/30 rounded-md py-1">
                 View full details
             </DialogTrigger>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -410,7 +410,7 @@ function PlanDetailsDialog({
                     <DialogTitle className="flex items-center gap-2">
                         {plan.display_name}
                         {popular ? (
-                            <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                            <span className="rounded-full bg-foreground px-2 py-0.5 text-[11px] font-semibold text-accent">
                                 Most popular
                             </span>
                         ) : null}
@@ -496,7 +496,7 @@ function PlanDetailsDialog({
                     <button
                         type="button"
                         onClick={onSelect}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-primary/90 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
                     >
                         Get started with {plan.display_name}
                     </button>
@@ -519,7 +519,7 @@ function CompareDialog({
 }) {
     return (
         <Dialog>
-            <DialogTrigger className="text-sm font-medium text-primary underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring/30 rounded-md">
+            <DialogTrigger className="text-sm font-medium text-foreground underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring/30 rounded-md">
                 Compare plans
             </DialogTrigger>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
@@ -556,7 +556,7 @@ function CompareDialog({
                                         >
                                             <span className="flex flex-col items-center gap-1">
                                                 {popular ? (
-                                                    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                                    <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-accent">
                                                         Most popular
                                                     </span>
                                                 ) : null}
@@ -720,7 +720,7 @@ function CompareDialog({
                             className={cn(
                                 "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
                                 selected === plan.id
-                                    ? "border-primary bg-primary text-primary-foreground"
+                                    ? "border-primary bg-foreground text-accent"
                                     : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
                             )}
                         >
@@ -833,7 +833,9 @@ function PlanStep({
                 />
                 <AuthButton
                     type="button"
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={() =>
                         router.push(
                             `/signup/security?${new URLSearchParams({ email, vt }).toString()}`,
@@ -863,7 +865,9 @@ function PlanStep({
                 </div>
                 <AuthButton
                     type="button"
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={() =>
                         router.push(
                             `/signup/security?${new URLSearchParams({ email, vt }).toString()}`,
@@ -917,7 +921,7 @@ function PlanStep({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "month"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >
@@ -930,7 +934,7 @@ function PlanStep({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "year"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >
@@ -987,7 +991,9 @@ function PlanStep({
 
                 <AuthButton
                     type="button"
-                    className="w-full"
+                    className="size-10 justify-self-end w-full"
+                    variant="brand"
+                    size="icon-lg"
                     onClick={handleContinue}
                 >
                     Continue with {selectedPlan?.display_name ?? "Starter"}

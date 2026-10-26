@@ -111,7 +111,7 @@ function RiskChallenge({
             >
                 <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-6 px-6 py-10 text-center">
                     <div className="flex flex-col items-center gap-2">
-                        <Logo className="text-foreground" />
+                        <Logo className="text-foreground" mark="rounded" />
                         <h2 className="font-display text-xl font-semibold text-foreground">
                             One quick check
                         </h2>

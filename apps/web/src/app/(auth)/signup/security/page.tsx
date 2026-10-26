@@ -30,8 +30,8 @@ export default async function SecurityPage({
                         to continue.
                     </p>
                 </div>
-                <Link href="/signup" className="block">
-                    <AuthButton className="w-full">Start over</AuthButton>
+                <Link href="/signup" prefetch={false} className="block">
+                    <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">Start over</AuthButton>
                 </Link>
             </div>
         );
@@ -40,7 +40,7 @@ export default async function SecurityPage({
     return (
         <div className="space-y-6">
             <div className="space-y-2">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-foreground">
                     Step 3 of 7 · Security
                 </p>
                 <h1 className="font-display text-2xl font-semibold text-foreground">

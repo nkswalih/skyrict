@@ -1,13 +1,14 @@
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Button } from "@/components/ui/button";
 
 function Cta({
-    eyebrow = "Get started",
-    title = "Make your first call on live signals.",
-    description = "Create an account, connect your business, and Skyrict surfaces the market&apos;s next signal before it reaches your stock.",
-    ctaLabel = "Get started",
+    eyebrow = "Start free",
+    title = "Make your first call on live numbers.",
+    description = "Create an account, set up your workspace, and ask SkyAgent what needs attention. The answer comes with the records behind it.",
+    ctaLabel = "Try it free",
     ctaHref = "/signup",
     secondaryCtaLabel = "Contact sales",
     secondaryCtaHref = "/contact",
@@ -21,47 +22,95 @@ function Cta({
     secondaryCtaHref?: string;
 }) {
     return (
-        <section>
-            <div className="mx-auto w-full max-w-6xl px-6 pb-24">
+        <section aria-labelledby="cta-heading">
+            <div className="mx-auto w-full max-w-6xl px-6 pt-12 pb-24 sm:pt-16">
                 <RevealSection>
-                    <div className="relative overflow-hidden rounded-3xl border border-primary/40 bg-[#0a2f3e] px-8 py-16 text-center text-[#f4fafd] sm:py-20">
+                    <div className="relative overflow-hidden rounded-[2rem] border border-marketing-line bg-card px-6 py-14 text-center shadow-[0_32px_100px_-64px_rgba(10,47,62,0.4)] sm:px-12 sm:py-20 lg:px-16">
+                        <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 opacity-40"
+                            style={{
+                                backgroundImage:
+                                    "radial-gradient(circle at 1px 1px, rgba(10,47,62,0.12) 1px, transparent 0)",
+                                backgroundSize: "24px 24px",
+                                maskImage:
+                                    "linear-gradient(to bottom, black, transparent 78%)",
+                                WebkitMaskImage:
+                                    "linear-gradient(to bottom, black, transparent 78%)",
+                            }}
+                        />
                         <div
                             aria-hidden="true"
                             className="pointer-events-none absolute inset-0"
                             style={{
                                 background:
-                                    "radial-gradient(55% 60% at 50% 0%, rgba(135,206,235,0.25), transparent 70%)",
+                                    "radial-gradient(60% 85% at 50% 112%, rgba(135,206,235,0.24), transparent 68%)",
                             }}
                         />
-                        <div className="relative mx-auto max-w-2xl space-y-6">
-                            <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#87ceeb]">
+                        <div
+                            aria-hidden="true"
+                            className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-marketing-line to-transparent"
+                        />
+
+                        <div className="relative mx-auto max-w-3xl">
+                            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-marketing-muted">
                                 {eyebrow}
                             </p>
-                            <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+                            <h2
+                                id="cta-heading"
+                                className="mt-5 text-balance font-display text-4xl font-semibold leading-[1.04] tracking-[-0.04em] text-marketing-ink sm:text-5xl lg:text-[3.5rem]"
+                            >
                                 {title}
                             </h2>
-                            <p className="text-base leading-relaxed text-[#aedef1]/90">
+                            <p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-relaxed text-marketing-muted">
                                 {description}
                             </p>
-                            <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
+
+                            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                                 <Button
-                                    size="lg"
-                                    className="bg-[#87ceeb] text-[#0a2f3e] hover:bg-[#4cb6e1]"
+                                    variant="brand"
+                                    size="pill-lg"
+                                    className="group w-full sm:w-auto"
                                     asChild
                                 >
-                                    <Link href={ctaHref}>{ctaLabel}</Link>
+                                    <Link href={ctaHref} prefetch={ctaHref === "/signup" ? false : undefined}>
+                                        {ctaLabel}
+                                        <ArrowUpRight
+                                            aria-hidden="true"
+                                            className="size-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                                        />
+                                    </Link>
                                 </Button>
                                 <Button
-                                    size="lg"
                                     variant="outline"
-                                    className="border-[#aedef1]/40 bg-transparent text-[#f4fafd] hover:border-[#aedef1]/70 hover:bg-[#aedef1]/10 hover:text-[#f4fafd]"
+                                    size="pill-lg"
+                                    className="w-full border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink sm:w-auto"
                                     asChild
                                 >
-                                    <Link href={secondaryCtaHref}>
+                                    <Link href={secondaryCtaHref} prefetch={secondaryCtaHref === "/signup" ? false : undefined}>
                                         {secondaryCtaLabel}
                                     </Link>
                                 </Button>
                             </div>
+
+                            <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.14em] text-marketing-muted">
+                                {[
+                                    "Free to start",
+                                    "No card required",
+                                    "14-day trial",
+                                ].map((item) => (
+                                    <li
+                                        key={item}
+                                        className="flex items-center gap-2"
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className="size-1 rounded-full bg-marketing-sky"
+                                        />
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     </div>
                 </RevealSection>

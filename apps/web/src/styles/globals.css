@@ -2,12 +2,18 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *):not(:is(.marketing-theme, .marketing-theme *)));
 
 @theme inline {
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
+  --color-marketing-line: var(--marketing-line);
+  --color-marketing-muted: var(--marketing-muted);
+  --color-marketing-sky: var(--marketing-sky);
+  --color-marketing-hover: var(--marketing-hover);
+  --color-marketing-paper: var(--marketing-paper);
+  --color-marketing-ink: var(--marketing-ink);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -25,6 +31,12 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -50,6 +62,12 @@
 
 :root {
   color-scheme: light;
+  --marketing-ink: #0a2f3e;
+  --marketing-hover: #114f68;
+  --marketing-paper: #f4fafd;
+  --marketing-sky: #87ceeb;
+  --marketing-line: #cae9f6;
+  --marketing-muted: #176a8b;
   --background: #f4fafd;
   --foreground: #0a2f3e;
   --card: #ffffff;
@@ -64,7 +82,13 @@
   --muted-foreground: #176a8b;
   --accent: #e6f5fa;
   --accent-foreground: #0d3f53;
-  --destructive: #020a0d;
+  --destructive: #dc2626;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --info: #0369a1;
+  --info-foreground: #ffffff;
   --border: #cae9f6;
   --input: #cae9f6;
   --ring: #87ceeb;
@@ -101,6 +125,12 @@
   --accent: #182636;
   --accent-foreground: #d9e8f2;
   --destructive: #f87171;
+  --success: #34d399;
+  --success-foreground: #052e16;
+  --warning: #fbbf24;
+  --warning-foreground: #451a03;
+  --info: #38bdf8;
+  --info-foreground: #082f49;
   --border: #1f2c3d;
   --input: #223043;
   --ring: #4db8e8;
@@ -117,6 +147,90 @@
   --sidebar-accent-foreground: #e6edf5;
   --sidebar-border: #1c2938;
   --sidebar-ring: #4db8e8;
+}
+
+/*
+ * Marketing is always Paper, even when the workspace theme is dark.
+ * The scope re-declares the core tokens so existing marketing components keep
+ * using the shared text/card/border utilities without inheriting dark values.
+ */
+.marketing-theme {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --destructive: #dc2626;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --info: #0369a1;
+  --info-foreground: #ffffff;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --chart-1: #87ceeb;
+  --chart-2: #4cb6e1;
+  --chart-3: #2199ca;
+  --chart-4: #114f68;
+  --chart-5: #aedef1;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer wordmark
+ *
+ * A restrained gradient fill, top highlight, and shallow edge shadow give the
+ * closing wordmark a subtle inset/embossed depth without adding artwork.
+ * ------------------------------------------------------------------------- */
+.marketing-footer-wordmark {
+  font-size: min(calc((100vw - 3rem) / 3.17), 21.75rem);
+  font-weight: 600;
+  line-height: 1.05;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0) 32%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.32) 0%,
+      rgba(255, 255, 255, 0) 42%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(2, 14, 20, 0) 48%,
+      rgba(2, 14, 20, 0.34) 100%
+    ),
+    linear-gradient(180deg, #1d6278 0%, #0a2f3e 52%, #02141c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.24))
+    drop-shadow(0 -1px 1px rgba(2, 18, 24, 0.22));
 }
 
 @layer base {
@@ -158,7 +272,8 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent)
+    transparent;
 }
 
 *::-webkit-scrollbar {
@@ -171,14 +286,22 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--muted-foreground) 40%,
+    transparent
+  );
   border: 2px solid transparent;
   border-radius: 9999px;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--muted-foreground) 65%,
+    transparent
+  );
 }
 
 *::-webkit-scrollbar-corner {
@@ -474,7 +597,11 @@
   .chat-thinking {
     animation: none;
     color: color-mix(in srgb, var(--primary) 65%, var(--muted-foreground));
-    -webkit-text-fill-color: color-mix(in srgb, var(--primary) 65%, var(--muted-foreground));
+    -webkit-text-fill-color: color-mix(
+      in srgb,
+      var(--primary) 65%,
+      var(--muted-foreground)
+    );
   }
 }
 
@@ -489,7 +616,12 @@
 
 .themed-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 28%, transparent) transparent;
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--sidebar-foreground) 28%,
+      transparent
+    )
+    transparent;
 }
 
 .themed-scrollbar::-webkit-scrollbar {
@@ -502,13 +634,21 @@
 
 .themed-scrollbar::-webkit-scrollbar-thumb {
   border-radius: 9999px;
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 28%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar-foreground) 28%,
+    transparent
+  );
   background-clip: padding-box;
   border: 2px solid transparent;
 }
 
 .themed-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 42%, transparent);
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar-foreground) 42%,
+    transparent
+  );
 }
 
 /* Hide scrollbar visually while keeping scroll functional. */
@@ -614,6 +754,14 @@
   padding-left: 1.5em;
 }
 
+.chat-markdown ul {
+  list-style: disc;
+}
+
+.chat-markdown ol {
+  list-style: decimal;
+}
+
 .chat-markdown li {
   margin: 0.15em 0;
 }
@@ -623,14 +771,14 @@
 }
 
 .chat-markdown code {
-  background: hsl(var(--muted));
+  background: var(--muted);
   padding: 0.15em 0.35em;
   border-radius: 0.25rem;
   font-size: 0.875em;
 }
 
 .chat-markdown pre {
-  background: hsl(var(--muted));
+  background: var(--muted);
   padding: 0.75em 1em;
   border-radius: 0.5rem;
   overflow-x: auto;
@@ -643,10 +791,10 @@
 }
 
 .chat-markdown blockquote {
-  border-left: 3px solid hsl(var(--border));
+  border-left: 3px solid var(--border);
   padding-left: 0.75em;
   margin: 0.5em 0;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .chat-markdown h1,
@@ -670,7 +818,7 @@
 }
 
 .chat-markdown a {
-  color: hsl(var(--primary));
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -681,7 +829,7 @@
 
 .chat-markdown hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--border);
   margin: 0.75em 0;
 }
 
@@ -694,13 +842,13 @@
 
 .chat-markdown th,
 .chat-markdown td {
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--border);
   padding: 0.35em 0.65em;
   text-align: left;
 }
 
 .chat-markdown th {
-  background: hsl(var(--muted));
+  background: var(--muted);
   font-weight: 600;
 }
 
@@ -716,31 +864,37 @@
 @keyframes sky-fade-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate3d(0, 14px, 0);
+    filter: blur(5px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
   }
 }
 
 @keyframes sky-fade {
   from {
     opacity: 0;
+    filter: blur(4px);
   }
   to {
     opacity: 1;
+    filter: blur(0);
   }
 }
 
 @keyframes sky-pop {
   from {
     opacity: 0;
-    transform: scale(0.92);
+    transform: scale(0.95);
+    filter: blur(5px);
   }
   to {
     opacity: 1;
     transform: scale(1);
+    filter: blur(0);
   }
 }
 
@@ -786,11 +940,13 @@
 .sky-enter-fade {
   animation-name: sky-fade;
   animation-duration: 500ms;
+  animation-fill-mode: both;
 }
 
 .sky-pop-in {
   animation-name: sky-pop;
   animation-duration: 380ms;
+  animation-fill-mode: both;
 }
 
 .sky-analyzing {
@@ -815,9 +971,99 @@
   animation-iteration-count: 2;
 }
 
+@keyframes agent-thinking-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.agent-thinking-dot {
+  animation: agent-thinking-dot 1.15s ease-in-out infinite;
+}
+
+@keyframes agent-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.agent-caret {
+  animation: agent-caret 1s steps(1, end) infinite;
+}
+
 .sky-row {
   animation-name: sky-fade;
   animation-duration: 420ms;
+}
+
+/* ---------------------------------------------------------------------------
+ * Marketing scroll reveal
+ *
+ * Content is visible by default. RevealSection only arms the blur-fade for
+ * elements that are still below the fold when they mount, so a slow hydration,
+ * a disabled observer, or a reduced-motion preference can never leave a
+ * section stuck at opacity 0.
+ * ------------------------------------------------------------------------- */
+.reveal {
+  --reveal-delay: 0ms;
+  --reveal-blur: 8px;
+  --reveal-y: 18px;
+  --reveal-duration: 780ms;
+  transition:
+    opacity var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay),
+    transform var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay),
+    filter var(--reveal-duration) cubic-bezier(0.22, 1, 0.36, 1)
+      var(--reveal-delay);
+}
+
+.reveal-media {
+  --reveal-blur: 4px;
+  --reveal-y: 12px;
+  --reveal-duration: 760ms;
+}
+
+/*
+ * Full-width homepage screenshots use the same blur-in motion at a lighter
+ * radius. A 4px+ filter over a large image forces expensive re-rasterization
+ * and can delay every reveal below it.
+ */
+.reveal-media-soft {
+  --reveal-blur: 2px;
+  --reveal-y: 12px;
+  --reveal-duration: 760ms;
+}
+
+.reveal.reveal-armed {
+  opacity: 0;
+  transform: translate3d(0, var(--reveal-y), 0);
+  filter: blur(var(--reveal-blur));
+  transition: none;
+}
+
+@media (max-width: 640px) {
+  .reveal {
+    --reveal-blur: 5px;
+    --reveal-y: 14px;
+  }
+
+  .reveal-media {
+    --reveal-blur: 2px;
+    --reveal-y: 10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -826,5 +1072,267 @@
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+    filter: none !important;
   }
+
+  .reveal,
+  .reveal.reveal-armed {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+
+  .agent-caret,
+  .agent-thinking-dot {
+    animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Marketing hero / product surfaces
+ *
+ * The launch hero is a quiet painted field rather than a hard gradient: a
+ * warm paper base, a pale peach wash, and a cool sky edge. The product
+ * screenshot sits in a translucent glass bezel with a single specular edge,
+ * so the artwork stays secondary to the interface.
+ * ------------------------------------------------------------------------- */
+
+.marketing-hero-art {
+  background-color: #f7fbfd;
+  background-image:
+    radial-gradient(
+      ellipse 58% 62% at 8% 6%,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0) 62%
+    ),
+    radial-gradient(
+      ellipse 48% 44% at 92% 10%,
+      rgba(255, 219, 204, 0.5) 0%,
+      rgba(255, 219, 204, 0) 68%
+    ),
+    radial-gradient(
+      ellipse 62% 58% at 82% 52%,
+      rgba(135, 206, 235, 0.3) 0%,
+      rgba(135, 206, 235, 0) 70%
+    ),
+    radial-gradient(
+      ellipse 82% 62% at 16% 88%,
+      rgba(174, 222, 241, 0.42) 0%,
+      rgba(174, 222, 241, 0) 72%
+    ),
+    linear-gradient(180deg, #fbf8f3 0%, #f4fafd 54%, #f4fafd 100%);
+}
+
+.marketing-glass-frame {
+  position: relative;
+  border-radius: clamp(1.2rem, 2.5vw, 2rem);
+  padding: clamp(0.4rem, 0.75vw, 0.65rem);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.8) 0%,
+      rgba(255, 255, 255, 0.36) 42%,
+      rgba(255, 255, 255, 0.64) 100%
+    );
+  box-shadow:
+    0 52px 120px -58px rgba(10, 47, 62, 0.55),
+    0 18px 44px -28px rgba(10, 47, 62, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.marketing-glass-frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.96) 50%,
+    transparent 100%
+  );
+}
+
+.marketing-glass-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: clamp(0.95rem, 2vw, 1.6rem);
+  background: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(10, 47, 62, 0.08),
+    inset 0 2px 12px rgba(10, 47, 62, 0.08);
+}
+
+.marketing-glass-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    122deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.05) 26%,
+    transparent 46%
+  );
+}
+
+.marketing-dark-band {
+  background-color: #071b24;
+  background-image:
+    radial-gradient(
+      ellipse 55% 60% at 82% 8%,
+      rgba(135, 206, 235, 0.12) 0%,
+      rgba(135, 206, 235, 0) 70%
+    ),
+    radial-gradient(
+      ellipse 70% 70% at 12% 100%,
+      rgba(20, 78, 94, 0.45) 0%,
+      rgba(20, 78, 94, 0) 70%
+    );
+}
+
+.marketing-dark-grid {
+  opacity: 0.3;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.16) 1px,
+    transparent 0
+  );
+  background-size: 24px 24px;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
+  mask-image: linear-gradient(to bottom, black 0%, transparent 94%);
+}
+
+/* -------------------------------------------------------------------------
+   THEME: DEMO (Brand White / Paper Canvas / Sky Accent)
+   Distinct from the paid green .theme-erp while retaining exact layout sizing.
+* ------------------------------------------------------------------------- */
+
+.theme-demo {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+  --success: #047857;
+  /* Scoped text colour: components that rely on inheritance (Input, Label,
+     outline Button) must follow the demo theme, not the document root. */
+  color: var(--foreground);
+}
+
+/* The demo owns its own theme, so a system `.dark` class must not leak in. */
+.dark .theme-demo {
+  color-scheme: light;
+  --background: #f4fafd;
+  --foreground: #0a2f3e;
+  --card: #ffffff;
+  --card-foreground: #0a2f3e;
+  --popover: #ffffff;
+  --popover-foreground: #0a2f3e;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #e6f5fa;
+  --secondary-foreground: #0d3f53;
+  --muted: #edf7fc;
+  --muted-foreground: #176a8b;
+  --accent: #e6f5fa;
+  --accent-foreground: #0d3f53;
+  --border: #cae9f6;
+  --input: #cae9f6;
+  --ring: #87ceeb;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a2f3e;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #e6f5fa;
+  --sidebar-accent-foreground: #0d3f53;
+  --sidebar-border: #cae9f6;
+  --sidebar-ring: #87ceeb;
+  --success: #047857;
+}
+
+/*
+ * Demo appearance. The demo shell sets `data-demo-theme` from the visitor's
+ * saved preferences, so the walkthrough can switch between the paper canvas
+ * and the deep-teal control room without touching the live workspace theme.
+ * Declared after the `.dark` guard above so it wins at equal specificity.
+ */
+.theme-demo[data-demo-theme="dark"] {
+  color-scheme: dark;
+  --background: #071b24;
+  --foreground: #e6f5fa;
+  --card: #0b2630;
+  --card-foreground: #e6f5fa;
+  --popover: #0b2630;
+  --popover-foreground: #e6f5fa;
+  --primary: #87ceeb;
+  --primary-foreground: #061f29;
+  --secondary: #103543;
+  --secondary-foreground: #d6eef7;
+  --muted: #0f2f3b;
+  --muted-foreground: #93bccc;
+  --accent: #103543;
+  --accent-foreground: #d6eef7;
+  --border: #17414f;
+  --input: #1a4a5a;
+  --ring: #87ceeb;
+  --sidebar: #081f29;
+  --sidebar-foreground: #e6f5fa;
+  --sidebar-primary: #87ceeb;
+  --sidebar-primary-foreground: #061f29;
+  --sidebar-accent: #103543;
+  --sidebar-accent-foreground: #d6eef7;
+  --sidebar-border: #17414f;
+  --sidebar-ring: #87ceeb;
+  --success: #34d399;
+}
+
+/* Dark wordmarks invert to white so they stay legible without a tile. */
+.theme-demo[data-demo-theme="dark"] .demo-logo-invert {
+  filter: brightness(0) invert(1);
+}
+
+/* Compact density trims the height of ledgers and registers only. */
+.theme-demo[data-demo-density="compact"] main table :is(th, td) {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+.theme-demo[data-demo-density="compact"] main tbody tr {
+  line-height: 1.35;
+}
+
+/* Reduce motion: keep state changes instant, drop decorative animation. */
+.theme-demo[data-demo-motion="reduced"] *,
+.theme-demo[data-demo-motion="reduced"] *::before,
+.theme-demo[data-demo-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }

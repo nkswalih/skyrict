@@ -81,6 +81,53 @@ accepts the session cookie over loopback. This is a **test-only transport
 override**, not the security boundary under test; prod default behavior
 (`Secure` on) is unchanged.
 
+### Demo only (public marketing surface)
+
+`/demo/erp` is a public, session-free route served from the **marketing**
+origin (`localhost`), not from a tenant subdomain. It has its own `demo`
+Playwright project so it never touches auth setup or `storageState`.
+
+```bash
+# local: boots `next dev` on :3000 and runs just the demo journey
+pnpm --filter @skyrict/web exec playwright test --project=demo --workers=1
+
+# CI / pre-built: point the project at the already-running web server
+E2E_SKIP_WEBSERVER=1 \
+E2E_DEMO_BASE_URL=http://localhost:3000 \
+pnpm --filter @skyrict/web exec playwright test --project=demo
+```
+
+`baseURL` is derived from `E2E_BASE_URL` with the host swapped to `localhost`
+(so the existing CI env keeps working), or set explicitly with
+`E2E_DEMO_BASE_URL`. The project has no `setup` dependency and no
+`storageState` — the spec asserts the demo works entirely from the seed +
+`localStorage`, with `/api/**` blocked and asserted at zero. `SessionProvider`
+skips BFF session restore on `/demo`, so the walkthrough makes no backend calls
+at all.
+
+Do **not** run the demo spec on a tenant origin: `/demo/erp` there is
+rewritten to `/dashboard/demo/erp` and redirected to signin without a session.
+
+The demo runs the same product chrome as a real workspace — profile menu,
+notification inbox, and Settings (profile, appearance, workspace, notifications,
+billing, security, integrations). Those screens are demo-safe mocks over the
+same `localStorage` snapshot: theme, density and motion apply through
+`data-demo-theme` / `data-demo-density` / `data-demo-motion` on the demo shell,
+so the live workspace theme is never touched. When adding a test there, assert
+the *user-visible* result (heading, badge, persisted snapshot) rather than the
+component that renders it; the demo deliberately reuses live layout components,
+so component-level assertions would pass even if a screen crashed.
+
+Two practical rules learned from this suite:
+
+- The bell and topbar controls are `aria-hidden` while the notification dialog
+  is open. Assert them after closing the dialog, or read
+  `skyrict:demo:v3` directly.
+- Sign-out is the one test that must **not** call `expectClean`: leaving `/demo`
+  for `/` legitimately hydrates the real session (`/api/auth/session`). Instead
+  record requests and assert none of them is `/api/auth/logout`.
+
+
 ## The two worker-scoped fixtures
 
 Every Playwright worker owns exactly one browser context so its cookie jar

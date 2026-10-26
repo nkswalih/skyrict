@@ -43,8 +43,8 @@ export default async function PlanPage({
                         continue.
                     </p>
                 </div>
-                <Link href="/signup" className="block">
-                    <AuthButton className="w-full">Start over</AuthButton>
+                <Link href="/signup" prefetch={false} className="block">
+                    <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">Start over</AuthButton>
                 </Link>
             </div>
         );
@@ -53,7 +53,7 @@ export default async function PlanPage({
     return (
         <div className="space-y-5">
             <div className="space-y-1.5 text-center">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-foreground">
                     Step 4 of 7 · Plan
                 </p>
                 <h1 className="font-display text-2xl font-semibold text-foreground">

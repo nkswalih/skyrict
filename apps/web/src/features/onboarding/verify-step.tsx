@@ -146,8 +146,8 @@ function VerifyStep({ email }: { email: string }) {
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           {SESSION_EXPIRED}
         </div>
-        <Link href="/signup" className="block">
-          <AuthButton className="w-full">
+        <Link href="/signup" prefetch={false} className="block">
+          <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">
             Back to account details
           </AuthButton>
         </Link>
@@ -215,7 +215,7 @@ function VerifyStep({ email }: { email: string }) {
               type="button"
               onClick={handleResend}
               disabled={resending || resendIn > 0}
-              className="font-medium text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              className="font-medium text-foreground underline-offset-3 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
               {resending ? "Resending\n" : "Resend code"}
             </button>
@@ -224,8 +224,8 @@ function VerifyStep({ email }: { email: string }) {
         <p className="text-muted-foreground">
           Wrong email?{" "}
           <Link
-            href="/signup"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            href="/signup" prefetch={false}
+            className="font-medium text-foreground underline-offset-3 hover:underline"
           >
             Change it
           </Link>
@@ -234,7 +234,8 @@ function VerifyStep({ email }: { email: string }) {
 
       <AuthButton
         type="button"
-        className="w-full"
+        className="size-10 justify-self-end w-full"
+        variant="brand"
         loading={verifying}
         onClick={handleVerify}
       >
@@ -244,7 +245,7 @@ function VerifyStep({ email }: { email: string }) {
       <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
         <ArrowLeft aria-hidden="true" className="size-3" />
         <Link
-          href="/signup"
+          href="/signup" prefetch={false}
           className="underline-offset-4 hover:underline"
         >
           Back to account details

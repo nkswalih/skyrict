@@ -50,7 +50,7 @@ export const docCategories: DocCategory[] = [
     {
         id: "getting-started",
         name: "Getting started",
-        description: "From first account to first signal in one sitting.",
+        description: "From first account to first live view in one sitting.",
     },
     {
         id: "operations",
@@ -60,12 +60,12 @@ export const docCategories: DocCategory[] = [
     {
         id: "intelligence",
         name: "Intelligence",
-        description: "Live signals from the market, read continuously.",
+        description: "Market intelligence, currently in development.",
     },
     {
         id: "agents",
         name: "Agents",
-        description: "Reasoning across operations and the market at once.",
+        description: "Reasoning across your operations and records.",
     },
     {
         id: "security",
@@ -124,17 +124,17 @@ export const docArticles: DocArticle[] = [
     {
         categoryId: "getting-started",
         slug: "connect-operations",
-        title: "Connect your operations",
+        title: "Set up your operations",
         description:
-            "Inventory, sales, cash, and orders read from the live source of truth.",
+            "Inventory, sales, cash, and orders in one workspace.",
         popular: true,
         cta: true,
         sections: [
             {
                 id: "what-you-connect",
-                title: "What you connect",
+                title: "What you set up",
                 paragraphs: [
-                    "Skyrict reads from the live source of truth of your business: products and stock, sales, cash, and open orders. There is no data warehouse and no one-time migration project.",
+                    "Skyrict holds products and stock, sales, cash, and open orders in one workspace. You start with the modules you need. If you already run an ERP, talk to us about what you need to bring across.",
                 ],
             },
             {
@@ -151,7 +151,7 @@ export const docArticles: DocArticle[] = [
                 id: "sales-cash-orders",
                 title: "Sales, cash, and orders",
                 paragraphs: [
-                    "As orders come in, Skyrict tracks them against your stock and the cash they represent. Sales velocity and unfulfilled value update continuously from the numbers your team already uses.",
+                    "As orders come in, Skyrict tracks them against your stock and the cash they represent. Sales velocity and unfulfilled value update from the records your team enters.",
                 ],
             },
             {
@@ -160,7 +160,7 @@ export const docArticles: DocArticle[] = [
                 paragraphs: [
                     "The daily pulse starts reporting as soon as data flows. Watch points, stock anomalies, and near-reorder items appear without further setup.",
                 ],
-                note: "Skyrict reads your operations; it does not replace your systems of record. Keep the source updated and the platform follows.",
+                note: "Skyrict is the operating system for the modules you use, not a read-only layer over another ERP. Keep the records current and the pulse follows.",
             },
         ],
         related: [
@@ -217,7 +217,8 @@ export const docArticles: DocArticle[] = [
         categoryId: "operations",
         slug: "inventory",
         title: "Inventory",
-        description: "Stock, movements, warehouses, suppliers, and low-stock alerts.",
+        description:
+            "Stock, movements, warehouses, suppliers, and low-stock alerts.",
         sections: [
             {
                 id: "what-inventory-covers",
@@ -440,7 +441,7 @@ export const docArticles: DocArticle[] = [
         slug: "market-signals",
         title: "Market signals",
         description:
-            "Google Trends, YouTube, Reddit, GitHub, and news, watched continuously.",
+            "The planned market layer: Google Trends, YouTube, Reddit, GitHub, and news.",
         popular: true,
         cta: true,
         sections: [
@@ -448,7 +449,7 @@ export const docArticles: DocArticle[] = [
                 id: "what-market-signals-are",
                 title: "What market signals are",
                 paragraphs: [
-                    "Market signals are continuous reads of public demand data. Skyrict watches them against your categories and surfaces changes the week they happen.",
+                    "Market signals are reads of public demand data. Skyrict is building a signal collection engine to watch them against your categories and surface changes as they happen. The layer is in development and external signals are not live yet. The pages in this section describe the planned workspace.",
                 ],
             },
             {
@@ -466,7 +467,7 @@ export const docArticles: DocArticle[] = [
                 id: "how-often-they-are-read",
                 title: "How often they are read",
                 paragraphs: [
-                    "Each source is watched on a recurring schedule. A read that succeeds carries a live label; older reads fall back to cache so you always see the last known state.",
+                    "When the engine ships, each source will be read on a recurring schedule. A successful read will carry a live label; older reads will fall back to cache so you always see the last known state.",
                 ],
             },
             {
@@ -593,7 +594,8 @@ export const docArticles: DocArticle[] = [
         categoryId: "agents",
         slug: "guardian",
         title: "Guardian",
-        description: "Background watch over your operations, surfacing what needs you.",
+        description:
+            "Background watch over your operations, surfacing what needs you.",
         cta: true,
         sections: [
             {
@@ -672,7 +674,8 @@ export const docArticles: DocArticle[] = [
         categoryId: "agents",
         slug: "your-agents",
         title: "Your agents",
-        description: "The agents your workspace runs and how they are configured.",
+        description:
+            "The agents your workspace runs and how they are configured.",
         cta: true,
         sections: [
             {
@@ -786,7 +789,8 @@ export const docArticles: DocArticle[] = [
         categoryId: "security",
         slug: "source-code",
         title: "Source code",
-        description: "Skyrict is open source. Audit the security story yourself.",
+        description:
+            "Skyrict is open source. Audit the security story yourself.",
         sections: [
             {
                 id: "open-source",
@@ -920,7 +924,9 @@ export function relatedFor(
                   }
                 : null;
         })
-        .filter((entry): entry is { title: string; href: string } => entry !== null);
+        .filter(
+            (entry): entry is { title: string; href: string } => entry !== null,
+        );
 }
 
 /** Plain text of a guide used by the search index. */
@@ -954,8 +960,9 @@ export function searchDocs(query: string): DocsSearchHit[] {
     for (const article of docArticles) {
         const category = getCategory(article.categoryId);
         const titleMatch = article.title.toLowerCase().includes(needle);
-        const descriptionMatch =
-            article.description.toLowerCase().includes(needle);
+        const descriptionMatch = article.description
+            .toLowerCase()
+            .includes(needle);
         const body = articleText(article);
         const bodyMatch = body.toLowerCase().includes(needle);
 
@@ -975,7 +982,10 @@ export function searchDocs(query: string): DocsSearchHit[] {
     }
 
     return scored
-        .sort((a, b) => b.score - a.score || a.hit.title.localeCompare(b.hit.title))
+        .sort(
+            (a, b) =>
+                b.score - a.score || a.hit.title.localeCompare(b.hit.title),
+        )
         .map((entry) => entry.hit);
 }
 

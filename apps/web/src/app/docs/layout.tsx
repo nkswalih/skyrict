@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { DocsShell } from "@/components/docs/docs-shell";
+import { site } from "@/config";
 
 export const metadata: Metadata = {
     // The docs hostname is the canonical public origin for the /docs tree on
@@ -11,11 +12,11 @@ export const metadata: Metadata = {
     // the fallback hosts.
     metadataBase: new URL("https://docs.skyrict.in"),
     title: {
-        default: "Docs",
-        template: "%s · Docs",
+        default: "Skyrict Docs",
+        template: "%s · Skyrict Docs",
     },
     description:
-        "Guides for connecting operations, reading live signals, and running your business with Skyrict.",
+        "Guides for connecting operations, using AI agents, and running your business with Skyrict.",
     robots: {
         index: true,
         follow: true,
@@ -51,6 +52,12 @@ export default function DocsLayout({
                         .
                     </p>
                     <div className="flex items-center gap-4">
+                        <Link
+                            href={site.url}
+                            className="underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                            Skyrict.in
+                        </Link>
                         <Link
                             href="https://github.com/nkswalih/skyrict/issues"
                             target="_blank"

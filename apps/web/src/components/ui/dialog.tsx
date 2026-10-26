@@ -58,6 +58,7 @@ function DialogOverlay({
 
 function DialogContent({
     className,
+    overlayClassName,
     children,
     showCloseButton = true,
     onPointerDownOutside,
@@ -65,6 +66,7 @@ function DialogContent({
     ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
+    overlayClassName?: string;
 }) {
     const container = useThemeScopeContainer();
 
@@ -80,7 +82,7 @@ function DialogContent({
 
     return (
         <DialogPortal container={container ?? undefined}>
-            <DialogOverlay />
+            <DialogOverlay className={overlayClassName} />
             <DialogPrimitive.Content
                 data-slot="dialog-content"
                 className={cn(

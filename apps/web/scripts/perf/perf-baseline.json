@@ -3,57 +3,57 @@
     {
       "route": "/",
       "sizeKb": 1.61,
-      "firstLoadKb": 258.0
+      "firstLoadKb": 263.0
     },
     {
       "route": "/dashboard",
       "sizeKb": 8.64,
-      "firstLoadKb": 189.0
+      "firstLoadKb": 195.0
     },
     {
       "route": "/dashboard/agents",
       "sizeKb": 1.58,
-      "firstLoadKb": 275.0
+      "firstLoadKb": 283.0
     },
     {
       "route": "/dashboard/agents/c/[id]",
       "sizeKb": 2.01,
-      "firstLoadKb": 276.0
+      "firstLoadKb": 283.0
     },
     {
       "route": "/dashboard/agents/coaching",
       "sizeKb": 4.89,
-      "firstLoadKb": 235.0
+      "firstLoadKb": 242.0
     },
     {
       "route": "/dashboard/agents/guardian",
       "sizeKb": 2.14,
-      "firstLoadKb": 235.0
+      "firstLoadKb": 243.0
     },
     {
       "route": "/dashboard/agents/guardian/[reportId]",
       "sizeKb": 2.86,
-      "firstLoadKb": 236.0
+      "firstLoadKb": 243.0
     },
     {
       "route": "/dashboard/erp",
       "sizeKb": 27.4,
-      "firstLoadKb": 227.0
+      "firstLoadKb": 233.0
     },
     {
       "route": "/dashboard/erp/approvals",
       "sizeKb": 7.54,
-      "firstLoadKb": 209.0
+      "firstLoadKb": 215.0
     },
     {
       "route": "/dashboard/erp/crm/activities",
       "sizeKb": 4.83,
-      "firstLoadKb": 247.0
+      "firstLoadKb": 248.0
     },
     {
       "route": "/dashboard/erp/crm/ai",
       "sizeKb": 8.81,
-      "firstLoadKb": 186.0
+      "firstLoadKb": 193.0
     },
     {
       "route": "/dashboard/erp/crm/contacts",
@@ -63,7 +63,7 @@
     {
       "route": "/dashboard/erp/crm/customers",
       "sizeKb": 10.1,
-      "firstLoadKb": 242.0
+      "firstLoadKb": 243.0
     },
     {
       "route": "/dashboard/erp/crm/customers/[customerId]",
@@ -89,7 +89,7 @@
     {
       "route": "/dashboard/erp/crm/opportunities/[opportunityId]",
       "sizeKb": 5.72,
-      "firstLoadKb": 248.0
+      "firstLoadKb": 249.0
     },
     {
       "route": "/dashboard/erp/crm/overview",
@@ -99,37 +99,37 @@
     {
       "route": "/dashboard/erp/crm/search",
       "sizeKb": 6.46,
-      "firstLoadKb": 228.0
+      "firstLoadKb": 229.0
     },
     {
       "route": "/dashboard/erp/documents",
       "sizeKb": 3.17,
-      "firstLoadKb": 240.0
+      "firstLoadKb": 246.0
     },
     {
       "route": "/dashboard/erp/documents/[id]",
       "sizeKb": 4.37,
-      "firstLoadKb": 201.0
+      "firstLoadKb": 208.0
     },
     {
       "route": "/dashboard/erp/documents/list",
       "sizeKb": 4.5,
-      "firstLoadKb": 242.0
+      "firstLoadKb": 248.0
     },
     {
       "route": "/dashboard/erp/finance",
       "sizeKb": 11.9,
-      "firstLoadKb": 311.0
+      "firstLoadKb": 317.0
     },
     {
       "route": "/dashboard/erp/finance/accounts",
       "sizeKb": 6.7,
-      "firstLoadKb": 285.0
+      "firstLoadKb": 292.0
     },
     {
       "route": "/dashboard/erp/finance/ai-docs",
       "sizeKb": 10.7,
-      "firstLoadKb": 229.0
+      "firstLoadKb": 235.0
     },
     {
       "route": "/dashboard/erp/finance/audit-log",
@@ -144,7 +144,7 @@
     {
       "route": "/dashboard/erp/finance/fiscal-periods",
       "sizeKb": 5.44,
-      "firstLoadKb": 280.0
+      "firstLoadKb": 286.0
     },
     {
       "route": "/dashboard/erp/finance/invoices",
@@ -159,7 +159,7 @@
     {
       "route": "/dashboard/erp/finance/journal-entries",
       "sizeKb": 3.51,
-      "firstLoadKb": 288.0
+      "firstLoadKb": 294.0
     },
     {
       "route": "/dashboard/erp/finance/journal-entries/[id]",
@@ -169,17 +169,17 @@
     {
       "route": "/dashboard/erp/finance/settings",
       "sizeKb": 7.41,
-      "firstLoadKb": 197.0
+      "firstLoadKb": 203.0
     },
     {
       "route": "/dashboard/erp/finance/statements",
       "sizeKb": 6.65,
-      "firstLoadKb": 249.0
+      "firstLoadKb": 256.0
     },
     {
       "route": "/dashboard/erp/hr",
       "sizeKb": 7.48,
-      "firstLoadKb": 195.0
+      "firstLoadKb": 196.0
     },
     {
       "route": "/dashboard/erp/hr/ai-alerts",
@@ -199,12 +199,12 @@
     {
       "route": "/dashboard/erp/hr/compliance",
       "sizeKb": 6.71,
-      "firstLoadKb": 200.0
+      "firstLoadKb": 206.0
     },
     {
       "route": "/dashboard/erp/hr/correlation",
       "sizeKb": 2.75,
-      "firstLoadKb": 197.0,
+      "firstLoadKb": 204.0,
       "budgetNote": "1 kB drift from shared First Load JS (PERF-WEB-002 in-flight GET dedup added to lib/api/http.ts; route-local chunk unchanged at 4.73 kB). Baseline 193 -> 194."
     },
     {
@@ -225,12 +225,12 @@
     {
       "route": "/dashboard/erp/hr/employees/[id]",
       "sizeKb": 5.17,
-      "firstLoadKb": 243.0
+      "firstLoadKb": 249.0
     },
     {
       "route": "/dashboard/erp/hr/leave",
       "sizeKb": 11.1,
-      "firstLoadKb": 246.0,
+      "firstLoadKb": 252.0,
       "budgetNote": "1 kB drift from shared First Load JS (PERF-WEB-002 in-flight GET dedup added to lib/api/http.ts; route-local chunk unchanged at 11.1 kB). Baseline 242 -> 243."
     },
     {
@@ -251,12 +251,12 @@
     {
       "route": "/dashboard/erp/inventory/alerts",
       "sizeKb": 2.22,
-      "firstLoadKb": 236.0
+      "firstLoadKb": 237.0
     },
     {
       "route": "/dashboard/erp/inventory/anomalies",
       "sizeKb": 6.38,
-      "firstLoadKb": 179.0
+      "firstLoadKb": 180.0
     },
     {
       "route": "/dashboard/erp/inventory/forecast",
@@ -287,7 +287,7 @@
     {
       "route": "/dashboard/erp/inventory/suggestions",
       "sizeKb": 6.35,
-      "firstLoadKb": 179.0
+      "firstLoadKb": 180.0
     },
     {
       "route": "/dashboard/erp/inventory/suppliers",
@@ -308,12 +308,12 @@
     {
       "route": "/dashboard/erp/orders/[orderId]",
       "sizeKb": 8.21,
-      "firstLoadKb": 220.0
+      "firstLoadKb": 221.0
     },
     {
       "route": "/dashboard/erp/payroll",
       "sizeKb": 5.08,
-      "firstLoadKb": 203.0,
+      "firstLoadKb": 209.0,
       "budgetNote": "1 kB drift from shared First Load JS (PERF-WEB-002 in-flight GET dedup added to lib/api/http.ts; route-local chunk unchanged at 7 kB). Baseline 198 -> 199."
     },
     {
@@ -361,7 +361,7 @@
     {
       "route": "/dashboard/erp/reports",
       "sizeKb": 5.77,
-      "firstLoadKb": 196.0
+      "firstLoadKb": 202.0
     },
     {
       "route": "/dashboard/erp/reports/[reportId]",
@@ -376,7 +376,7 @@
     {
       "route": "/dashboard/intelligence/explore",
       "sizeKb": 3.52,
-      "firstLoadKb": 173.0
+      "firstLoadKb": 180.0
     },
     {
       "route": "/dashboard/intelligence/feedback",
@@ -386,12 +386,12 @@
     {
       "route": "/dashboard/intelligence/market",
       "sizeKb": 3.28,
-      "firstLoadKb": 164.0
+      "firstLoadKb": 165.0
     },
     {
       "route": "/dashboard/intelligence/results",
       "sizeKb": 6.25,
-      "firstLoadKb": 181.0,
+      "firstLoadKb": 187.0,
       "budgetNote": "1 kB drift from route-chunk content (route-local code unchanged at 7.41 kB; no new deps - no chart/markdown/QR libs). Baseline 178 -> 179."
     },
     {
@@ -408,23 +408,23 @@
     {
       "route": "/dashboard/leave",
       "sizeKb": 8.29,
-      "firstLoadKb": 219.0,
+      "firstLoadKb": 226.0,
       "budgetNote": "1 kB drift from shared First Load JS (PERF-WEB-002 in-flight GET dedup added to lib/api/http.ts; route-local chunk unchanged at 9.73 kB). Baseline 217 -> 218."
     },
     {
       "route": "/dashboard/members",
       "sizeKb": 8.69,
-      "firstLoadKb": 223.0
+      "firstLoadKb": 224.0
     },
     {
       "route": "/dashboard/roles",
       "sizeKb": 10.3,
-      "firstLoadKb": 203.0
+      "firstLoadKb": 204.0
     },
     {
       "route": "/dashboard/settings",
       "sizeKb": 7.64,
-      "firstLoadKb": 207.0
+      "firstLoadKb": 208.0
     },
     {
       "route": "/dashboard/settings/notifications",
@@ -449,12 +449,12 @@
     {
       "route": "/signup",
       "sizeKb": 11.0,
-      "firstLoadKb": 221.0
+      "firstLoadKb": 222.0
     },
     {
       "route": "/signup/organization",
       "sizeKb": 14.2,
-      "firstLoadKb": 258.0
+      "firstLoadKb": 259.0
     },
     {
       "route": "/signup/plan",
@@ -469,7 +469,7 @@
     {
       "route": "/signup/verify",
       "sizeKb": 4.61,
-      "firstLoadKb": 185.0,
+      "firstLoadKb": 186.0,
       "budgetNote": "The inline TurnstileWidget and code-send-challenge module that once pushed this route to 5.35 kB / 186 kB are gone: the step now spends the signup flow proof minted at step 1, so the code request no longer carries its own challenge. Measured from a full next build - route-local chunk 5.35 -> 4.61 kB, First Load JS 186 -> 185 kB, back to the pre-challenge budget. Regenerate with: node scripts/perf/parse-bundle-sizes.mjs --log build.log"
     },
     {
@@ -505,12 +505,12 @@
     {
       "route": "/product",
       "sizeKb": 1.61,
-      "firstLoadKb": 258.0
+      "firstLoadKb": 268.0
     },
     {
       "route": "/signup/billing",
       "sizeKb": 8.74,
-      "firstLoadKb": 182.0
+      "firstLoadKb": 183.0
     },
     {
       "route": "/signup/review",

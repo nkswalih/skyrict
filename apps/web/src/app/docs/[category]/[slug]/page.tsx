@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { CopyPageLink } from "@/components/docs/copy-page-link";
 import { Feedback } from "@/components/docs/feedback";
 import { Toc } from "@/components/docs/toc";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import {
     docArticles,
     getArticle,
@@ -269,10 +270,21 @@ export default async function ArticlePage({ params }: PageProps) {
             entry.slug === article.slug,
     );
     const href = pathFor(article.categoryId, article.slug);
+    const breadcrumbItems = [
+        { name: "Docs", path: "/" },
+        {
+            name: article.title,
+            path: surfacePathFor(article.categoryId, article.slug),
+        },
+    ];
 
     return (
         <div className="mx-auto flex w-full max-w-[960px] justify-center gap-10 px-6 py-10 lg:py-12">
             <div className="min-w-0 w-full max-w-2xl">
+                <BreadcrumbJsonLd
+                    baseUrl="https://docs.skyrict.in"
+                    items={breadcrumbItems}
+                />
                 <Breadcrumb article={article} />
 
                 <div className="mt-6 flex items-start justify-between gap-4">
@@ -292,7 +304,7 @@ export default async function ArticlePage({ params }: PageProps) {
                             Some steps in this guide require a Skyrict account.
                         </p>
                         <Link
-                            href="/signup"
+                            href="/signup" prefetch={false}
                             className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors outline-none hover:bg-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50"
                         >
                             Create a Skyrict account

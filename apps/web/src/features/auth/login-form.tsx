@@ -193,7 +193,9 @@ function LoginForm({
                     ) : null}
                     <AuthButton
                         type="submit"
-                        className="w-full"
+                        className="size-10 justify-self-end w-full"
+                        variant="brand"
+                        size="icon-lg"
                         loading={verifyingMfa || handingOff}
                         disabled={
                             useBackup
@@ -293,7 +295,7 @@ function LoginForm({
                     {genericError}
                 </div>
             ) : null}
-            <AuthButton type="submit" className="w-full" loading={isSubmitting}>
+            <AuthButton type="submit" className="size-10 justify-self-end w-full" variant="brand" size="icon-lg" loading={isSubmitting}>
                 Sign in
             </AuthButton>
         </form>

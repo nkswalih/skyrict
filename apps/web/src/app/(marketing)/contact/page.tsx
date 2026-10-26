@@ -4,26 +4,33 @@ import Link from "next/link";
 
 import { ContactForm } from "@/components/marketing/contact/contact-form";
 import { RevealSection } from "@/components/marketing/reveal-section";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 import { contactEmail } from "@/config";
 
 export const metadata: Metadata = {
-    title: "Contact",
+    title: "Contact Sales",
     description:
-        "Talk to Skyrict about your operations. Bug reports belong in the public GitHub issue tracker.",
+        "Talk to Skyrict about your operations, a walkthrough, or a rollout. Bug reports belong in the public GitHub issue tracker.",
     alternates: {
         canonical: "/contact",
     },
 };
 
 const pointers = [
-    "The systems you run and what connects to them",
+    "The systems you run today and what you want to improve",
     "Team size and the decisions you want covered",
-    "A specific signal you watch and want acted on",
+    "A workflow or report that takes too long today",
 ];
 
 export default function ContactPage() {
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "Contact Sales", path: "/contact" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
                 <div className="grid items-start gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
                     <RevealSection>
@@ -35,9 +42,8 @@ export default function ContactPage() {
                                 Talk to us about your operations.
                             </h1>
                             <p className="mt-5 text-base leading-relaxed text-muted-foreground">
-                                Tell us what you run, what you want to connect,
-                                and where the market is pushing you. We reply
-                                from{" "}
+                                Tell us what you run, what you want to improve,
+                                and where the work slows down. We reply from{" "}
                                 <span className="font-mono text-sm text-foreground">
                                     {contactEmail}
                                 </span>
@@ -82,7 +88,7 @@ export default function ContactPage() {
                             </div>
                         </div>
                     </RevealSection>
-                    <RevealSection delay={120}>
+                    <RevealSection delay={60}>
                         <ContactForm />
                     </RevealSection>
                 </div>

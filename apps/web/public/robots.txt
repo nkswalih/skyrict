@@ -3,6 +3,7 @@ Allow: /
 Allow: /terms
 Allow: /privacy
 Disallow: /api/
+Disallow: /demo
 Disallow: /dashboard
 Disallow: /dashboard/
 Disallow: /agents

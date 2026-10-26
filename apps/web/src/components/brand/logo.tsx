@@ -1,5 +1,7 @@
-import type { SVGProps } from "react";
+"use client";
 
+import type { SVGProps } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export type LogoMarkTone = "sky" | "erp" | "ai";
@@ -26,7 +28,7 @@ function LogoMark({
             viewBox="0 0 32 32"
             role="img"
             aria-label="Skyrict"
-            className={cn("size-8", className)}
+            className={cn("size-7", className)}
         >
             <defs>
                 <linearGradient id={colors.id} x1="0" y1="0" x2="1" y2="1">
@@ -38,30 +40,9 @@ function LogoMark({
             {tone === "erp" ? (
                 <g fill={colors.ink}>
                     <rect x="9" y="9" width="6" height="6" rx="1.6" />
-                    <rect
-                        x="17"
-                        y="9"
-                        width="6"
-                        height="6"
-                        rx="1.6"
-                        opacity="0.45"
-                    />
-                    <rect
-                        x="9"
-                        y="17"
-                        width="6"
-                        height="6"
-                        rx="1.6"
-                        opacity="0.45"
-                    />
-                    <rect
-                        x="17"
-                        y="17"
-                        width="6"
-                        height="6"
-                        rx="1.6"
-                        opacity="0.45"
-                    />
+                    <rect x="17" y="9" width="6" height="6" rx="1.6" opacity="0.45" />
+                    <rect x="9" y="17" width="6" height="6" rx="1.6" opacity="0.45" />
+                    <rect x="17" y="17" width="6" height="6" rx="1.6" opacity="0.45" />
                 </g>
             ) : tone === "ai" ? (
                 <g fill={colors.ink}>
@@ -80,34 +61,19 @@ function LogoMark({
                 </g>
             ) : (
                 <>
-                    <g
-                        stroke={colors.ink}
-                        strokeWidth="2.6"
-                        strokeLinecap="round"
-                    >
+                    <g stroke={colors.ink} strokeWidth="2.6" strokeLinecap="round">
                         <path d="M9 22v-4" />
                         <path d="M14 22v-8" />
                         <path d="M19 22V11" />
                         <path d="M24 22v-13" />
                     </g>
-                    <circle
-                        cx="24"
-                        cy="9"
-                        r="2.1"
-                        fill={colors.ink}
-                        stroke="none"
-                    />
+                    <circle cx="24" cy="9" r="2.1" fill={colors.ink} stroke="none" />
                 </>
             )}
         </svg>
     );
 }
 
-/**
- * Standalone AI orbit glyph that inherits `currentColor` for small inline
- * spots. Accepts the same presentation props as the lucide icons it
- * replaces (className, aria-hidden, ...), minus a background.
- */
 function AiGlyph({ className, ...props }: SVGProps<SVGSVGElement>) {
     return (
         <svg
@@ -132,18 +98,62 @@ function AiGlyph({ className, ...props }: SVGProps<SVGSVGElement>) {
     );
 }
 
+export interface LogoProps {
+    className?: string;
+    wordmark?: boolean;
+    tone?: LogoMarkTone;
+    /**
+     * - "image": Transparent logo (has embedded padding, uses gap-0)
+     * - "rounded": Rounded app icon for auth, sidebars & demo (size-6, gap-2)
+     * - "glyph": Vector SVG glyph (size-7, gap-2)
+     */
+    mark?: "glyph" | "image" | "rounded";
+}
+
 function Logo({
     className,
     wordmark = true,
     tone = "sky",
-}: {
-    className?: string;
-    wordmark?: boolean;
-    tone?: LogoMarkTone;
-}) {
+    mark = "image",
+}: LogoProps) {
+    const gapClass = mark === "image" ? "gap-0" : "gap-2";
+
     return (
-        <span className={cn("inline-flex items-center gap-2.5", className)}>
-            <LogoMark className="size-7" tone={tone} />
+        <span className={cn("inline-flex items-center", gapClass, className)}>
+            {mark === "image" ? (
+                <span
+                    aria-hidden="true"
+                    className="relative size-8 shrink-0 overflow-hidden"
+                >
+                    <Image
+                        src="/skyrict_transparent_logo.png"
+                        alt=""
+                        width={64}
+                        height={64}
+                        sizes="32px"
+                        className="size-full object-contain"
+                        priority
+                    />
+                </span>
+            ) : mark === "rounded" ? (
+                <span
+                    aria-hidden="true"
+                    className="relative size-6 shrink-0 overflow-hidden rounded-[6px]"
+                >
+                    <Image
+                        src="/skyrict_logo_rounded.png"
+                        alt=""
+                        width={48}
+                        height={48}
+                        sizes="24px"
+                        className="size-full object-contain"
+                        priority
+                    />
+                </span>
+            ) : (
+                <LogoMark className="size-7" tone={tone} />
+            )}
+
             {wordmark ? (
                 <span className="font-display text-lg font-semibold tracking-tight text-current">
                     Skyrict

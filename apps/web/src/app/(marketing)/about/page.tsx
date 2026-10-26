@@ -10,11 +10,12 @@ import type { Metadata } from "next";
 
 import { RevealSection } from "@/components/marketing/reveal-section";
 import { Cta } from "@/components/marketing/sections/cta";
+import { BreadcrumbJsonLd } from "@/components/seo/breadcrumb-json-ld";
 
 export const metadata: Metadata = {
-    title: "About",
+    title: "About Us",
     description:
-        "Why Skyrict exists: operational truth inside your business and market context outside it, connected into decisions you can verify and act on.",
+        "Why Skyrict exists: one live system for your operations, with AI agents that help your team make decisions on current records instead of stale exports.",
     alternates: {
         canonical: "/about",
     },
@@ -28,17 +29,17 @@ const philosophy: {
     {
         icon: Boxes,
         title: "Deliberately scoped",
-        body: "Skyrict reads the operations that drive the rest instead of pretending to be a 400-module ERP. A live slice beats a stale copy.",
+        body: "Skyrict runs the operations that drive the rest instead of pretending to be a 400-module ERP. A live core beats a stale copy.",
     },
     {
         icon: Unplug,
-        title: "Connected by design",
-        body: "Operations and market data live in one system, not bolted-on tabs. The connection is the product.",
+        title: "One workspace by design",
+        body: "Operations live in one system, not bolted-on tabs. The market layer is being built into the same workspace, so context does not arrive as a separate report.",
     },
     {
         icon: MessageSquareText,
-        title: "Agents explain themselves",
-        body: "Every recommended action carries the reasoning. You should be able to check the logic before you approve it.",
+        title: "Agents show their work",
+        body: "SkyAgent can show the records and sources behind an answer, and recommendations stop at the approval step. You should be able to check the logic before you act.",
     },
     {
         icon: ShieldCheck,
@@ -50,6 +51,12 @@ const philosophy: {
 export default function AboutPage() {
     return (
         <>
+            <BreadcrumbJsonLd
+                items={[
+                    { name: "Home", path: "/" },
+                    { name: "About Us", path: "/about" },
+                ]}
+            />
             <section className="mx-auto w-full max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
                 <RevealSection>
                     <div className="mx-auto max-w-3xl space-y-6 text-center">
@@ -57,14 +64,13 @@ export default function AboutPage() {
                             About Skyrict
                         </p>
                         <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl">
-                            Ground every decision in both your business and the
-                            market.
+                            Make the call on live records, not stale exports.
                         </h1>
                         <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">
                             Skyrict exists because companies make operational
                             calls on half the picture. The part inside their
-                            own walls and the part moving in the market almost
-                            never meet in the same room.
+                            own walls is often out of date, and the part moving
+                            in the market rarely reaches the same room.
                         </p>
                     </div>
                 </RevealSection>
@@ -78,7 +84,7 @@ export default function AboutPage() {
                                 The problem
                             </p>
                             <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                                Two truths, rarely in the same room.
+                                The records and the market rarely meet.
                             </h2>
                         </div>
                     </RevealSection>
@@ -100,7 +106,7 @@ export default function AboutPage() {
                                 </p>
                             </div>
                         </RevealSection>
-                        <RevealSection delay={120}>
+                        <RevealSection delay={60}>
                             <div className="h-full rounded-2xl border border-border bg-card p-7">
                                 <span className="flex size-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
                                     <Globe aria-hidden="true" className="size-5" />
@@ -117,11 +123,12 @@ export default function AboutPage() {
                             </div>
                         </RevealSection>
                     </div>
-                    <RevealSection delay={160}>
+                    <RevealSection delay={100}>
                         <p className="mx-auto mt-12 max-w-2xl text-center text-base leading-relaxed text-foreground">
-                            When the two stay apart, decisions arrive late or
-                            lean on guesses. Skyrict puts them next to each
-                            other, on purpose.
+                            When the records stay apart, decisions arrive late
+                            or lean on guesses. Skyrict starts by putting the
+                            operational records in one live system. The market
+                            layer is being built into the same workspace.
                         </p>
                     </RevealSection>
                 </div>
@@ -160,7 +167,7 @@ export default function AboutPage() {
             </section>
 
             <section className="border-t border-border/60 bg-card/60">
-                <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:py-24">
+                <div className="mx-auto w-full max-w-6xl px-6 pt-16 pb-8 sm:pt-24 sm:pb-12">
                     <RevealSection>
                         <div className="mx-auto max-w-3xl text-center">
                             <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
@@ -170,11 +177,12 @@ export default function AboutPage() {
                                 More grounded, timely, and explainable decisions.
                             </h2>
                             <p className="mt-6 text-base leading-relaxed text-muted-foreground sm:text-lg">
-                                Grounded, because the evidence comes from your
-                                live operations and the actual market. Timely,
-                                because the signal surfaces the week it moves.
-                                Explainable, because every call carries the
-                                reasoning that supports it.
+                                Grounded, because answers come from your live
+                                operations. Timely, because the records are
+                                live, not a quarterly export. Explainable,
+                                because SkyAgent can point to the sources behind
+                                an answer, and recommendations stop at the
+                                approval step.
                             </p>
                         </div>
                     </RevealSection>
@@ -183,8 +191,8 @@ export default function AboutPage() {
 
             <Cta
                 eyebrow="See it for yourself"
-                title="Put your operations next to the market."
-                description="Create an account and Skyrict will start reading your business and the signals around it."
+                title="Put your operations in one workspace."
+                description="Create an account, set up the modules you need, and ask SkyAgent what needs attention."
             />
         </>
     );

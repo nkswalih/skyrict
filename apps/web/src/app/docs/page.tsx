@@ -87,8 +87,8 @@ export default function DocsHomePage() {
                 Skyrict Docs
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                Guides for connecting operations, reading live signals, and
-                running your business with Skyrict.
+                Guides for connecting operations, using AI agents, and running
+                your business with Skyrict.
             </p>
 
             <section aria-labelledby="popular-heading" className="mt-10">

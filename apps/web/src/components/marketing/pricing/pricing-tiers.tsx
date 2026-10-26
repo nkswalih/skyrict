@@ -93,13 +93,8 @@ const COMPARISON_MATRIX: {
             },
             { label: "AI agents", value: formatAgents },
             {
-                label: "Market signal sources",
-                value: (p) =>
-                    hasModule(p, "all 5 signal")
-                        ? "All 5"
-                        : hasModule(p, "signal source")
-                          ? "1"
-                          : "None",
+                label: "Market signal sources (in development)",
+                value: () => "In development",
             },
         ],
     },
@@ -164,7 +159,7 @@ function moduleChips(plan: BillingPlan, max = 3) {
                     key={module}
                     className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground"
                 >
-                    {module}
+                    {displayModule(module)}
                 </li>
             ))}
             {rest > 0 ? (
@@ -174,6 +169,13 @@ function moduleChips(plan: BillingPlan, max = 3) {
             ) : null}
         </ul>
     );
+}
+
+/** Market intelligence is not live yet; do not present the catalog entry as a shipped feature. */
+function displayModule(module: string): string {
+    return module.toLowerCase().includes("market intel")
+        ? "Market intel · in development"
+        : module;
 }
 
 function planCta(plan: BillingPlan): { label: string; href: string } {
@@ -285,10 +287,7 @@ function PlanCard({
 
             <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
                 {limitRows.map((row) => (
-                    <li
-                        key={row.label}
-                        className="flex items-start gap-1.5"
-                    >
+                    <li key={row.label} className="flex items-start gap-1.5">
                         {isDoubleIncluded(plan, row.label) ? (
                             <CheckCheck
                                 aria-label="Included with emphasis"
@@ -312,22 +311,26 @@ function PlanCard({
                     <a
                         href={cta.href}
                         className={cn(
-                            "flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+                            "flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-marketing-sky/50",
                             popular
-                                ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-                                : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                ? "border-marketing-ink bg-marketing-ink text-marketing-paper hover:bg-marketing-hover"
+                                : "border-marketing-ink/15 bg-transparent text-marketing-muted hover:border-marketing-ink/30 hover:text-marketing-ink",
                         )}
                     >
                         {cta.label}
                     </a>
                 ) : (
                     <Button
-                        size="lg"
-                        variant={popular ? "default" : "outline"}
-                        className="w-full"
+                        size="pill-lg"
+                        variant={popular ? "brand" : "outline"}
+                        className={cn(
+                            "w-full",
+                            !popular &&
+                                "border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink",
+                        )}
                         asChild
                     >
-                        <Link href={cta.href}>{cta.label}</Link>
+                        <Link href={cta.href} prefetch={cta.href === "/signup" ? false : undefined}>{cta.label}</Link>
                     </Button>
                 )}
             </div>
@@ -415,7 +418,7 @@ function PricingTiers({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "month"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >
@@ -428,7 +431,7 @@ function PricingTiers({
                             className={cn(
                                 "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                                 billing === "year"
-                                    ? "bg-primary text-primary-foreground"
+                                    ? "bg-foreground text-accent"
                                     : "text-muted-foreground hover:text-foreground",
                             )}
                         >
@@ -617,76 +620,87 @@ function PricingTiers({
                                             <Fragment key={section}>
                                                 <tr>
                                                     <td
-                                                        colSpan={plans.length + 1}
+                                                        colSpan={
+                                                            plans.length + 1
+                                                        }
                                                         className="border-b border-border bg-muted/40 px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                                                     >
                                                         {section}
                                                     </td>
                                                 </tr>
-                                                {rows.map(({ label, value }) => (
-                                                    <tr key={label}>
-                                                        <td className="border-b border-border px-5 py-2 text-xs font-medium text-muted-foreground">
-                                                            {label}
-                                                        </td>
-                                                        {plans.map((plan) => {
-                                                            const cell = value(
-                                                                plan,
-                                                            );
-                                                            return (
-                                                                <td
-                                                                    key={plan.id}
-                                                                    className={cn(
-                                                                        "border-b border-border px-3 py-2 text-center text-xs text-foreground",
-                                                                        isPopularPlan(
+                                                {rows.map(
+                                                    ({ label, value }) => (
+                                                        <tr key={label}>
+                                                            <td className="border-b border-border px-5 py-2 text-xs font-medium text-muted-foreground">
+                                                                {label}
+                                                            </td>
+                                                            {plans.map(
+                                                                (plan) => {
+                                                                    const cell =
+                                                                        value(
                                                                             plan,
-                                                                        )
-                                                                            ? "bg-primary/5"
-                                                                            : "",
-                                                                    )}
-                                                                >
-                                                                    {typeof cell ===
-                                                                    "boolean" ? (
-                                                                        <span
-                                                                            className={cn(
-                                                                                "inline-flex items-center gap-1 text-xs font-medium",
-                                                                                cell
-                                                                                    ? "text-primary"
-                                                                                    : "text-muted-foreground",
-                                                                            )}
-                                                                            aria-label={
-                                                                                cell
-                                                                                    ? isDoubleIncluded(
-                                                                                          plan,
-                                                                                          label,
-                                                                                      )
-                                                                                        ? "Included with emphasis"
-                                                                                        : "Included"
-                                                                                    : "Not included"
+                                                                        );
+                                                                    return (
+                                                                        <td
+                                                                            key={
+                                                                                plan.id
                                                                             }
-                                                                        >
-                                                                            {cell ? (
-                                                                                isDoubleIncluded(
+                                                                            className={cn(
+                                                                                "border-b border-border px-3 py-2 text-center text-xs text-foreground",
+                                                                                isPopularPlan(
                                                                                     plan,
-                                                                                    label,
-                                                                                ) ? (
-                                                                                    <CheckCheck className="size-4" />
-                                                                                ) : (
-                                                                                    <Check className="size-4" />
                                                                                 )
-                                                                            ) : (
-                                                                                <X className="size-4" />
+                                                                                    ? "bg-primary/5"
+                                                                                    : "",
                                                                             )}
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="text-xs font-medium text-foreground">
-                                                                            {cell}
-                                                                        </span>
-                                                                    )}
-                                                                </td>
-                                                            );
-                                                        })}
-                                                    </tr>
-                                                ))}
+                                                                        >
+                                                                            {typeof cell ===
+                                                                            "boolean" ? (
+                                                                                <span
+                                                                                    className={cn(
+                                                                                        "inline-flex items-center gap-1 text-xs font-medium",
+                                                                                        cell
+                                                                                            ? "text-primary"
+                                                                                            : "text-muted-foreground",
+                                                                                    )}
+                                                                                    aria-label={
+                                                                                        cell
+                                                                                            ? isDoubleIncluded(
+                                                                                                  plan,
+                                                                                                  label,
+                                                                                              )
+                                                                                                ? "Included with emphasis"
+                                                                                                : "Included"
+                                                                                            : "Not included"
+                                                                                    }
+                                                                                >
+                                                                                    {cell ? (
+                                                                                        isDoubleIncluded(
+                                                                                            plan,
+                                                                                            label,
+                                                                                        ) ? (
+                                                                                            <CheckCheck className="size-4" />
+                                                                                        ) : (
+                                                                                            <Check className="size-4" />
+                                                                                        )
+                                                                                    ) : (
+                                                                                        <X className="size-4" />
+                                                                                    )}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-xs font-medium text-foreground">
+                                                                                    {
+                                                                                        cell
+                                                                                    }
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                    );
+                                                                },
+                                                            )}
+                                                        </tr>
+                                                    ),
+                                                )}
                                             </Fragment>
                                         ),
                                     )}
