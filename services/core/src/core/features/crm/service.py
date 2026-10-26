@@ -150,6 +150,7 @@ class CrmService:
             title="Lead created",
             payload={"source": source, "email": email},
         )
+        await self._repo.commit()
         return created
 
     async def get_lead(
@@ -253,6 +254,7 @@ class CrmService:
             target=f"lead:{lead_id}",
             details=changes,
         )
+        await self._repo.commit()
         return updated
 
     async def qualify_lead(
@@ -345,6 +347,7 @@ class CrmService:
             title="Lead qualified",
             payload={"opportunity_id": str(created.id), "name": created.name},
         )
+        await self._repo.commit()
         return created
 
     async def disqualify_lead(
@@ -394,6 +397,7 @@ class CrmService:
             event_type=CrmTimelineEventType.LEAD_DISQUALIFIED,
             title="Lead disqualified",
         )
+        await self._repo.commit()
         return updated
 
     # ------------------------------------------------------------------
@@ -434,6 +438,7 @@ class CrmService:
             target=f"opportunity:{created.id}",
             details={"name": created.name, "lead_id": str(lead_id) if lead_id else None},
         )
+        await self._repo.commit()
         return created
 
     async def get_opportunity(
@@ -545,6 +550,7 @@ class CrmService:
             target=f"opportunity:{opportunity_id}",
             details=_audit_details_from_changes(changes),
         )
+        await self._repo.commit()
         return updated
 
     async def change_stage(
@@ -672,6 +678,7 @@ class CrmService:
             title=timeline_title,
             payload=payload,
         )
+        await self._repo.commit()
         return updated, customer
 
     async def _promote_to_customer(
@@ -779,6 +786,7 @@ class CrmService:
             title="Customer created",
             payload={"customer_code": customer_code},
         )
+        await self._repo.commit()
         return created
 
     async def get_customer(self, customer_id: uuid.UUID, *, tenant_id: uuid.UUID) -> Customer:
@@ -837,6 +845,7 @@ class CrmService:
             target=f"customer:{customer_id}",
             details=_audit_details_from_changes(changes),
         )
+        await self._repo.commit()
         return updated
 
     async def deactivate_customer(
@@ -851,6 +860,7 @@ class CrmService:
             target=f"customer:{customer_id}",
             details={},
         )
+        await self._repo.commit()
         return updated
 
     # ------------------------------------------------------------------
