@@ -146,7 +146,7 @@ function VerifyStep({ email }: { email: string }) {
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           {SESSION_EXPIRED}
         </div>
-        <Link href="/signup" className="block">
+        <Link href="/signup" prefetch={false} className="block">
           <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">
             Back to account details
           </AuthButton>
@@ -224,7 +224,7 @@ function VerifyStep({ email }: { email: string }) {
         <p className="text-muted-foreground">
           Wrong email?{" "}
           <Link
-            href="/signup"
+            href="/signup" prefetch={false}
             className="font-medium text-foreground underline-offset-3 hover:underline"
           >
             Change it
@@ -245,7 +245,7 @@ function VerifyStep({ email }: { email: string }) {
       <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
         <ArrowLeft aria-hidden="true" className="size-3" />
         <Link
-          href="/signup"
+          href="/signup" prefetch={false}
           className="underline-offset-4 hover:underline"
         >
           Back to account details

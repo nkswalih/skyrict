@@ -30,7 +30,7 @@ export function DemoAiGate({ title, description, features }: DemoAiGateProps) {
 
       <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-sky-100 pt-4">
         <Button asChild variant="brand" size="sm">
-          <Link href="/signup">
+          <Link href="/signup" prefetch={false}>
             Enable on your live workspace <ArrowUpRight className="ml-1 size-3.5" />
           </Link>
         </Button>

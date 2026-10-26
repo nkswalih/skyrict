@@ -1461,7 +1461,7 @@ function BillingSection() {
               Manage billing
             </Button>
             <Button asChild variant="brand" size="sm">
-              <Link href="/signup">
+              <Link href="/signup" prefetch={false}>
                 Talk to sales
                 <ArrowUpRight aria-hidden="true" />
               </Link>
@@ -1624,7 +1624,7 @@ function BillingSection() {
               Keep exploring
             </Button>
             <Button asChild onClick={() => setBillingOpen(false)}>
-              <Link href="/signup">Create real workspace</Link>
+              <Link href="/signup" prefetch={false}>Create real workspace</Link>
             </Button>
           </DialogFooter>
         </DialogContent>

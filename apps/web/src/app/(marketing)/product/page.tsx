@@ -516,7 +516,7 @@ function ProductHero() {
                             style={delay(180)}
                         >
                             <Button variant="brand" size="pill" asChild>
-                                <Link href="/signup">
+                                <Link href="/signup" prefetch={false}>
                                     Create an account
                                     <ArrowRight
                                         aria-hidden="true"

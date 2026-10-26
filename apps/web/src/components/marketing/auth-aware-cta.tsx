@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 function AuthAwareCta() {
     return (
         <Button variant="brand" size="pill-lg" asChild>
-            <Link href="/signup">Start for free</Link>
+            <Link href="/signup" prefetch={false}>Start for free</Link>
         </Button>
     );
 }

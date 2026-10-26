@@ -330,7 +330,7 @@ function PlanCard({
                         )}
                         asChild
                     >
-                        <Link href={cta.href}>{cta.label}</Link>
+                        <Link href={cta.href} prefetch={cta.href === "/signup" ? false : undefined}>{cta.label}</Link>
                     </Button>
                 )}
             </div>

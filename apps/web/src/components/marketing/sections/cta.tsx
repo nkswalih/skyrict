@@ -73,7 +73,7 @@ function Cta({
                                     className="group w-full sm:w-auto"
                                     asChild
                                 >
-                                    <Link href={ctaHref}>
+                                    <Link href={ctaHref} prefetch={ctaHref === "/signup" ? false : undefined}>
                                         {ctaLabel}
                                         <ArrowUpRight
                                             aria-hidden="true"
@@ -87,7 +87,7 @@ function Cta({
                                     className="w-full border-marketing-ink/15 bg-transparent text-marketing-ink hover:bg-marketing-ink/[0.04] hover:text-marketing-ink sm:w-auto"
                                     asChild
                                 >
-                                    <Link href={secondaryCtaHref}>
+                                    <Link href={secondaryCtaHref} prefetch={secondaryCtaHref === "/signup" ? false : undefined}>
                                         {secondaryCtaLabel}
                                     </Link>
                                 </Button>

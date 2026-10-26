@@ -32,7 +32,7 @@ export function DemoBanner() {
           <RotateCcw className="size-3" /> Reset sample data
         </button>
         <Button asChild size="sm" variant="brand" className="h-7 text-xs font-semibold">
-          <Link href="/signup">
+          <Link href="/signup" prefetch={false}>
             Create real workspace <ArrowRight className="ml-1 size-3" />
           </Link>
         </Button>

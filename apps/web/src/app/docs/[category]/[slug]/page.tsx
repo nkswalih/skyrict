@@ -304,7 +304,7 @@ export default async function ArticlePage({ params }: PageProps) {
                             Some steps in this guide require a Skyrict account.
                         </p>
                         <Link
-                            href="/signup"
+                            href="/signup" prefetch={false}
                             className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors outline-none hover:bg-primary/80 focus-visible:ring-3 focus-visible:ring-ring/50"
                         >
                             Create a Skyrict account

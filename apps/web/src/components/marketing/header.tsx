@@ -63,6 +63,7 @@ function Header() {
                                     <Link
                                         key={link.href}
                                         href={link.href}
+                                    prefetch={link.href === "/signup" ? false : undefined}
                                         aria-current={
                                             active ? "page" : undefined
                                         }
@@ -89,7 +90,7 @@ function Header() {
                                 <Link href="/demo/erp">Try demo</Link>
                             </Button>
                             <Button asChild variant="brand" size="pill">
-                                <Link href="/signup">
+                                <Link href="/signup" prefetch={false}>
                                     Get started
                                     <ArrowUpRight
                                         aria-hidden="true"
@@ -148,6 +149,7 @@ function Header() {
                                 <Link
                                     key={link.href}
                                     href={link.href}
+                                    prefetch={link.href === "/signup" ? false : undefined}
                                     onClick={() => setOpen(false)}
                                     aria-current={active ? "page" : undefined}
                                     className="sky-anim group flex items-center gap-3 border-b border-marketing-line/80 px-5 py-3 last:border-b-0"
@@ -201,7 +203,7 @@ function Header() {
                             size="pill"
                             className="flex-1 px-3.5"
                         >
-                            <Link href="/signup" onClick={() => setOpen(false)}>
+                            <Link href="/signup" prefetch={false} onClick={() => setOpen(false)}>
                                 Get started
                                 <ArrowUpRight
                                     aria-hidden="true"

@@ -39,7 +39,7 @@ export default async function OrganizationPage({
                         continue.
                     </p>
                 </div>
-                <Link href="/signup" className="block">
+                <Link href="/signup" prefetch={false} className="block">
                     <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">Start over</AuthButton>
                 </Link>
             </div>

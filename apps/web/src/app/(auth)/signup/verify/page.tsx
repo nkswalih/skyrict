@@ -28,7 +28,7 @@ export default async function VerifyPage({
                         Head back to step 1 to enter your work email.
                     </p>
                 </div>
-                <Link href="/signup" className="block">
+                <Link href="/signup" prefetch={false} className="block">
                     <AuthButton className="size-10 justify-self-end w-full" variant="brand" size="icon-lg">
                         Back to account details
                     </AuthButton>
