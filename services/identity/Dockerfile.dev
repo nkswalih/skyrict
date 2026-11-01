@@ -7,7 +7,7 @@
 # Production uses services/identity/Dockerfile (non-root, prod deps only).
 # =============================================================================
 
-FROM python:3.12-slim AS dev
+FROM python:3.15-slim AS dev
 
 WORKDIR /app
 
